@@ -1,6 +1,7 @@
 [build]
-builder = "nixpacks"
+builder = "railpack"
 buildCommand = "npm run build"
+watchPatterns = ["**"]
 
 [deploy]
 startCommand = "npm run db:migrate:deploy && npm start"
