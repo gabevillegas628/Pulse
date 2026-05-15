@@ -9,9 +9,11 @@ import { requireProfessor, requireStudent, ProfessorRequest, StudentRequest } fr
 
 const router = Router()
 
+const rutgersEmail = z.string().email().endsWith('@rutgers.edu', { message: 'Must be a @rutgers.edu email address' })
+
 const professorRegisterSchema = z.object({
   name: z.string().min(1),
-  email: z.string().email(),
+  email: rutgersEmail,
   password: z.string().min(8),
 })
 
@@ -23,7 +25,7 @@ const professorLoginSchema = z.object({
 const studentRegisterSchema = z.object({
   name: z.string().min(1),
   netId: z.string().min(1),
-  email: z.string().email(),
+  email: rutgersEmail,
   password: z.string().min(8),
 })
 

@@ -6,8 +6,31 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
-import { Plus, Trash2, X, ChevronLeft, KeyRound } from 'lucide-react'
+import { Plus, Trash2, X, ChevronLeft, ChevronDown, KeyRound } from 'lucide-react'
 import type { QuestionType } from 'shared'
+
+interface StudentStats {
+  totalResponses: number
+  sessionsParticipated: number
+  totalClosedSessions: number
+  averageWordCount: number
+}
+
+interface ActivityQuestion {
+  id: string
+  text: string
+  type: string
+  number: number
+  response: { responseText: string; wordCount: number; isFlagged: boolean; submittedAt: string } | null
+}
+
+interface ActivitySession {
+  id: string
+  title: string
+  status: string
+  createdAt: string
+  questions: ActivityQuestion[]
+}
 
 const questionSchema = z.object({
   text: z.string().min(1, 'Question text required'),
@@ -45,6 +68,8 @@ export default function ClassPage() {
   const [newPassword, setNewPassword] = useState('')
   const [resetError, setResetError] = useState('')
   const [resetSuccess, setResetSuccess] = useState(false)
+  const [expandedStudent, setExpandedStudent] = useState<string | null>(null)
+  const [activityCache, setActivityCache] = useState<Record<string, ActivitySession[]>>({})
 
   const { data, isLoading } = useQuery({
     queryKey: ['class', classId],
@@ -203,25 +228,105 @@ export default function ClassPage() {
                   <th className="px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Name</th>
                   <th className="px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">NetID</th>
                   <th className="px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Email</th>
+                  <th className="px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Participation</th>
                   <th className="px-5 py-3"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
-                {rosterData.map((e: { student: Student }) => (
-                  <tr key={e.student.id} className="hover:bg-gray-50">
-                    <td className="px-5 py-3.5 font-medium text-gray-900">{e.student.name}</td>
-                    <td className="px-5 py-3.5 font-mono text-gray-600">{e.student.netId}</td>
-                    <td className="px-5 py-3.5 text-gray-500">{e.student.email}</td>
-                    <td className="px-5 py-3.5 text-right">
-                      <button
-                        onClick={() => openReset(e.student)}
-                        className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-primary-600 ml-auto"
+              <tbody>
+                {rosterData.map((e: { student: Student; stats: StudentStats }) => {
+                  const isExpanded = expandedStudent === e.student.id
+                  const activity = activityCache[e.student.id]
+
+                  async function toggleExpand() {
+                    if (isExpanded) { setExpandedStudent(null); return }
+                    setExpandedStudent(e.student.id)
+                    if (!activityCache[e.student.id]) {
+                      const res = await api.get(`/classes/${classId}/students/${e.student.id}/activity`)
+                      setActivityCache((prev) => ({ ...prev, [e.student.id]: res.data.data.sessions }))
+                    }
+                  }
+
+                  return (
+                    <>
+                      <tr
+                        key={e.student.id}
+                        onClick={toggleExpand}
+                        className="border-t border-gray-50 hover:bg-gray-50 cursor-pointer"
                       >
-                        <KeyRound size={13} /> Reset password
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                        <td className="px-5 py-3.5 font-medium text-gray-900 flex items-center gap-1.5">
+                          <ChevronDown size={14} className={`text-gray-300 transition-transform shrink-0 ${isExpanded ? 'rotate-180' : ''}`} />
+                          {e.student.name}
+                        </td>
+                        <td className="px-5 py-3.5 font-mono text-gray-600">{e.student.netId}</td>
+                        <td className="px-5 py-3.5 text-gray-500">{e.student.email}</td>
+                        <td className="px-5 py-3.5 text-gray-600">
+                          {e.stats.totalClosedSessions > 0 ? (
+                            <span className={e.stats.sessionsParticipated === 0 ? 'text-gray-400' : ''}>
+                              {e.stats.sessionsParticipated}/{e.stats.totalClosedSessions} sessions
+                            </span>
+                          ) : (
+                            <span className="text-gray-300">—</span>
+                          )}
+                        </td>
+                        <td className="px-5 py-3.5 text-right" onClick={(ev) => ev.stopPropagation()}>
+                          <button
+                            onClick={() => openReset(e.student)}
+                            className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-primary-600 ml-auto"
+                          >
+                            <KeyRound size={13} /> Reset password
+                          </button>
+                        </td>
+                      </tr>
+
+                      {isExpanded && (
+                        <tr key={`${e.student.id}-detail`} className="border-t border-gray-50 bg-gray-50">
+                          <td colSpan={5} className="px-5 py-4">
+                            {!activity ? (
+                              <p className="text-xs text-gray-400">Loading…</p>
+                            ) : activity.length === 0 ? (
+                              <p className="text-xs text-gray-400">No sessions yet.</p>
+                            ) : (
+                              <div className="space-y-3">
+                                {activity.map((session) => (
+                                  <div key={session.id}>
+                                    <div className="flex items-center gap-2 mb-1.5">
+                                      <span className="text-xs font-medium text-gray-700">{session.title}</span>
+                                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
+                                        session.status === 'OPEN' ? 'bg-green-100 text-green-700' :
+                                        session.status === 'CLOSED' ? 'bg-gray-100 text-gray-500' :
+                                        'bg-gray-50 text-gray-400'
+                                      }`}>
+                                        {session.status.charAt(0) + session.status.slice(1).toLowerCase()}
+                                      </span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                      {session.questions.map((q) => (
+                                        <span
+                                          key={q.id}
+                                          title={q.text + (q.response ? `\n"${q.response.responseText}"` : '')}
+                                          className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${
+                                            q.response
+                                              ? 'border-primary-200 bg-primary-50 text-primary-700'
+                                              : 'border-gray-200 bg-white text-gray-400'
+                                          }`}
+                                        >
+                                          Q{q.number} {q.response ? '✓' : '—'}
+                                          {q.response && q.type === 'FREE_TEXT' && (
+                                            <span className="text-primary-400">{q.response.wordCount}w</span>
+                                          )}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  )
+                })}
               </tbody>
             </table>
           </div>

@@ -118,17 +118,97 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
 router.get('/:id/enrollments', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
-    const cls = await prisma.class.findFirst({
-      where: { id: p(req.params.id), professorId: professor.id },
-    })
+    const classId = p(req.params.id)
+
+    const cls = await prisma.class.findFirst({ where: { id: classId, professorId: professor.id } })
     if (!cls) throw new AppError('Class not found', 404)
 
-    const enrollments = await prisma.enrollment.findMany({
-      where: { classId: p(req.params.id) },
-      include: { student: { select: { id: true, netId: true, name: true, email: true } } },
-      orderBy: { enrolledAt: 'desc' },
+    const [enrollments, allResponses, totalClosedSessions] = await Promise.all([
+      prisma.enrollment.findMany({
+        where: { classId },
+        include: { student: { select: { id: true, netId: true, name: true, email: true } } },
+        orderBy: { enrolledAt: 'desc' },
+      }),
+      prisma.response.findMany({
+        where: { question: { session: { classId } } },
+        select: {
+          studentId: true,
+          wordCount: true,
+          question: { select: { sessionId: true, type: true } },
+        },
+      }),
+      prisma.session.count({ where: { classId, status: { in: ['CLOSED', 'ARCHIVED'] } } }),
+    ])
+
+    type StatsAgg = { totalResponses: number; sessionIds: Set<string>; totalWordCount: number; freeTextCount: number }
+    const byStudent = new Map<string, StatsAgg>()
+    for (const r of allResponses) {
+      const s = byStudent.get(r.studentId) ?? { totalResponses: 0, sessionIds: new Set<string>(), totalWordCount: 0, freeTextCount: 0 }
+      s.totalResponses++
+      s.sessionIds.add(r.question.sessionId)
+      if (r.question.type === 'FREE_TEXT') { s.totalWordCount += r.wordCount; s.freeTextCount++ }
+      byStudent.set(r.studentId, s)
+    }
+
+    const enriched = enrollments.map((e) => {
+      const s = byStudent.get(e.student.id)
+      return {
+        ...e,
+        stats: {
+          totalResponses: s?.totalResponses ?? 0,
+          sessionsParticipated: s?.sessionIds.size ?? 0,
+          totalClosedSessions,
+          averageWordCount: s && s.freeTextCount > 0 ? Math.round(s.totalWordCount / s.freeTextCount) : 0,
+        },
+      }
     })
-    res.json({ success: true, data: { enrollments } })
+
+    res.json({ success: true, data: { enrollments: enriched } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.get('/:id/students/:studentId/activity', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+    const classId = p(req.params.id)
+    const studentId = p(req.params.studentId)
+
+    const cls = await prisma.class.findFirst({ where: { id: classId, professorId: professor.id } })
+    if (!cls) throw new AppError('Class not found', 404)
+
+    const sessions = await prisma.session.findMany({
+      where: { classId, NOT: { status: 'DRAFT' } },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        questions: {
+          orderBy: { order: 'asc' },
+          include: {
+            responses: {
+              where: { studentId },
+              select: { responseText: true, wordCount: true, isFlagged: true, submittedAt: true },
+            },
+          },
+        },
+      },
+    })
+
+    const result = sessions.map((session) => ({
+      id: session.id,
+      title: session.title,
+      status: session.status,
+      createdAt: session.createdAt,
+      questions: session.questions.map((q, i) => ({
+        id: q.id,
+        text: q.text,
+        type: q.type,
+        number: i + 1,
+        response: q.responses[0] ?? null,
+      })),
+    }))
+
+    res.json({ success: true, data: { sessions: result } })
   } catch (err) {
     next(err)
   }
