@@ -226,54 +226,191 @@ router.delete('/sessions/:id', requireProfessor, async (req: Request, res: Respo
   }
 })
 
-// CSV export
+// CSV export — includes scores for all enrolled students
 router.get('/sessions/:id/export', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
     const session = await prisma.session.findFirst({
       where: { id: p(req.params.id), class: { professorId: professor.id } },
       include: {
+        class: { include: { enrollments: { include: { student: { select: { id: true, netId: true, name: true } } } } } },
         questions: {
           orderBy: { order: 'asc' },
           include: {
-            responses: {
-              include: { student: { select: { netId: true, name: true } } },
-            },
+            responses: { select: { studentId: true, responseText: true, wordCount: true, aiScore: true } },
           },
         },
       },
     })
     if (!session) throw new AppError('Session not found', 404)
 
-    const studentMap = new Map<string, { netId: string; name: string; answers: string[] }>()
+    // All enrolled students as the row set
+    const students = session.class.enrollments.map((e) => e.student)
 
-    for (const question of session.questions) {
-      for (const resp of question.responses) {
-        const key = resp.student.netId
-        if (!studentMap.has(key)) {
-          studentMap.set(key, { netId: resp.student.netId, name: resp.student.name, answers: [] })
-        }
+    type Row = { netId: string; name: string; scores: number[] }
+    const rows: Row[] = students.map((s) => {
+      const scores = session.questions.map((q) => {
+        const resp = q.responses.find((r) => r.studentId === s.id) ?? null
+        return calcScore(q.type, q.correctAnswer, resp)
+      })
+      return { netId: s.netId, name: s.name, scores }
+    })
+
+    const maxPerQ = session.questions.map(() => 1.0)
+    const grandMax = maxPerQ.reduce((a, b) => a + b, 0)
+
+    const qHeaders = session.questions.map((_q, i) => `Q${i + 1} Score`)
+    const header = ['NetID', 'Name', ...qHeaders, 'Total', `Max (${grandMax})`].join(',')
+    const csvRows = rows.map((r) => {
+      const total = r.scores.reduce((a, b) => a + b, 0)
+      return [r.netId, `"${r.name}"`, ...r.scores.map(String), total.toFixed(1), grandMax.toFixed(1)].join(',')
+    })
+
+    const csv = [header, ...csvRows].join('\n')
+    res.setHeader('Content-Type', 'text/csv')
+    res.setHeader('Content-Disposition', `attachment; filename="session-${session.id}-grades.csv"`)
+    res.send(csv)
+  } catch (err) {
+    next(err)
+  }
+})
+
+// --- Grading helpers ---
+
+function calcScore(
+  qType: string,
+  correctAnswer: string | null,
+  response: { responseText: string; aiScore: number | null } | null
+): number {
+  if (!response) return 0
+  if (qType === 'MULTIPLE_CHOICE' || qType === 'YES_NO') {
+    if (!correctAnswer) return 1.0
+    return response.responseText === correctAnswer ? 1.0 : 0.5
+  }
+  if (qType === 'FREE_TEXT') {
+    return response.aiScore !== null && response.aiScore !== undefined ? response.aiScore : 1.0
+  }
+  return 1.0 // RATING
+}
+
+// Set / clear correct answer for MCQ or YES_NO
+router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+    const { correctAnswer } = z.object({ correctAnswer: z.string().nullable() }).parse(req.body)
+
+    const question = await prisma.question.findFirst({
+      where: {
+        id: p(req.params.questionId),
+        sessionId: p(req.params.sessionId),
+        session: { class: { professorId: professor.id } },
+      },
+      include: { session: true },
+    })
+    if (!question) throw new AppError('Question not found', 404)
+    if (!['CLOSED', 'ARCHIVED'].includes(question.session.status))
+      throw new AppError('Session must be closed before grading', 400)
+    if (correctAnswer !== null) {
+      if (question.type === 'YES_NO' && !['Yes', 'No'].includes(correctAnswer))
+        throw new AppError('YES_NO correctAnswer must be "Yes" or "No"', 400)
+      if (question.type === 'MULTIPLE_CHOICE') {
+        const opts = (question.options as string[] | null) ?? []
+        if (!opts.includes(correctAnswer))
+          throw new AppError('correctAnswer must be one of the question options', 400)
       }
+      if (question.type === 'FREE_TEXT' || question.type === 'RATING')
+        throw new AppError('Cannot set correct answer for this question type', 400)
     }
 
-    for (const question of session.questions) {
-      const responseByNetId = new Map(question.responses.map((r) => [r.student.netId, r]))
-      for (const [netId, row] of studentMap) {
-        const r = responseByNetId.get(netId)
-        row.answers.push(r ? r.responseText : '')
-      }
-    }
+    const updated = await prisma.question.update({
+      where: { id: question.id },
+      data: { correctAnswer },
+    })
+    res.json({ success: true, data: { question: updated } })
+  } catch (err) {
+    next(err)
+  }
+})
 
-    const questionHeaders = session.questions.map((q, i) => `Q${i + 1}: ${q.text.replace(/,/g, ' ')}`)
-    const header = ['NetID', 'Name', ...questionHeaders, 'SubmittedAt'].join(',')
-    const rows = [...studentMap.values()].map((row) =>
-      [row.netId, `"${row.name}"`, ...row.answers.map((a) => `"${a.replace(/"/g, '""')}"`), ''].join(',')
+// AI-grade all responses for a FREE_TEXT question
+router.post('/sessions/:sessionId/questions/:questionId/grade', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+
+    const question = await prisma.question.findFirst({
+      where: {
+        id: p(req.params.questionId),
+        sessionId: p(req.params.sessionId),
+        session: { class: { professorId: professor.id } },
+      },
+      include: {
+        session: true,
+        responses: { include: { student: { select: { id: true, netId: true, name: true } } } },
+      },
+    })
+    if (!question) throw new AppError('Question not found', 404)
+    if (question.type !== 'FREE_TEXT') throw new AppError('AI grading only applies to FREE_TEXT questions', 400)
+    if (!['CLOSED', 'ARCHIVED'].includes(question.session.status))
+      throw new AppError('Session must be closed before grading', 400)
+    if (question.responses.length === 0) throw new AppError('No responses to grade', 400)
+
+    const graded = await Promise.all(
+      question.responses.map(async (resp) => {
+        const msg = await anthropic.messages.create({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 256,
+          messages: [
+            {
+              role: 'user',
+              content: `You are grading a student's free-text response to a classroom question. Be strict but fair.
+
+Question: "${question.text}"
+Student response: "${resp.responseText}"
+
+Assess whether the response demonstrates genuine understanding of the concept.
+- full_credit: correct and shows understanding
+- partial_credit: partially correct, vague, or on the right track but incomplete
+- no_credit: wrong, irrelevant, or no real effort (e.g. "idk", "bad", very short with no substance)
+
+Return JSON only, no other text: {"score": "full_credit" | "partial_credit" | "no_credit", "reason": "one short sentence"}`,
+            },
+          ],
+        })
+        const text = msg.content.find((b) => b.type === 'text')?.text ?? '{}'
+        let parsed: { score: string; reason: string }
+        try { parsed = JSON.parse(text) } catch { parsed = { score: 'full_credit', reason: 'Parse error' } }
+        const aiScore = parsed.score === 'no_credit' ? 0 : parsed.score === 'partial_credit' ? 0.5 : 1.0
+        await prisma.response.update({ where: { id: resp.id }, data: { aiScore } })
+        return { id: resp.id, studentId: resp.studentId, aiScore, reason: parsed.reason }
+      })
     )
 
-    const csv = [header, ...rows].join('\n')
-    res.setHeader('Content-Type', 'text/csv')
-    res.setHeader('Content-Disposition', `attachment; filename="session-${session.id}.csv"`)
-    res.send(csv)
+    res.json({ success: true, data: { grades: graded } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Professor manual override of a single response's aiScore
+router.patch('/sessions/:sessionId/questions/:questionId/responses/:responseId', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+    const { aiScore } = z.object({ aiScore: z.number().min(0).max(1) }).parse(req.body)
+
+    const question = await prisma.question.findFirst({
+      where: {
+        id: p(req.params.questionId),
+        sessionId: p(req.params.sessionId),
+        session: { class: { professorId: professor.id } },
+      },
+    })
+    if (!question) throw new AppError('Question not found', 404)
+
+    const response = await prisma.response.update({
+      where: { id: p(req.params.responseId) },
+      data: { aiScore },
+    })
+    res.json({ success: true, data: { response } })
   } catch (err) {
     next(err)
   }

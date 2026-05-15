@@ -57,6 +57,7 @@ export interface Question {
   options: string[] | null
   order: number
   accessCode: string
+  correctAnswer: string | null
 }
 
 export interface Session {
@@ -78,6 +79,7 @@ export interface Response {
   responseText: string
   wordCount: number
   isFlagged: boolean
+  aiScore: number | null
   submittedAt: string
 }
 

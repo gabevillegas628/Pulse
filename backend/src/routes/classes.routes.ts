@@ -241,4 +241,81 @@ router.post('/:id/students/:studentId/reset-password', async (req: Request, res:
   }
 })
 
+function calcScore(
+  qType: string,
+  correctAnswer: string | null,
+  response: { responseText: string; aiScore: number | null } | null
+): number {
+  if (!response) return 0
+  if (qType === 'MULTIPLE_CHOICE' || qType === 'YES_NO') {
+    if (!correctAnswer) return 1.0
+    return response.responseText === correctAnswer ? 1.0 : 0.5
+  }
+  if (qType === 'FREE_TEXT') {
+    return response.aiScore !== null && response.aiScore !== undefined ? response.aiScore : 1.0
+  }
+  return 1.0 // RATING
+}
+
+// Class-wide grades export — one row per student, one column per closed session
+router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+    const classId = p(req.params.id)
+
+    const cls = await prisma.class.findFirst({
+      where: { id: classId, professorId: professor.id },
+      include: {
+        enrollments: { include: { student: { select: { id: true, netId: true, name: true } } } },
+        sessions: {
+          where: { status: { in: ['CLOSED', 'ARCHIVED'] } },
+          orderBy: { createdAt: 'asc' },
+          include: {
+            questions: {
+              orderBy: { order: 'asc' },
+              include: {
+                responses: { select: { studentId: true, responseText: true, aiScore: true } },
+              },
+            },
+          },
+        },
+      },
+    })
+    if (!cls) throw new AppError('Class not found', 404)
+
+    const students = cls.enrollments.map((e) => e.student)
+    const sessions = cls.sessions
+
+    const sessionMaxes = sessions.map((s) => s.questions.length)
+    const grandMax = sessionMaxes.reduce((a, b) => a + b, 0)
+
+    const sessionHeaders = sessions.map((s) => s.title.replace(/,/g, ' '))
+    const header = ['NetID', 'Name', ...sessionHeaders, 'Grand Total', `Grand Max (${grandMax})`].join(',')
+
+    const csvRows = students.map((student) => {
+      const sessionTotals = sessions.map((session) => {
+        return session.questions.reduce((sum, q) => {
+          const resp = q.responses.find((r) => r.studentId === student.id) ?? null
+          return sum + calcScore(q.type, q.correctAnswer, resp)
+        }, 0)
+      })
+      const grandTotal = sessionTotals.reduce((a, b) => a + b, 0)
+      return [
+        student.netId,
+        `"${student.name}"`,
+        ...sessionTotals.map((t) => t.toFixed(1)),
+        grandTotal.toFixed(1),
+        grandMax.toFixed(1),
+      ].join(',')
+    })
+
+    const csv = [header, ...csvRows].join('\n')
+    res.setHeader('Content-Type', 'text/csv')
+    res.setHeader('Content-Disposition', `attachment; filename="class-${classId}-grades.csv"`)
+    res.send(csv)
+  } catch (err) {
+    next(err)
+  }
+})
+
 export default router

@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
-import { Check, ChevronLeft, Copy, Download, Flag, PictureInPicture2, Plus, Sparkles, X } from 'lucide-react'
+import { Check, ChevronLeft, Copy, Download, Flag, GraduationCap, PictureInPicture2, Plus, Sparkles, X } from 'lucide-react'
 import { io } from 'socket.io-client'
 import type { SessionDetail, QuestionWithResponses, ResponseWithStudent } from 'shared'
 import { SessionStatus } from 'shared'
@@ -95,6 +95,73 @@ export default function SessionPage() {
       setSummaryQuestionId(questionId)
     },
   })
+
+  // gradeReasons maps responseId → AI reason string for tooltip
+  const [gradeReasons, setGradeReasons] = useState<Record<string, string>>({})
+
+  const gradeMutation = useMutation({
+    mutationFn: (questionId: string) =>
+      api.post(`/sessions/${sessionId}/questions/${questionId}/grade`).then((r) => r.data.data.grades as { id: string; studentId: string; aiScore: number; reason: string }[]),
+    onSuccess: (grades, questionId) => {
+      const reasons: Record<string, string> = {}
+      grades.forEach((g) => { reasons[g.id] = g.reason })
+      setGradeReasons((prev) => ({ ...prev, ...reasons }))
+      qc.setQueryData<SessionDetail>(['session', sessionId], (prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          questions: prev.questions.map((q) => {
+            if (q.id !== questionId) return q
+            return {
+              ...q,
+              responses: q.responses.map((r) => {
+                const g = grades.find((g) => g.id === r.id)
+                return g ? { ...r, aiScore: g.aiScore } : r
+              }),
+            }
+          }),
+        }
+      })
+    },
+  })
+
+  const setCorrectAnswerMutation = useMutation({
+    mutationFn: ({ questionId, correctAnswer }: { questionId: string; correctAnswer: string | null }) =>
+      api.patch(`/sessions/${sessionId}/questions/${questionId}`, { correctAnswer }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['session', sessionId] }),
+  })
+
+  const overrideScoreMutation = useMutation({
+    mutationFn: ({ questionId, responseId, aiScore }: { questionId: string; responseId: string; aiScore: number }) =>
+      api.patch(`/sessions/${sessionId}/questions/${questionId}/responses/${responseId}`, { aiScore }),
+    onSuccess: (_data, { questionId, responseId, aiScore }) => {
+      qc.setQueryData<SessionDetail>(['session', sessionId], (prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          questions: prev.questions.map((q) => {
+            if (q.id !== questionId) return q
+            return { ...q, responses: q.responses.map((r) => r.id === responseId ? { ...r, aiScore } : r) }
+          }),
+        }
+      })
+    },
+  })
+
+  function cycleScore(current: number | null): number {
+    if (current === null || current === 1.0) return 0
+    if (current === 0) return 0.5
+    return 1.0
+  }
+
+  function calcResponseScore(q: { type: string; correctAnswer: string | null }, r: { responseText: string; aiScore: number | null }): number | null {
+    if (q.type === 'MULTIPLE_CHOICE' || q.type === 'YES_NO') {
+      if (!q.correctAnswer) return null
+      return r.responseText === q.correctAnswer ? 1.0 : 0.5
+    }
+    if (q.type === 'FREE_TEXT') return r.aiScore
+    return null // RATING — no per-response score shown
+  }
 
   const statusMutation = useMutation({
     mutationFn: (status: SessionStatus) => api.patch(`/sessions/${sessionId}`, { status }),
@@ -335,12 +402,64 @@ export default function SessionPage() {
             </div>
           </div>
 
+          {/* Mark correct answer — MCQ / YES_NO, closed sessions only */}
+          {(data.status === SessionStatus.CLOSED || data.status === SessionStatus.ARCHIVED) &&
+            (activeQuestion.type === 'MULTIPLE_CHOICE' || activeQuestion.type === 'YES_NO') && (
+            <div className="mt-3 pt-3 border-t border-primary-100">
+              <p className="text-xs text-primary-500 font-medium mb-2">Correct answer</p>
+              <div className="flex flex-wrap gap-2">
+                {(activeQuestion.type === 'YES_NO' ? ['Yes', 'No'] : (activeQuestion.options ?? [])).map((opt) => {
+                  const isCorrect = activeQuestion.correctAnswer === opt
+                  return (
+                    <button
+                      key={opt}
+                      onClick={() => setCorrectAnswerMutation.mutate({
+                        questionId: activeQuestion.id,
+                        correctAnswer: isCorrect ? null : opt,
+                      })}
+                      disabled={setCorrectAnswerMutation.isPending}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                        isCorrect
+                          ? 'bg-green-50 border-green-300 text-green-700 font-medium'
+                          : 'bg-white border-gray-200 text-gray-600 hover:border-green-300 hover:text-green-700'
+                      }`}
+                    >
+                      {isCorrect && <Check size={12} />} {opt}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Responses */}
           <ResultsSummary question={activeQuestion} />
 
-          {/* AI summary for free text */}
+          {/* Score summary line */}
+          {activeQuestion.responses.length > 0 && (activeQuestion.type === 'MULTIPLE_CHOICE' || activeQuestion.type === 'YES_NO' || activeQuestion.type === 'FREE_TEXT') && (() => {
+            const scores = activeQuestion.responses.map((r) => calcResponseScore(activeQuestion, r)).filter((s): s is number => s !== null)
+            if (scores.length === 0) return null
+            const avg = scores.reduce((a, b) => a + b, 0) / scores.length
+            return (
+              <p className="text-xs text-gray-400 mb-4">
+                {scores.length} of {activeQuestion.responses.length} scored — avg <span className="font-medium text-gray-600">{avg.toFixed(2)} / 1.0</span>
+              </p>
+            )
+          })()}
+
+          {/* AI summary + grade buttons for free text */}
           {activeQuestion.type === 'FREE_TEXT' && activeQuestion.responses.length > 0 && (
             <div className="mb-5">
+              {(data.status === SessionStatus.CLOSED || data.status === SessionStatus.ARCHIVED) && (
+                <button
+                  onClick={() => gradeMutation.mutate(activeQuestion.id)}
+                  disabled={gradeMutation.isPending}
+                  className="flex items-center gap-1.5 text-sm text-green-700 border border-green-200 px-3 py-2 rounded-lg hover:bg-green-50 disabled:opacity-50 mb-2"
+                >
+                  <GraduationCap size={14} />
+                  {gradeMutation.isPending ? 'Grading…' : 'Grade with AI'}
+                </button>
+              )}
               {summaryQuestionId !== activeQuestion.id || !summary ? (
                 <button
                   onClick={() => {
@@ -390,6 +509,9 @@ export default function SessionPage() {
               )}
             </div>
           )}
+          {gradeMutation.isError && (
+            <p className="text-xs text-red-500 mb-3">AI grading failed — try again.</p>
+          )}
 
           {activeQuestion.responses.length === 0 ? (
             <p className="text-gray-400 text-center py-12 text-sm">No responses yet</p>
@@ -417,6 +539,32 @@ export default function SessionPage() {
                       <span className="text-xs text-gray-300">
                         {new Date(r.submittedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
+                      {/* Score chip */}
+                      {(() => {
+                        const score = calcResponseScore(activeQuestion, r)
+                        const isFreeText = activeQuestion.type === 'FREE_TEXT'
+                        if (score === null) return null
+                        const label = score === 1.0 ? '1.0' : score === 0.5 ? '0.5' : '0'
+                        const color = score === 1.0
+                          ? 'bg-green-100 text-green-700 border-green-200'
+                          : score === 0.5
+                          ? 'bg-yellow-100 text-yellow-700 border-yellow-200'
+                          : 'bg-red-100 text-red-600 border-red-200'
+                        const title = isFreeText && gradeReasons[r.id] ? gradeReasons[r.id] : undefined
+                        return (
+                          <button
+                            title={title}
+                            onClick={isFreeText ? () => overrideScoreMutation.mutate({
+                              questionId: activeQuestion.id,
+                              responseId: r.id,
+                              aiScore: cycleScore(r.aiScore),
+                            }) : undefined}
+                            className={`text-xs font-medium px-2 py-0.5 rounded-full border ${color} ${isFreeText ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}
+                          >
+                            {label} pt
+                          </button>
+                        )
+                      })()}
                     </div>
                   </div>
                   <p className="text-gray-700 text-sm leading-relaxed">{r.responseText}</p>

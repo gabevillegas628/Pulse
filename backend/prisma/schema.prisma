@@ -73,15 +73,16 @@ enum SessionStatus {
 }
 
 model Question {
-  id         String       @id @default(cuid())
-  sessionId  String
-  session    Session      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  text       String
-  type       QuestionType @default(FREE_TEXT)
-  options    Json?
-  order      Int
-  accessCode String       @unique
-  responses  Response[]
+  id            String       @id @default(cuid())
+  sessionId     String
+  session       Session      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  text          String
+  type          QuestionType @default(FREE_TEXT)
+  options       Json?
+  order         Int
+  accessCode    String       @unique
+  correctAnswer String?
+  responses     Response[]
 
   @@index([sessionId])
 }
@@ -102,6 +103,7 @@ model Response {
   responseText String
   wordCount    Int
   isFlagged    Boolean  @default(false)
+  aiScore      Float?
   submittedAt  DateTime @default(now())
 
   @@unique([questionId, studentId])

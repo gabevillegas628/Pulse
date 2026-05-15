@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
-import { Plus, Trash2, X, ChevronLeft, ChevronDown, KeyRound } from 'lucide-react'
+import { Plus, Trash2, X, ChevronLeft, ChevronDown, Download, KeyRound } from 'lucide-react'
 import type { QuestionType } from 'shared'
 
 interface StudentStats {
@@ -149,14 +149,23 @@ export default function ClassPage() {
               <span className="font-mono text-sm bg-gray-100 px-2 py-0.5 rounded font-medium tracking-wider">{data?.joinCode}</span>
             </div>
           </div>
-          {tab === 'sessions' && (
-            <button
-              onClick={() => setShowModal(true)}
-              className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors"
+          <div className="flex items-center gap-2">
+            <a
+              href={`/api/classes/${classId}/grades`}
+              className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2 rounded-lg text-sm hover:bg-gray-50"
+              title="Export class-wide grade CSV"
             >
-              <Plus size={16} /> New session
-            </button>
-          )}
+              <Download size={14} /> Export Grades
+            </a>
+            {tab === 'sessions' && (
+              <button
+                onClick={() => setShowModal(true)}
+                className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors"
+              >
+                <Plus size={16} /> New session
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
