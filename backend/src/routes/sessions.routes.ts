@@ -176,6 +176,42 @@ router.patch('/sessions/:id', requireProfessor, async (req: Request, res: Respon
   }
 })
 
+router.post('/sessions/:id/questions', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+    const { text, type, options } = z.object({
+      text: z.string().min(1),
+      type: z.enum(['FREE_TEXT', 'MULTIPLE_CHOICE', 'RATING', 'YES_NO']),
+      options: z.array(z.string()).optional(),
+    }).parse(req.body)
+
+    const session = await prisma.session.findFirst({
+      where: { id: p(req.params.id), class: { professorId: professor.id } },
+      include: { questions: { orderBy: { order: 'desc' }, take: 1 } },
+    })
+    if (!session) throw new AppError('Session not found', 404)
+
+    const nextOrder = (session.questions[0]?.order ?? -1) + 1
+    const accessCode = await generateUniqueQuestionCode()
+
+    const question = await prisma.question.create({
+      data: {
+        sessionId: session.id,
+        text,
+        type,
+        options: options && options.length > 0 ? options : undefined,
+        order: nextOrder,
+        accessCode,
+      },
+    })
+
+    const qrDataUrl = await generateQr(`${config.baseUrl}/q/${question.id}`)
+    res.status(201).json({ success: true, data: { question: { ...question, qrDataUrl } } })
+  } catch (err) {
+    next(err)
+  }
+})
+
 router.delete('/sessions/:id', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor

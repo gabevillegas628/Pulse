@@ -110,8 +110,6 @@ export default function QuestionPage() {
 
         <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-6">
           <div>
-            <p className="text-sm font-medium text-gray-800 mb-3">{q.text}</p>
-
             {q.type === 'FREE_TEXT' && (
               <textarea
                 {...register('response')}

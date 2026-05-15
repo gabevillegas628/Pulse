@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
-import { ChevronLeft, Download, Flag, PictureInPicture2, Sparkles } from 'lucide-react'
+import { Check, ChevronLeft, Copy, Download, Flag, PictureInPicture2, Plus, Sparkles, X } from 'lucide-react'
 import { io } from 'socket.io-client'
 import type { SessionDetail, QuestionWithResponses, ResponseWithStudent } from 'shared'
 import { SessionStatus } from 'shared'
@@ -27,6 +27,55 @@ export default function SessionPage() {
 
   const [summary, setSummary] = useState<SummaryCategory[] | null>(null)
   const [summaryQuestionId, setSummaryQuestionId] = useState<string | null>(null)
+
+  const [copiedQrId, setCopiedQrId] = useState<string | null>(null)
+
+  async function copyQrWithCode(qrDataUrl: string, accessCode: string) {
+    const qrSize = 400
+    const padding = 24
+    const textAreaHeight = 80
+    const canvas = document.createElement('canvas')
+    canvas.width = qrSize + padding * 2
+    canvas.height = qrSize + padding * 2 + textAreaHeight
+    const ctx = canvas.getContext('2d')!
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    const img = new Image()
+    img.src = qrDataUrl
+    await new Promise((resolve) => { img.onload = resolve })
+    ctx.drawImage(img, padding, padding, qrSize, qrSize)
+    ctx.fillStyle = '#1d4ed8'
+    ctx.font = 'bold 52px monospace'
+    ctx.textAlign = 'center'
+    ctx.fillText(accessCode, canvas.width / 2, qrSize + padding + 60)
+    canvas.toBlob(async (blob) => {
+      if (!blob) return
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+    })
+  }
+
+  const [showAddQuestion, setShowAddQuestion] = useState(false)
+  const [aqText, setAqText] = useState('')
+  const [aqType, setAqType] = useState<'FREE_TEXT' | 'MULTIPLE_CHOICE' | 'RATING' | 'YES_NO'>('FREE_TEXT')
+  const [aqOptions, setAqOptions] = useState('')
+  const [aqError, setAqError] = useState('')
+
+  const addQuestionMutation = useMutation({
+    mutationFn: () => api.post(`/sessions/${sessionId}/questions`, {
+      text: aqText,
+      type: aqType,
+      options: aqType === 'MULTIPLE_CHOICE' ? aqOptions.split('\n').map(s => s.trim()).filter(Boolean) : undefined,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['session', sessionId] })
+      setShowAddQuestion(false)
+      setAqText(''); setAqType('FREE_TEXT'); setAqOptions(''); setAqError('')
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
+      setAqError(msg ?? 'Failed to add question')
+    },
+  })
 
   const [pipActiveTab, setPipActiveTab] = useState<number | null>(null)
   const [pipContainer, setPipContainer] = useState<HTMLElement | null>(null)
@@ -211,23 +260,28 @@ export default function SessionPage() {
       </div>
 
       {/* Question tabs */}
-      {data.questions.length > 1 && (
-        <div className="flex gap-1 mb-6 border-b border-gray-200">
-          {data.questions.map((q, i) => (
-            <button
-              key={q.id}
-              onClick={() => setActiveTab(i)}
-              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === i
-                  ? 'border-primary-600 text-primary-700'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Q{i + 1}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="flex items-center gap-1 mb-6 border-b border-gray-200">
+        {data.questions.map((q, i) => (
+          <button
+            key={q.id}
+            onClick={() => setActiveTab(i)}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === i
+                ? 'border-primary-600 text-primary-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Q{i + 1}
+          </button>
+        ))}
+        <button
+          onClick={() => setShowAddQuestion(true)}
+          className="ml-1 mb-px flex items-center gap-1 text-xs text-gray-400 hover:text-primary-600 px-2 py-1.5"
+          title="Add question"
+        >
+          <Plus size={13} /> Add
+        </button>
+      </div>
 
       {activeQuestion && (
         <div>
@@ -244,19 +298,38 @@ export default function SessionPage() {
                   <p className="text-xs text-primary-400 mb-0.5">Code</p>
                   <p className="font-mono text-2xl font-bold text-primary-700 tracking-widest">{activeQuestion.accessCode}</p>
                 </div>
-                {/* QR toggle */}
+                {/* QR toggle + copy */}
                 {'qrDataUrl' in activeQuestion && (activeQuestion as QuestionWithResponses & { qrDataUrl: string }).qrDataUrl && (
-                  <button
-                    onClick={() => setExpandedQr(expandedQr === activeQuestion.id ? null : activeQuestion.id)}
-                    className="border border-primary-200 rounded-lg p-1.5 hover:bg-primary-100 transition-colors"
-                    title="Show QR code"
-                  >
-                    <img
-                      src={(activeQuestion as QuestionWithResponses & { qrDataUrl: string }).qrDataUrl}
-                      alt="QR"
-                      className="w-10 h-10"
-                    />
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setExpandedQr(expandedQr === activeQuestion.id ? null : activeQuestion.id)}
+                      className="border border-primary-200 rounded-lg p-1.5 hover:bg-primary-100 transition-colors"
+                      title="Show QR code"
+                    >
+                      <img
+                        src={(activeQuestion as QuestionWithResponses & { qrDataUrl: string }).qrDataUrl}
+                        alt="QR"
+                        className="w-10 h-10"
+                      />
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await copyQrWithCode(
+                          (activeQuestion as QuestionWithResponses & { qrDataUrl: string }).qrDataUrl,
+                          activeQuestion.accessCode
+                        )
+                        setCopiedQrId(activeQuestion.id)
+                        setTimeout(() => setCopiedQrId(null), 2000)
+                      }}
+                      className="border border-primary-200 rounded-lg p-1.5 hover:bg-primary-100 transition-colors"
+                      title="Copy QR + code as image"
+                    >
+                      {copiedQrId === activeQuestion.id
+                        ? <Check size={16} className="text-green-600" />
+                        : <Copy size={16} className="text-primary-500" />
+                      }
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -351,6 +424,57 @@ export default function SessionPage() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Add question modal */}
+      {showAddQuestion && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-base font-semibold">Add question</h2>
+              <button onClick={() => setShowAddQuestion(false)}><X size={18} className="text-gray-400" /></button>
+            </div>
+            <div className="space-y-4">
+              <input
+                autoFocus
+                value={aqText}
+                onChange={(e) => setAqText(e.target.value)}
+                placeholder="Question text…"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+              <select
+                value={aqType}
+                onChange={(e) => setAqType(e.target.value as typeof aqType)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+              >
+                <option value="FREE_TEXT">Free text</option>
+                <option value="MULTIPLE_CHOICE">Multiple choice</option>
+                <option value="RATING">Rating (1–5)</option>
+                <option value="YES_NO">Yes / No</option>
+              </select>
+              {aqType === 'MULTIPLE_CHOICE' && (
+                <textarea
+                  rows={3}
+                  value={aqOptions}
+                  onChange={(e) => setAqOptions(e.target.value)}
+                  placeholder={"Option A\nOption B\nOption C"}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+                />
+              )}
+              {aqError && <p className="text-red-500 text-xs">{aqError}</p>}
+              <div className="flex justify-end gap-3 pt-1">
+                <button onClick={() => setShowAddQuestion(false)} className="px-4 py-2 text-sm text-gray-600">Cancel</button>
+                <button
+                  onClick={() => addQuestionMutation.mutate()}
+                  disabled={!aqText.trim() || addQuestionMutation.isPending}
+                  className="px-5 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
+                >
+                  {addQuestionMutation.isPending ? 'Adding…' : 'Add question'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
