@@ -1,0 +1,107 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Professor {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  classes      Class[]
+}
+
+model Student {
+  id           String       @id @default(cuid())
+  netId        String       @unique
+  email        String       @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  enrollments  Enrollment[]
+  responses    Response[]
+}
+
+model Class {
+  id          String       @id @default(cuid())
+  professorId String
+  professor   Professor    @relation(fields: [professorId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  joinCode    String       @unique
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  sessions    Session[]
+  enrollments Enrollment[]
+}
+
+model Enrollment {
+  studentId  String
+  classId    String
+  student    Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  class      Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  enrolledAt DateTime @default(now())
+
+  @@id([studentId, classId])
+}
+
+model Session {
+  id         String        @id @default(cuid())
+  classId    String
+  class      Class         @relation(fields: [classId], references: [id], onDelete: Cascade)
+  title      String
+  accessCode String        @unique
+  status     SessionStatus @default(OPEN)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  closedAt   DateTime?
+  questions  Question[]
+}
+
+enum SessionStatus {
+  OPEN
+  CLOSED
+  ARCHIVED
+}
+
+model Question {
+  id        String       @id @default(cuid())
+  sessionId String
+  session   Session      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  text      String
+  type      QuestionType @default(FREE_TEXT)
+  options   Json?
+  order     Int
+  responses Response[]
+
+  @@index([sessionId])
+}
+
+enum QuestionType {
+  FREE_TEXT
+  MULTIPLE_CHOICE
+  RATING
+  YES_NO
+}
+
+model Response {
+  id           String   @id @default(cuid())
+  questionId   String
+  studentId    String
+  question     Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  responseText String
+  wordCount    Int
+  isFlagged    Boolean  @default(false)
+  submittedAt  DateTime @default(now())
+
+  @@unique([questionId, studentId])
+  @@index([questionId])
+}

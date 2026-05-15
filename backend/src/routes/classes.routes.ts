@@ -1,0 +1,136 @@
+import { Router, Request, Response, NextFunction } from 'express'
+import { z } from 'zod'
+import { customAlphabet } from 'nanoid'
+import { prisma } from '../db/index.js'
+import { AppError } from '../middleware/error.middleware.js'
+import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
+
+const nanoid = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 6)
+
+const router = Router()
+
+// Express v5 types params as string | string[] — helper to normalize
+const p = (v: string | string[]): string => (Array.isArray(v) ? v[0] : v)
+router.use(requireProfessor)
+
+const createClassSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().optional(),
+})
+
+router.post('/', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = createClassSchema.parse(req.body)
+    const professor = (req as ProfessorRequest).professor
+
+    let joinCode: string
+    let attempts = 0
+    do {
+      joinCode = nanoid()
+      attempts++
+      if (attempts > 10) throw new AppError('Failed to generate unique join code', 500)
+    } while (await prisma.class.findUnique({ where: { joinCode } }))
+
+    const cls = await prisma.class.create({
+      data: {
+        name: body.name,
+        description: body.description ?? null,
+        joinCode,
+        professorId: professor.id,
+      },
+      include: { _count: { select: { sessions: true, enrollments: true } } },
+    })
+
+    res.status(201).json({ success: true, data: { class: cls } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.get('/', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+    const classes = await prisma.class.findMany({
+      where: { professorId: professor.id },
+      orderBy: { createdAt: 'desc' },
+      include: { _count: { select: { sessions: true, enrollments: true } } },
+    })
+    res.json({ success: true, data: { classes } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+    const cls = await prisma.class.findFirst({
+      where: { id: p(req.params.id), professorId: professor.id },
+      include: {
+        _count: { select: { sessions: true, enrollments: true } },
+        sessions: {
+          orderBy: { createdAt: 'desc' },
+          include: { _count: { select: { questions: true } }, questions: { orderBy: { order: 'asc' } } },
+        },
+      },
+    })
+    if (!cls) throw new AppError('Class not found', 404)
+    res.json({ success: true, data: { class: cls } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+    const body = createClassSchema.partial().parse(req.body)
+    const existing = await prisma.class.findFirst({
+      where: { id: p(req.params.id), professorId: professor.id },
+    })
+    if (!existing) throw new AppError('Class not found', 404)
+
+    const updated = await prisma.class.update({
+      where: { id: p(req.params.id) },
+      data: body,
+    })
+    res.json({ success: true, data: { class: updated } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+    const existing = await prisma.class.findFirst({
+      where: { id: p(req.params.id), professorId: professor.id },
+    })
+    if (!existing) throw new AppError('Class not found', 404)
+    await prisma.class.delete({ where: { id: p(req.params.id) } })
+    res.json({ success: true, data: null })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.get('/:id/enrollments', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+    const cls = await prisma.class.findFirst({
+      where: { id: p(req.params.id), professorId: professor.id },
+    })
+    if (!cls) throw new AppError('Class not found', 404)
+
+    const enrollments = await prisma.enrollment.findMany({
+      where: { classId: p(req.params.id) },
+      include: { student: { select: { id: true, netId: true, name: true, email: true } } },
+      orderBy: { enrolledAt: 'desc' },
+    })
+    res.json({ success: true, data: { enrollments } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+export default router

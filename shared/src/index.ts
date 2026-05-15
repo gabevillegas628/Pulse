@@ -1,0 +1,181 @@
+// Enums
+
+export enum SessionStatus {
+  OPEN = 'OPEN',
+  CLOSED = 'CLOSED',
+  ARCHIVED = 'ARCHIVED',
+}
+
+export enum QuestionType {
+  FREE_TEXT = 'FREE_TEXT',
+  MULTIPLE_CHOICE = 'MULTIPLE_CHOICE',
+  RATING = 'RATING',
+  YES_NO = 'YES_NO',
+}
+
+// Entities
+
+export interface Professor {
+  id: string
+  email: string
+  name: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Student {
+  id: string
+  netId: string
+  email: string
+  name: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Class {
+  id: string
+  professorId: string
+  name: string
+  description: string | null
+  joinCode: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Enrollment {
+  studentId: string
+  classId: string
+  enrolledAt: string
+}
+
+export interface Question {
+  id: string
+  sessionId: string
+  text: string
+  type: QuestionType
+  options: string[] | null
+  order: number
+}
+
+export interface Session {
+  id: string
+  classId: string
+  title: string
+  accessCode: string
+  status: SessionStatus
+  createdAt: string
+  updatedAt: string
+  closedAt: string | null
+  questions?: Question[]
+}
+
+export interface Response {
+  id: string
+  questionId: string
+  studentId: string
+  responseText: string
+  wordCount: number
+  isFlagged: boolean
+  submittedAt: string
+}
+
+// API request / response types
+
+export interface ApiResponse<T> {
+  success: boolean
+  data?: T
+  error?: string
+}
+
+// Auth
+
+export interface ProfessorLoginRequest {
+  email: string
+  password: string
+}
+
+export interface ProfessorRegisterRequest {
+  name: string
+  email: string
+  password: string
+}
+
+export interface ProfessorLoginResponse {
+  token: string
+  professor: Professor
+}
+
+export interface StudentLoginRequest {
+  credential: string  // netId or email
+  password: string
+}
+
+export interface StudentRegisterRequest {
+  name: string
+  netId: string
+  email: string
+  password: string
+}
+
+export interface StudentLoginResponse {
+  token: string
+  student: Student
+}
+
+// Classes
+
+export interface CreateClassRequest {
+  name: string
+  description?: string
+}
+
+// Sessions
+
+export interface CreateQuestionInput {
+  text: string
+  type: QuestionType
+  options?: string[]
+  order: number
+}
+
+export interface CreateSessionRequest {
+  title: string
+  questions: CreateQuestionInput[]
+}
+
+// Responses
+
+export interface SubmitResponseItem {
+  questionId: string
+  responseText: string
+}
+
+export interface SubmitResponseRequest {
+  sessionId: string
+  responses: SubmitResponseItem[]
+}
+
+// Dashboard types (enriched)
+
+export interface SessionWithCounts extends Session {
+  _count: { responses: number }
+  questions: Question[]
+}
+
+export interface ClassWithCounts extends Class {
+  _count: { sessions: number; enrollments: number }
+}
+
+export interface ResponseWithStudent extends Response {
+  student: Pick<Student, 'id' | 'netId' | 'name'>
+}
+
+export interface QuestionWithResponses extends Question {
+  responses: ResponseWithStudent[]
+}
+
+export interface SessionDetail extends Session {
+  questions: QuestionWithResponses[]
+  class: Pick<Class, 'id' | 'name'>
+  qrDataUrl: string
+}

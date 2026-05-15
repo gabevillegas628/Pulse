@@ -1,0 +1,23 @@
+{
+  "name": "pulse",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace=backend\" \"npm run dev --workspace=frontend\"",
+    "build": "npm run build --workspace=shared && npm run build --workspace=backend && npm run build --workspace=frontend",
+    "start": "npm run start --workspace=backend",
+    "db:generate": "npm run db:generate --workspace=backend",
+    "db:migrate": "npm run db:migrate --workspace=backend",
+    "db:migrate:deploy": "npm run db:migrate:deploy --workspace=backend",
+    "db:push": "npm run db:push --workspace=backend",
+    "db:studio": "npm run db:studio --workspace=backend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
