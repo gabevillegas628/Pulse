@@ -1,6 +1,16 @@
-import { ReactNode } from 'react'
+import { ReactNode, useEffect } from 'react'
 
 export default function StudentLayout({ children }: { children: ReactNode }) {
+  useEffect(() => {
+    const block = (e: Event) => e.preventDefault()
+    document.addEventListener('paste', block)
+    document.addEventListener('contextmenu', block)
+    return () => {
+      document.removeEventListener('paste', block)
+      document.removeEventListener('contextmenu', block)
+    }
+  }, [])
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <main className="flex-1 flex flex-col items-center justify-start px-4 pt-8 pb-16">

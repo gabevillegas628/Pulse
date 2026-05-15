@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
-import { Plus, Trash2, X, ChevronLeft } from 'lucide-react'
+import { Plus, Trash2, X, ChevronLeft, KeyRound } from 'lucide-react'
 import type { QuestionType } from 'shared'
 
 const questionSchema = z.object({
@@ -28,15 +28,33 @@ const TYPE_LABELS: Record<QuestionType, string> = {
   YES_NO: 'Yes / No',
 }
 
+interface Student {
+  id: string
+  netId: string
+  name: string
+  email: string
+}
+
 export default function ClassPage() {
   const { classId } = useParams<{ classId: string }>()
   const qc = useQueryClient()
+  const [tab, setTab] = useState<'sessions' | 'roster'>('sessions')
   const [showModal, setShowModal] = useState(false)
   const [createError, setCreateError] = useState('')
+  const [resetTarget, setResetTarget] = useState<Student | null>(null)
+  const [newPassword, setNewPassword] = useState('')
+  const [resetError, setResetError] = useState('')
+  const [resetSuccess, setResetSuccess] = useState(false)
 
   const { data, isLoading } = useQuery({
     queryKey: ['class', classId],
     queryFn: () => api.get(`/classes/${classId}`).then((r) => r.data.data.class),
+  })
+
+  const { data: rosterData } = useQuery({
+    queryKey: ['roster', classId],
+    queryFn: () => api.get(`/classes/${classId}/enrollments`).then((r) => r.data.data.enrollments),
+    enabled: tab === 'roster',
   })
 
   const { register, control, handleSubmit, reset, watch, setValue, formState: { errors, isSubmitting } } = useForm<SessionFormData>({
@@ -63,6 +81,30 @@ export default function ClassPage() {
     },
   })
 
+  const resetMutation = useMutation({
+    mutationFn: ({ studentId, newPassword }: { studentId: string; newPassword: string }) =>
+      api.post(`/classes/${classId}/students/${studentId}/reset-password`, { newPassword }),
+    onSuccess: () => setResetSuccess(true),
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
+      setResetError(msg ?? 'Reset failed — try again')
+    },
+  })
+
+  function openReset(student: Student) {
+    setResetTarget(student)
+    setNewPassword('')
+    setResetError('')
+    setResetSuccess(false)
+  }
+
+  function closeReset() {
+    setResetTarget(null)
+    setNewPassword('')
+    setResetError('')
+    setResetSuccess(false)
+  }
+
   const watchedQuestions = watch('questions')
 
   if (isLoading) return <ProfessorLayout><p className="text-gray-400">Loading…</p></ProfessorLayout>
@@ -82,44 +124,108 @@ export default function ClassPage() {
               <span className="font-mono text-sm bg-gray-100 px-2 py-0.5 rounded font-medium tracking-wider">{data?.joinCode}</span>
             </div>
           </div>
-          <button
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors"
-          >
-            <Plus size={16} /> New session
-          </button>
+          {tab === 'sessions' && (
+            <button
+              onClick={() => setShowModal(true)}
+              className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors"
+            >
+              <Plus size={16} /> New session
+            </button>
+          )}
         </div>
       </div>
 
-      {data?.sessions?.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">
-          <p className="text-sm">No sessions yet — create one to start collecting responses</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {data?.sessions?.map((s: { id: string; title: string; status: string; questions: Array<{ id: string }>; createdAt: string }) => (
-            <Link
-              key={s.id}
-              to={`/professor/sessions/${s.id}`}
-              className="flex items-center justify-between bg-white border border-gray-200 rounded-xl p-5 hover:shadow-sm transition-shadow"
-            >
-              <div>
-                <p className="font-medium text-gray-900">{s.title}</p>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  {s.questions?.length ?? 0} question{(s.questions?.length ?? 0) !== 1 ? 's' : ''} ·{' '}
-                  {new Date(s.createdAt).toLocaleDateString()}
-                </p>
-              </div>
-              <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${
-                s.status === 'OPEN' ? 'bg-green-100 text-green-700' :
-                s.status === 'CLOSED' ? 'bg-gray-100 text-gray-500' :
-                'bg-gray-50 text-gray-400'
-              }`}>
-                {s.status.charAt(0) + s.status.slice(1).toLowerCase()}
-              </span>
-            </Link>
-          ))}
-        </div>
+      {/* Tabs */}
+      <div className="flex gap-1 mb-6 border-b border-gray-200">
+        {(['sessions', 'roster'] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors capitalize ${
+              tab === t
+                ? 'border-primary-600 text-primary-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {/* Sessions tab */}
+      {tab === 'sessions' && (
+        data?.sessions?.length === 0 ? (
+          <div className="text-center py-16 text-gray-400">
+            <p className="text-sm">No sessions yet — create one to start collecting responses</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {data?.sessions?.map((s: { id: string; title: string; status: string; questions: Array<{ id: string }>; createdAt: string }) => (
+              <Link
+                key={s.id}
+                to={`/professor/sessions/${s.id}`}
+                className="flex items-center justify-between bg-white border border-gray-200 rounded-xl p-5 hover:shadow-sm transition-shadow"
+              >
+                <div>
+                  <p className="font-medium text-gray-900">{s.title}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {s.questions?.length ?? 0} question{(s.questions?.length ?? 0) !== 1 ? 's' : ''} ·{' '}
+                    {new Date(s.createdAt).toLocaleDateString()}
+                  </p>
+                </div>
+                <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${
+                  s.status === 'DRAFT' ? 'bg-yellow-50 text-yellow-600' :
+                  s.status === 'OPEN' ? 'bg-green-100 text-green-700' :
+                  s.status === 'CLOSED' ? 'bg-gray-100 text-gray-500' :
+                  'bg-gray-50 text-gray-400'
+                }`}>
+                  {s.status.charAt(0) + s.status.slice(1).toLowerCase()}
+                </span>
+              </Link>
+            ))}
+          </div>
+        )
+      )}
+
+      {/* Roster tab */}
+      {tab === 'roster' && (
+        !rosterData ? (
+          <p className="text-gray-400 text-center py-8">Loading…</p>
+        ) : rosterData.length === 0 ? (
+          <div className="text-center py-16 text-gray-400">
+            <p className="text-sm">No students enrolled yet</p>
+          </div>
+        ) : (
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 text-left">
+                  <th className="px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Name</th>
+                  <th className="px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">NetID</th>
+                  <th className="px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Email</th>
+                  <th className="px-5 py-3"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {rosterData.map((e: { student: Student }) => (
+                  <tr key={e.student.id} className="hover:bg-gray-50">
+                    <td className="px-5 py-3.5 font-medium text-gray-900">{e.student.name}</td>
+                    <td className="px-5 py-3.5 font-mono text-gray-600">{e.student.netId}</td>
+                    <td className="px-5 py-3.5 text-gray-500">{e.student.email}</td>
+                    <td className="px-5 py-3.5 text-right">
+                      <button
+                        onClick={() => openReset(e.student)}
+                        className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-primary-600 ml-auto"
+                      >
+                        <KeyRound size={13} /> Reset password
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
       )}
 
       {/* Create session modal */}
@@ -185,7 +291,6 @@ export default function ClassPage() {
                         ))}
                       </select>
 
-                      {/* MCQ options */}
                       {watchedQuestions[idx]?.type === 'MULTIPLE_CHOICE' && (
                         <div className="space-y-2">
                           <p className="text-xs text-gray-500">Options (one per line)</p>
@@ -220,6 +325,51 @@ export default function ClassPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Reset password modal */}
+      {resetTarget && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold">Reset password</h2>
+              <button onClick={closeReset}><X size={18} className="text-gray-400" /></button>
+            </div>
+
+            {resetSuccess ? (
+              <div className="text-center py-4">
+                <p className="text-green-600 font-medium mb-1">Password updated</p>
+                <p className="text-sm text-gray-500 mb-5">{resetTarget.name}'s password has been reset.</p>
+                <button onClick={closeReset} className="text-sm text-primary-600 hover:underline">Close</button>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm text-gray-500 mb-4">
+                  Setting a new password for <span className="font-medium text-gray-800">{resetTarget.name}</span> ({resetTarget.netId})
+                </p>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="New password (min 8 chars)"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 mb-3"
+                  autoFocus
+                />
+                {resetError && <p className="text-red-500 text-xs mb-3">{resetError}</p>}
+                <div className="flex justify-end gap-3">
+                  <button onClick={closeReset} className="px-4 py-2 text-sm text-gray-600">Cancel</button>
+                  <button
+                    onClick={() => resetMutation.mutate({ studentId: resetTarget.id, newPassword })}
+                    disabled={newPassword.length < 8 || resetMutation.isPending}
+                    className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
+                  >
+                    {resetMutation.isPending ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

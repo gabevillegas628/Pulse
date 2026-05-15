@@ -18,10 +18,8 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
-    "shared": "*",
+    "@anthropic-ai/sdk": "^0.96.0",
     "@prisma/client": "^6.3.1",
-    "prisma": "^6.3.1",
-    "typescript": "^5.7.2",
     "bcryptjs": "^2.4.3",
     "compression": "^1.7.5",
     "cors": "^2.8.5",
@@ -29,8 +27,11 @@
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "nanoid": "^3.3.8",
+    "prisma": "^6.3.1",
     "qrcode": "^1.5.4",
+    "shared": "*",
     "socket.io": "^4.8.1",
+    "typescript": "^5.7.2",
     "winston": "^3.17.0",
     "zod": "^3.24.1"
   },

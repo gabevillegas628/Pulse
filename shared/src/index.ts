@@ -1,6 +1,7 @@
 // Enums
 
 export enum SessionStatus {
+  DRAFT = 'DRAFT',
   OPEN = 'OPEN',
   CLOSED = 'CLOSED',
   ARCHIVED = 'ARCHIVED',
@@ -55,6 +56,7 @@ export interface Question {
   type: QuestionType
   options: string[] | null
   order: number
+  accessCode: string
 }
 
 export interface Session {
@@ -145,14 +147,27 @@ export interface CreateSessionRequest {
 
 // Responses
 
-export interface SubmitResponseItem {
+export interface SubmitResponseRequest {
   questionId: string
   responseText: string
 }
 
-export interface SubmitResponseRequest {
+// Student question view (enriched)
+export interface StudentQuestion {
+  id: string
   sessionId: string
-  responses: SubmitResponseItem[]
+  text: string
+  type: QuestionType
+  options: string[] | null
+  order: number
+  accessCode: string
+  session: {
+    id: string
+    title: string
+    status: SessionStatus
+    class: { name: string }
+  }
+  alreadyAnswered: boolean
 }
 
 // Dashboard types (enriched)

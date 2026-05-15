@@ -3,20 +3,39 @@ import { Link, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
-import { ChevronLeft, Download, Maximize2, Flag } from 'lucide-react'
+import { ChevronLeft, Download, Flag, Sparkles } from 'lucide-react'
 import { io } from 'socket.io-client'
 import type { SessionDetail, QuestionWithResponses, ResponseWithStudent } from 'shared'
 import { SessionStatus } from 'shared'
+import ResultsSummary from '@/components/ResultsSummary'
+
+interface SummaryCategory {
+  label: string
+  description: string
+  count: number
+}
 
 export default function SessionPage() {
   const { sessionId } = useParams<{ sessionId: string }>()
   const qc = useQueryClient()
   const [activeTab, setActiveTab] = useState(0)
-  const [showQr, setShowQr] = useState(false)
+  const [expandedQr, setExpandedQr] = useState<string | null>(null)
+
+  const [summary, setSummary] = useState<SummaryCategory[] | null>(null)
+  const [summaryQuestionId, setSummaryQuestionId] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery<SessionDetail>({
     queryKey: ['session', sessionId],
     queryFn: () => api.get(`/sessions/${sessionId}`).then((r) => r.data.data.session),
+  })
+
+  const summarizeMutation = useMutation({
+    mutationFn: (questionId: string) =>
+      api.post(`/sessions/${sessionId}/questions/${questionId}/summarize`).then((r) => r.data.data.categories),
+    onSuccess: (categories: SummaryCategory[], questionId: string) => {
+      setSummary(categories)
+      setSummaryQuestionId(questionId)
+    },
   })
 
   const statusMutation = useMutation({
@@ -24,25 +43,24 @@ export default function SessionPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['session', sessionId] }),
   })
 
-  // Live updates via Socket.io
   useEffect(() => {
     if (!sessionId) return
     const socket = io({ path: '/socket.io' })
     socket.emit('join_session', sessionId)
 
-    socket.on('new_response', (payload: { student: ResponseWithStudent['student']; responses: ResponseWithStudent[]; sessionId: string }) => {
+    socket.on('new_response', (payload: { student: ResponseWithStudent['student']; response: ResponseWithStudent; questionId: string; sessionId: string }) => {
       qc.setQueryData<SessionDetail>(['session', sessionId], (prev) => {
         if (!prev) return prev
-        const updated = { ...prev }
-        updated.questions = prev.questions.map((q) => {
-          const newResp = payload.responses.find((r) => r.questionId === q.id)
-          if (!newResp) return q
-          return {
-            ...q,
-            responses: [{ ...newResp, student: payload.student }, ...q.responses],
-          }
-        })
-        return updated
+        return {
+          ...prev,
+          questions: prev.questions.map((q) => {
+            if (q.id !== payload.questionId) return q
+            return {
+              ...q,
+              responses: [{ ...payload.response, student: payload.student }, ...q.responses],
+            }
+          }),
+        }
       })
     })
 
@@ -57,7 +75,7 @@ export default function SessionPage() {
 
   if (isLoading || !data) return <ProfessorLayout><p className="text-gray-400">Loading…</p></ProfessorLayout>
 
-  const totalResponses = data.questions[0]?.responses.length ?? 0
+  const totalResponses = data.questions.reduce((sum, q) => sum + q.responses.length, 0)
   const activeQuestion = data.questions[activeTab] as QuestionWithResponses | undefined
 
   return (
@@ -73,19 +91,21 @@ export default function SessionPage() {
             <p className="text-sm text-gray-500 mt-1">{totalResponses} response{totalResponses !== 1 ? 's' : ''}</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => setShowQr(true)}
-              className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2 rounded-lg text-sm hover:bg-gray-50"
-            >
-              <Maximize2 size={14} /> QR
-            </button>
             <a
               href={`/api/sessions/${sessionId}/export`}
               className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2 rounded-lg text-sm hover:bg-gray-50"
             >
               <Download size={14} /> Export CSV
             </a>
-            {data.status === SessionStatus.OPEN ? (
+            {data.status === SessionStatus.DRAFT ? (
+              <button
+                onClick={() => statusMutation.mutate(SessionStatus.OPEN)}
+                disabled={statusMutation.isPending}
+                className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
+              >
+                Open session
+              </button>
+            ) : data.status === SessionStatus.OPEN ? (
               <button
                 onClick={() => statusMutation.mutate(SessionStatus.CLOSED)}
                 disabled={statusMutation.isPending}
@@ -138,10 +158,92 @@ export default function SessionPage() {
 
       {activeQuestion && (
         <div>
+          {/* Question header with code + QR */}
           <div className="bg-primary-50 border border-primary-100 rounded-xl p-4 mb-5">
-            <p className="text-xs text-primary-500 font-medium mb-1 uppercase tracking-wide">Question</p>
-            <p className="text-gray-800 font-medium">{activeQuestion.text}</p>
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1">
+                <p className="text-xs text-primary-500 font-medium mb-1 uppercase tracking-wide">Question</p>
+                <p className="text-gray-800 font-medium">{activeQuestion.text}</p>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                {/* Access code */}
+                <div className="text-center">
+                  <p className="text-xs text-primary-400 mb-0.5">Code</p>
+                  <p className="font-mono text-2xl font-bold text-primary-700 tracking-widest">{activeQuestion.accessCode}</p>
+                </div>
+                {/* QR toggle */}
+                {'qrDataUrl' in activeQuestion && (activeQuestion as QuestionWithResponses & { qrDataUrl: string }).qrDataUrl && (
+                  <button
+                    onClick={() => setExpandedQr(expandedQr === activeQuestion.id ? null : activeQuestion.id)}
+                    className="border border-primary-200 rounded-lg p-1.5 hover:bg-primary-100 transition-colors"
+                    title="Show QR code"
+                  >
+                    <img
+                      src={(activeQuestion as QuestionWithResponses & { qrDataUrl: string }).qrDataUrl}
+                      alt="QR"
+                      className="w-10 h-10"
+                    />
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
+
+          {/* Responses */}
+          <ResultsSummary question={activeQuestion} />
+
+          {/* AI summary for free text */}
+          {activeQuestion.type === 'FREE_TEXT' && activeQuestion.responses.length > 0 && (
+            <div className="mb-5">
+              {summaryQuestionId !== activeQuestion.id || !summary ? (
+                <button
+                  onClick={() => {
+                    setSummary(null)
+                    setSummaryQuestionId(null)
+                    summarizeMutation.mutate(activeQuestion.id)
+                  }}
+                  disabled={summarizeMutation.isPending}
+                  className="flex items-center gap-1.5 text-sm text-primary-600 border border-primary-200 px-3 py-2 rounded-lg hover:bg-primary-50 disabled:opacity-50"
+                >
+                  <Sparkles size={14} />
+                  {summarizeMutation.isPending ? 'Summarizing…' : 'Summarize responses'}
+                </button>
+              ) : (
+                <div className="bg-white border border-gray-200 rounded-xl p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <p className="text-sm font-semibold text-gray-700 flex items-center gap-1.5">
+                      <Sparkles size={14} className="text-primary-500" /> AI Theme Summary
+                    </p>
+                    <button
+                      onClick={() => { setSummary(null); setSummaryQuestionId(null) }}
+                      className="text-xs text-gray-400 hover:text-gray-600"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                  <div className="space-y-3">
+                    {summary.map((cat) => (
+                      <div key={cat.label} className="flex items-start gap-3">
+                        <span className="shrink-0 bg-primary-100 text-primary-700 text-xs font-semibold px-2 py-0.5 rounded-full mt-0.5">
+                          {cat.count}
+                        </span>
+                        <div>
+                          <p className="text-sm font-medium text-gray-800">{cat.label}</p>
+                          <p className="text-xs text-gray-500">{cat.description}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {summarizeMutation.isError && (
+                    <p className="text-xs text-red-500 mt-3">Failed to summarize — try again.</p>
+                  )}
+                </div>
+              )}
+              {summarizeMutation.isError && !summary && (
+                <p className="text-xs text-red-500 mt-2">Failed to summarize — try again.</p>
+              )}
+            </div>
+          )}
 
           {activeQuestion.responses.length === 0 ? (
             <p className="text-gray-400 text-center py-12 text-sm">No responses yet</p>
@@ -180,15 +282,19 @@ export default function SessionPage() {
       )}
 
       {/* QR fullscreen overlay */}
-      {showQr && (
+      {expandedQr && activeQuestion && 'qrDataUrl' in activeQuestion && (
         <div
           className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 cursor-pointer"
-          onClick={() => setShowQr(false)}
+          onClick={() => setExpandedQr(null)}
         >
           <div className="bg-white rounded-2xl p-8 text-center">
-            <img src={data.qrDataUrl} alt="QR Code" className="w-64 h-64" />
-            <p className="text-gray-500 text-sm mt-3">Scan to submit</p>
-            <p className="font-mono text-2xl font-bold text-gray-900 tracking-widest mt-1">{data.accessCode}</p>
+            <img
+              src={(activeQuestion as QuestionWithResponses & { qrDataUrl: string }).qrDataUrl}
+              alt="QR Code"
+              className="w-64 h-64"
+            />
+            <p className="text-gray-500 text-sm mt-3">Scan to answer this question</p>
+            <p className="font-mono text-3xl font-bold text-gray-900 tracking-widest mt-1">{activeQuestion.accessCode}</p>
             <p className="text-xs text-gray-400 mt-4">Click anywhere to close</p>
           </div>
         </div>

@@ -12,7 +12,7 @@ import SessionPage from '@/pages/professor/SessionPage'
 
 // Student pages
 import CodeEntryPage from '@/pages/student/CodeEntryPage'
-import SubmitPage from '@/pages/student/SubmitPage'
+import QuestionPage from '@/pages/student/QuestionPage'
 import ConfirmationPage from '@/pages/student/ConfirmationPage'
 import MyClassesPage from '@/pages/student/MyClassesPage'
 
@@ -51,10 +51,10 @@ export default function App() {
       <Route path="/professor/sessions/:sessionId" element={<ProfessorProtected><SessionPage /></ProfessorProtected>} />
 
       {/* Student routes */}
-      <Route path="/student/code" element={<CodeEntryPage />} />
+      <Route path="/student/enter-code" element={<CodeEntryPage />} />
       <Route path="/student" element={<StudentProtected><MyClassesPage /></StudentProtected>} />
-      <Route path="/s/:sessionId" element={<SubmitPage />} />
-      <Route path="/s/:sessionId/confirmation" element={<ConfirmationPage />} />
+      <Route path="/q/:questionId" element={<QuestionPage />} />
+      <Route path="/q/:questionId/confirmation" element={<ConfirmationPage />} />
     </Routes>
   )
 }

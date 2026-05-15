@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
+import bcrypt from 'bcryptjs'
 import { customAlphabet } from 'nanoid'
 import { prisma } from '../db/index.js'
 import { AppError } from '../middleware/error.middleware.js'
@@ -128,6 +129,33 @@ router.get('/:id/enrollments', async (req: Request, res: Response, next: NextFun
       orderBy: { enrolledAt: 'desc' },
     })
     res.json({ success: true, data: { enrollments } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.post('/:id/students/:studentId/reset-password', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+    const { newPassword } = z.object({ newPassword: z.string().min(8) }).parse(req.body)
+
+    const cls = await prisma.class.findFirst({
+      where: { id: p(req.params.id), professorId: professor.id },
+    })
+    if (!cls) throw new AppError('Class not found', 404)
+
+    const enrollment = await prisma.enrollment.findUnique({
+      where: { studentId_classId: { studentId: p(req.params.studentId), classId: cls.id } },
+    })
+    if (!enrollment) throw new AppError('Student not in this class', 404)
+
+    const passwordHash = await bcrypt.hash(newPassword, 12)
+    await prisma.student.update({
+      where: { id: p(req.params.studentId) },
+      data: { passwordHash },
+    })
+
+    res.json({ success: true, data: null })
   } catch (err) {
     next(err)
   }
