@@ -19,7 +19,7 @@ const submitSchema = z.object({
 })
 
 // Submit responses (student, JWT required)
-router.post('/', requireStudent, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/responses', requireStudent, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = submitSchema.parse(req.body)
     const student = (req as StudentRequest).student
