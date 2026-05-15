@@ -32,7 +32,7 @@ export default function SubmitPage() {
   // Redirect to login if not authenticated
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
-      navigate(`/student/login?next=${location.pathname}`, { replace: true })
+      navigate(`/login?next=${location.pathname}`, { replace: true })
     }
   }, [authLoading, isAuthenticated, navigate, location.pathname])
 
