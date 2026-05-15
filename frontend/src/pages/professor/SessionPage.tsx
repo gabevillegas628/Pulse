@@ -1,13 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
-import { ChevronLeft, Download, Flag, Sparkles } from 'lucide-react'
+import { ChevronLeft, Download, Flag, PictureInPicture2, Sparkles } from 'lucide-react'
 import { io } from 'socket.io-client'
 import type { SessionDetail, QuestionWithResponses, ResponseWithStudent } from 'shared'
 import { SessionStatus } from 'shared'
 import ResultsSummary from '@/components/ResultsSummary'
+import PipDisplay from '@/components/PipDisplay'
+
+type PipWindow = Window & { documentPictureInPicture?: { requestWindow: (opts: { width: number; height: number }) => Promise<Window> } }
 
 interface SummaryCategory {
   label: string
@@ -23,6 +27,11 @@ export default function SessionPage() {
 
   const [summary, setSummary] = useState<SummaryCategory[] | null>(null)
   const [summaryQuestionId, setSummaryQuestionId] = useState<string | null>(null)
+
+  const [pipActiveTab, setPipActiveTab] = useState<number | null>(null)
+  const [pipContainer, setPipContainer] = useState<HTMLElement | null>(null)
+  const seenQuestionIdsRef = useRef<Set<string>>(new Set())
+  const pipInitializedRef = useRef(false)
 
   const { data, isLoading } = useQuery<SessionDetail>({
     queryKey: ['session', sessionId],
@@ -43,12 +52,34 @@ export default function SessionPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['session', sessionId] }),
   })
 
+  // Seed seen questions from existing responses when data first loads (e.g. page refresh mid-session)
+  useEffect(() => {
+    if (!data || pipInitializedRef.current) return
+    pipInitializedRef.current = true
+    let lastIdx = -1
+    data.questions.forEach((q, i) => {
+      if (q.responses.length > 0) {
+        seenQuestionIdsRef.current.add(q.id)
+        lastIdx = i
+      }
+    })
+    if (lastIdx !== -1) setPipActiveTab(lastIdx)
+  }, [data])
+
   useEffect(() => {
     if (!sessionId) return
     const socket = io({ path: '/socket.io' })
     socket.emit('join_session', sessionId)
 
     socket.on('new_response', (payload: { student: ResponseWithStudent['student']; response: ResponseWithStudent; questionId: string; sessionId: string }) => {
+      // Auto-advance PiP on first response for each new question; never go back
+      if (!seenQuestionIdsRef.current.has(payload.questionId)) {
+        seenQuestionIdsRef.current.add(payload.questionId)
+        const current = qc.getQueryData<SessionDetail>(['session', sessionId])
+        const idx = current?.questions.findIndex((q) => q.id === payload.questionId) ?? -1
+        if (idx !== -1) setPipActiveTab(idx)
+      }
+
       qc.setQueryData<SessionDetail>(['session', sessionId], (prev) => {
         if (!prev) return prev
         return {
@@ -73,6 +104,40 @@ export default function SessionPage() {
     return () => { socket.disconnect() }
   }, [sessionId, qc])
 
+  async function openPip() {
+    const pipApi = (window as PipWindow).documentPictureInPicture
+    if (!pipApi) {
+      alert('Picture-in-Picture requires Chrome or Edge. Firefox is not supported yet.')
+      return
+    }
+    try {
+      const pip = await pipApi.requestWindow({ width: 420, height: 520 })
+      // Copy all stylesheets into the PiP window so Tailwind classes render correctly
+      ;[...document.styleSheets].forEach((sheet) => {
+        try {
+          const rules = [...sheet.cssRules].map((r) => r.cssText).join('')
+          const style = pip.document.createElement('style')
+          style.textContent = rules
+          pip.document.head.appendChild(style)
+        } catch {
+          if (sheet.href) {
+            const link = pip.document.createElement('link')
+            link.rel = 'stylesheet'
+            link.href = sheet.href
+            pip.document.head.appendChild(link)
+          }
+        }
+      })
+      pip.document.body.style.margin = '0'
+      const container = pip.document.createElement('div')
+      pip.document.body.appendChild(container)
+      setPipContainer(container)
+      pip.addEventListener('pagehide', () => setPipContainer(null))
+    } catch (err) {
+      console.error('PiP failed:', err)
+    }
+  }
+
   if (isLoading || !data) return <ProfessorLayout><p className="text-gray-400">Loading…</p></ProfessorLayout>
 
   const totalResponses = data.questions.reduce((sum, q) => sum + q.responses.length, 0)
@@ -91,6 +156,14 @@ export default function SessionPage() {
             <p className="text-sm text-gray-500 mt-1">{totalResponses} response{totalResponses !== 1 ? 's' : ''}</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={openPip}
+              disabled={!!pipContainer}
+              className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-40"
+              title={pipContainer ? 'Results window is open' : 'Pop out live results'}
+            >
+              <PictureInPicture2 size={14} /> {pipContainer ? 'Live' : 'Pop out'}
+            </button>
             <a
               href={`/api/sessions/${sessionId}/export`}
               className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2 rounded-lg text-sm hover:bg-gray-50"
@@ -280,6 +353,19 @@ export default function SessionPage() {
           )}
         </div>
       )}
+
+      {/* PiP portal — renders live results into the floating window */}
+      {pipContainer && data && pipActiveTab !== null &&
+        createPortal(
+          <PipDisplay
+            question={data.questions[pipActiveTab] as QuestionWithResponses}
+            questionNumber={pipActiveTab + 1}
+            totalQuestions={data.questions.length}
+            sessionTitle={data.title}
+          />,
+          pipContainer
+        )
+      }
 
       {/* QR fullscreen overlay */}
       {expandedQr && activeQuestion && 'qrDataUrl' in activeQuestion && (
