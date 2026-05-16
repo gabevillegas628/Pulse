@@ -83,6 +83,26 @@ router.get('/professor/me', requireProfessor, (req: Request, res: Response) => {
   res.json({ success: true, data: { professor: safe } })
 })
 
+router.patch('/professor/me/password', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { currentPassword, newPassword } = z.object({
+      currentPassword: z.string().min(1),
+      newPassword: z.string().min(8),
+    }).parse(req.body)
+
+    const professor = (req as ProfessorRequest).professor
+    const valid = await bcrypt.compare(currentPassword, professor.passwordHash)
+    if (!valid) throw new AppError('Current password is incorrect', 401)
+
+    const passwordHash = await bcrypt.hash(newPassword, 12)
+    await prisma.professor.update({ where: { id: professor.id }, data: { passwordHash } })
+
+    res.json({ success: true, data: null })
+  } catch (err) {
+    next(err)
+  }
+})
+
 // --- Student auth ---
 
 router.post('/student/register', async (req: Request, res: Response, next: NextFunction) => {
