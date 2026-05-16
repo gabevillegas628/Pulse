@@ -88,6 +88,12 @@ export default function SessionPage() {
     queryFn: () => api.get(`/sessions/${sessionId}`).then((r) => r.data.data.session),
   })
 
+  const { data: sectionsData } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ['sections', data?.class.id],
+    queryFn: () => api.get(`/classes/${data!.class.id}/sections`).then((r) => r.data.data.sections),
+    enabled: !!data?.class.id,
+  })
+
   const summarizeMutation = useMutation({
     mutationFn: (questionId: string) =>
       api.post(`/sessions/${sessionId}/questions/${questionId}/summarize`).then((r) => r.data.data.categories),
@@ -166,6 +172,12 @@ export default function SessionPage() {
 
   const statusMutation = useMutation({
     mutationFn: (status: SessionStatus) => api.patch(`/sessions/${sessionId}`, { status }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['session', sessionId] }),
+  })
+
+  const sectionMutation = useMutation({
+    mutationFn: (targetSectionId: string | null) =>
+      api.patch(`/sessions/${sessionId}`, { targetSectionId }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['session', sessionId] }),
   })
 
@@ -271,6 +283,20 @@ export default function SessionPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{data.title}</h1>
             <p className="text-sm text-gray-500 mt-1">{totalResponses} response{totalResponses !== 1 ? 's' : ''}</p>
+            {sectionsData && sectionsData.length > 0 && (data.status === SessionStatus.DRAFT || data.status === SessionStatus.CLOSED) && (
+              <div className="flex items-center gap-2 mt-2">
+                <span className="text-xs text-gray-400">Section:</span>
+                <select
+                  value={(data as unknown as { targetSection?: { id: string } }).targetSection?.id ?? ''}
+                  onChange={(e) => sectionMutation.mutate(e.target.value || null)}
+                  disabled={sectionMutation.isPending}
+                  className="text-xs border border-gray-200 rounded px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                >
+                  <option value="">All sections</option>
+                  {sectionsData.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button

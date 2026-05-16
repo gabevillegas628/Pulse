@@ -37,6 +37,7 @@ router.get('/student/questions/:id', requireStudent, async (req: Request, res: R
             title: true,
             status: true,
             classId: true,
+            targetSectionId: true,
             class: { select: { name: true } },
           },
         },
@@ -47,11 +48,16 @@ router.get('/student/questions/:id', requireStudent, async (req: Request, res: R
       throw new AppError('Question not found', 404)
     }
 
-    // Auto-enroll student in the class if not already enrolled
+    // Auto-enroll; set sectionId from session target if student has no section yet
+    const classId = question.session.classId
+    const sectionId = question.session.targetSectionId
+    const existingEnrollment = await prisma.enrollment.findUnique({
+      where: { studentId_classId: { studentId: student.id, classId } },
+    })
     await prisma.enrollment.upsert({
-      where: { studentId_classId: { studentId: student.id, classId: question.session.classId } },
-      create: { studentId: student.id, classId: question.session.classId },
-      update: {},
+      where: { studentId_classId: { studentId: student.id, classId } },
+      create: { studentId: student.id, classId, sectionId },
+      update: sectionId && !existingEnrollment?.sectionId ? { sectionId } : {},
     })
 
     const alreadyAnswered = !!(await prisma.response.findUnique({
@@ -115,11 +121,16 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
       },
     })
 
-    // Auto-enroll in the class if not already enrolled
+    // Auto-enroll; set sectionId from session target if student has no section yet
+    const classId = question.session.classId
+    const sectionId = question.session.targetSectionId
+    const existingEnrollment = await prisma.enrollment.findUnique({
+      where: { studentId_classId: { studentId: student.id, classId } },
+    })
     await prisma.enrollment.upsert({
-      where: { studentId_classId: { studentId: student.id, classId: question.session.classId } },
-      create: { studentId: student.id, classId: question.session.classId },
-      update: {},
+      where: { studentId_classId: { studentId: student.id, classId } },
+      create: { studentId: student.id, classId, sectionId },
+      update: sectionId && !existingEnrollment?.sectionId ? { sectionId } : {},
     })
 
     getIo().to(question.session.id).emit('new_response', {
@@ -210,6 +221,7 @@ router.get('/student/classes', requireStudent, async (req: Request, res: Respons
     const enrollments = await prisma.enrollment.findMany({
       where: { studentId: student.id },
       include: {
+        section: { select: { id: true, name: true } },
         class: {
           include: {
             professor: { select: { name: true } },
@@ -229,22 +241,36 @@ router.get('/student/classes', requireStudent, async (req: Request, res: Respons
   }
 })
 
-// Student: enroll in a class by joinCode
+// Student: enroll in a class (or section) by joinCode
 router.post('/student/enroll', requireStudent, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { joinCode } = z.object({ joinCode: z.string().min(1) }).parse(req.body)
     const student = (req as StudentRequest).student
 
+    // Try class join code first, then section join code
     const cls = await prisma.class.findUnique({ where: { joinCode } })
-    if (!cls) throw new AppError('Class not found — check the join code', 404)
+    if (cls) {
+      const enrollment = await prisma.enrollment.upsert({
+        where: { studentId_classId: { studentId: student.id, classId: cls.id } },
+        create: { studentId: student.id, classId: cls.id },
+        update: {},
+        include: { class: { include: { professor: { select: { name: true } } } } },
+      })
+      return res.json({ success: true, data: { enrollment } })
+    }
 
-    const enrollment = await prisma.enrollment.upsert({
-      where: { studentId_classId: { studentId: student.id, classId: cls.id } },
-      create: { studentId: student.id, classId: cls.id },
-      update: {},
+    const section = await prisma.section.findUnique({
+      where: { joinCode },
       include: { class: { include: { professor: { select: { name: true } } } } },
     })
+    if (!section) throw new AppError('Join code not found — check and try again', 404)
 
+    const enrollment = await prisma.enrollment.upsert({
+      where: { studentId_classId: { studentId: student.id, classId: section.classId } },
+      create: { studentId: student.id, classId: section.classId, sectionId: section.id },
+      update: { sectionId: section.id },
+      include: { class: { include: { professor: { select: { name: true } } } } },
+    })
     res.json({ success: true, data: { enrollment } })
   } catch (err) {
     next(err)

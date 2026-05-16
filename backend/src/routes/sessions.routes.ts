@@ -129,6 +129,7 @@ router.get('/sessions/:id', requireProfessor, async (req: Request, res: Response
       where: { id: p(req.params.id), class: { professorId: professor.id } },
       include: {
         class: { select: { id: true, name: true } },
+        targetSection: { select: { id: true, name: true } },
         questions: {
           orderBy: { order: 'asc' },
           include: {
@@ -154,23 +155,45 @@ router.get('/sessions/:id', requireProfessor, async (req: Request, res: Response
 router.patch('/sessions/:id', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
-    const { status } = z.object({ status: z.nativeEnum(SessionStatus) }).parse(req.body)
+    const body = z.object({
+      status: z.nativeEnum(SessionStatus).optional(),
+      targetSectionId: z.string().nullable().optional(),
+    }).parse(req.body)
 
     const existing = await prisma.session.findFirst({
       where: { id: p(req.params.id), class: { professorId: professor.id } },
+      include: { class: { select: { id: true } } },
     })
     if (!existing) throw new AppError('Session not found', 404)
 
+    // Validate targetSectionId change — only allowed when DRAFT or CLOSED
+    if (body.targetSectionId !== undefined && existing.status === SessionStatus.OPEN) {
+      throw new AppError('Cannot change target section while session is open', 400)
+    }
+    if (body.targetSectionId) {
+      const section = await prisma.section.findFirst({
+        where: { id: body.targetSectionId, classId: existing.class.id },
+      })
+      if (!section) throw new AppError('Section not found in this class', 404)
+    }
+
+    const { status } = body
     const updated = await prisma.session.update({
       where: { id: p(req.params.id) },
       data: {
-        status,
-        openedAt: status === SessionStatus.OPEN && !existing.openedAt ? new Date() : existing.openedAt,
-        closedAt: status === SessionStatus.CLOSED && !existing.closedAt ? new Date() : existing.closedAt,
+        ...(status !== undefined && {
+          status,
+          openedAt: status === SessionStatus.OPEN && !existing.openedAt ? new Date() : existing.openedAt,
+          closedAt: status === SessionStatus.CLOSED && !existing.closedAt ? new Date() : existing.closedAt,
+        }),
+        ...(body.targetSectionId !== undefined && { targetSectionId: body.targetSectionId }),
       },
+      include: { targetSection: { select: { id: true, name: true } } },
     })
 
-    getIo().to(p(req.params.id)).emit('session_status', { status })
+    if (status !== undefined) {
+      getIo().to(p(req.params.id)).emit('session_status', { status })
+    }
     res.json({ success: true, data: { session: updated } })
   } catch (err) {
     next(err)

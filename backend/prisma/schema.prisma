@@ -40,13 +40,27 @@ model Class {
   updatedAt   DateTime     @updatedAt
   sessions    Session[]
   enrollments Enrollment[]
+  sections    Section[]
+}
+
+model Section {
+  id          String       @id @default(cuid())
+  classId     String
+  class       Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  name        String
+  joinCode    String       @unique
+  createdAt   DateTime     @default(now())
+  enrollments Enrollment[]
+  sessions    Session[]
 }
 
 model Enrollment {
   studentId  String
   classId    String
+  sectionId  String?
   student    Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   class      Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  section    Section? @relation(fields: [sectionId], references: [id])
   enrolledAt DateTime @default(now())
 
   @@id([studentId, classId])
@@ -58,12 +72,14 @@ model Session {
   class      Class         @relation(fields: [classId], references: [id], onDelete: Cascade)
   title      String
   accessCode String        @unique
-  status     SessionStatus @default(DRAFT)
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
-  openedAt   DateTime?
-  closedAt   DateTime?
-  questions  Question[]
+  status          SessionStatus @default(DRAFT)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  openedAt        DateTime?
+  closedAt        DateTime?
+  targetSectionId String?
+  targetSection   Section?      @relation(fields: [targetSectionId], references: [id])
+  questions       Question[]
 }
 
 enum SessionStatus {

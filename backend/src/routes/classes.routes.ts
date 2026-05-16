@@ -70,9 +70,14 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
       where: { id: p(req.params.id), professorId: professor.id },
       include: {
         _count: { select: { sessions: true, enrollments: true } },
+        sections: { orderBy: { createdAt: 'asc' } },
         sessions: {
           orderBy: { createdAt: 'desc' },
-          include: { _count: { select: { questions: true } }, questions: { orderBy: { order: 'asc' } } },
+          include: {
+            _count: { select: { questions: true } },
+            questions: { orderBy: { order: 'asc' } },
+            targetSection: { select: { id: true, name: true } },
+          },
         },
       },
     })
@@ -239,6 +244,70 @@ router.post('/:id/duplicate', async (req: Request, res: Response, next: NextFunc
   }
 })
 
+// --- Section routes ---
+
+router.post('/:id/sections', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+    const classId = p(req.params.id)
+    const { name } = z.object({ name: z.string().min(1) }).parse(req.body)
+
+    const cls = await prisma.class.findFirst({ where: { id: classId, professorId: professor.id } })
+    if (!cls) throw new AppError('Class not found', 404)
+
+    let joinCode: string
+    let attempts = 0
+    do {
+      joinCode = nanoid()
+      attempts++
+      if (attempts > 10) throw new AppError('Failed to generate unique join code', 500)
+    } while (await prisma.section.findUnique({ where: { joinCode } }))
+
+    const section = await prisma.section.create({ data: { classId, name, joinCode } })
+    res.status(201).json({ success: true, data: { section } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.get('/:id/sections', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+    const classId = p(req.params.id)
+    const cls = await prisma.class.findFirst({ where: { id: classId, professorId: professor.id } })
+    if (!cls) throw new AppError('Class not found', 404)
+    const sections = await prisma.section.findMany({ where: { classId }, orderBy: { createdAt: 'asc' } })
+    res.json({ success: true, data: { sections } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.patch('/:id/enrollments/:studentId/section', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+    const classId = p(req.params.id)
+    const studentId = p(req.params.studentId)
+    const { sectionId } = z.object({ sectionId: z.string().nullable() }).parse(req.body)
+
+    const cls = await prisma.class.findFirst({ where: { id: classId, professorId: professor.id } })
+    if (!cls) throw new AppError('Class not found', 404)
+
+    if (sectionId !== null) {
+      const section = await prisma.section.findFirst({ where: { id: sectionId, classId } })
+      if (!section) throw new AppError('Section not found in this class', 404)
+    }
+
+    const enrollment = await prisma.enrollment.update({
+      where: { studentId_classId: { studentId, classId } },
+      data: { sectionId },
+    })
+    res.json({ success: true, data: { enrollment } })
+  } catch (err) {
+    next(err)
+  }
+})
+
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
@@ -264,7 +333,10 @@ router.get('/:id/enrollments', async (req: Request, res: Response, next: NextFun
     const [enrollments, allResponses, totalClosedSessions] = await Promise.all([
       prisma.enrollment.findMany({
         where: { classId },
-        include: { student: { select: { id: true, netId: true, name: true, email: true } } },
+        include: {
+          student: { select: { id: true, netId: true, name: true, email: true } },
+          section: { select: { id: true, name: true } },
+        },
         orderBy: { enrolledAt: 'desc' },
       }),
       prisma.response.findMany({
@@ -404,7 +476,12 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
     const cls = await prisma.class.findFirst({
       where: { id: classId, professorId: professor.id },
       include: {
-        enrollments: { include: { student: { select: { id: true, netId: true, name: true } } } },
+        enrollments: {
+          include: {
+            student: { select: { id: true, netId: true, name: true } },
+            section: { select: { name: true } },
+          },
+        },
         sessions: {
           where: { status: { in: ['CLOSED', 'ARCHIVED'] } },
           orderBy: { createdAt: 'asc' },
@@ -421,16 +498,18 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
     })
     if (!cls) throw new AppError('Class not found', 404)
 
-    const students = cls.enrollments.map((e) => e.student)
+    const enrollments = cls.enrollments
     const sessions = cls.sessions
 
     const sessionMaxes = sessions.map((s) => s.questions.length)
     const grandMax = sessionMaxes.reduce((a, b) => a + b, 0)
 
     const sessionHeaders = sessions.map((s) => s.title.replace(/,/g, ' '))
-    const header = ['NetID', 'Name', ...sessionHeaders, 'Grand Total', `Grand Max (${grandMax})`].join(',')
+    const header = ['NetID', 'Name', 'Section', ...sessionHeaders, 'Grand Total', `Grand Max (${grandMax})`].join(',')
 
-    const csvRows = students.map((student) => {
+    const csvRows = enrollments.map((enrollment) => {
+      const student = enrollment.student
+      const sectionName = enrollment.section?.name ?? ''
       const sessionTotals = sessions.map((session) => {
         return session.questions.reduce((sum, q) => {
           const resp = q.responses.find((r) => r.studentId === student.id) ?? null
@@ -441,6 +520,7 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
       return [
         student.netId,
         `"${student.name}"`,
+        sectionName,
         ...sessionTotals.map((t) => t.toFixed(1)),
         grandTotal.toFixed(1),
         grandMax.toFixed(1),

@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
-import { Plus, Trash2, X, ChevronLeft, ChevronDown, Download, KeyRound, Copy } from 'lucide-react'
+import { Plus, Trash2, X, ChevronLeft, ChevronDown, Download, KeyRound, Copy, Users } from 'lucide-react'
 import type { QuestionType } from 'shared'
 
 interface StudentStats {
@@ -58,6 +58,12 @@ interface Student {
   email: string
 }
 
+interface Section {
+  id: string
+  name: string
+  joinCode: string
+}
+
 export default function ClassPage() {
   const { classId } = useParams<{ classId: string }>()
   const navigate = useNavigate()
@@ -77,6 +83,9 @@ export default function ClassPage() {
   const [resetSuccess, setResetSuccess] = useState(false)
   const [expandedStudent, setExpandedStudent] = useState<string | null>(null)
   const [activityCache, setActivityCache] = useState<Record<string, ActivitySession[]>>({})
+  const [showAddSection, setShowAddSection] = useState(false)
+  const [newSectionName, setNewSectionName] = useState('')
+  const [sectionLoading, setSectionLoading] = useState(false)
 
   const { data, isLoading } = useQuery({
     queryKey: ['class', classId],
@@ -88,6 +97,32 @@ export default function ClassPage() {
     queryFn: () => api.get(`/classes/${classId}/enrollments`).then((r) => r.data.data.enrollments),
     enabled: tab === 'roster',
   })
+
+  const { data: sectionsData } = useQuery<Section[]>({
+    queryKey: ['sections', classId],
+    queryFn: () => api.get(`/classes/${classId}/sections`).then((r) => r.data.data.sections),
+  })
+
+  const sections = sectionsData ?? []
+
+  async function addSection(e: React.FormEvent) {
+    e.preventDefault()
+    if (!newSectionName.trim()) return
+    setSectionLoading(true)
+    try {
+      await api.post(`/classes/${classId}/sections`, { name: newSectionName.trim() })
+      qc.invalidateQueries({ queryKey: ['sections', classId] })
+      setNewSectionName('')
+      setShowAddSection(false)
+    } finally {
+      setSectionLoading(false)
+    }
+  }
+
+  async function assignSection(studentId: string, sectionId: string | null) {
+    await api.patch(`/classes/${classId}/enrollments/${studentId}/section`, { sectionId })
+    qc.invalidateQueries({ queryKey: ['roster', classId] })
+  }
 
   const { register, control, handleSubmit, reset, watch, setValue, formState: { errors, isSubmitting } } = useForm<SessionFormData>({
     resolver: zodResolver(sessionSchema),
@@ -185,6 +220,37 @@ export default function ClassPage() {
               <span className="text-xs text-gray-400">Join code:</span>
               <span className="font-mono text-sm bg-gray-100 px-2 py-0.5 rounded font-medium tracking-wider">{data?.joinCode}</span>
             </div>
+
+            {/* Sections */}
+            <div className="flex flex-wrap items-center gap-2 mt-2">
+              <Users size={13} className="text-gray-400 shrink-0" />
+              {sections.length === 0 ? (
+                <span className="text-xs text-gray-400">No sections</span>
+              ) : (
+                sections.map((s) => (
+                  <span key={s.id} className="text-xs bg-gray-100 px-2 py-0.5 rounded font-medium text-gray-700">
+                    {s.name} <span className="font-mono text-gray-400">{s.joinCode}</span>
+                  </span>
+                ))
+              )}
+              {showAddSection ? (
+                <form onSubmit={addSection} className="flex items-center gap-1">
+                  <input
+                    value={newSectionName}
+                    onChange={(e) => setNewSectionName(e.target.value)}
+                    placeholder="e.g. 001"
+                    className="border border-gray-300 rounded px-2 py-0.5 text-xs w-20 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    autoFocus
+                  />
+                  <button type="submit" disabled={sectionLoading || !newSectionName.trim()} className="text-xs text-primary-600 hover:text-primary-800 disabled:opacity-50">Add</button>
+                  <button type="button" onClick={() => { setShowAddSection(false); setNewSectionName('') }} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+                </form>
+              ) : (
+                <button onClick={() => setShowAddSection(true)} className="text-xs text-primary-600 hover:text-primary-800 flex items-center gap-0.5">
+                  <Plus size={12} /> Add section
+                </button>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -238,7 +304,7 @@ export default function ClassPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {data?.sessions?.map((s: { id: string; title: string; status: string; questions: Array<{ id: string }>; createdAt: string }) => (
+            {data?.sessions?.map((s: { id: string; title: string; status: string; questions: Array<{ id: string }>; createdAt: string; targetSection?: { id: string; name: string } | null }) => (
               <Link
                 key={s.id}
                 to={`/professor/sessions/${s.id}`}
@@ -251,14 +317,21 @@ export default function ClassPage() {
                     {new Date(s.createdAt).toLocaleDateString()}
                   </p>
                 </div>
-                <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${
-                  s.status === 'DRAFT' ? 'bg-yellow-50 text-yellow-600' :
-                  s.status === 'OPEN' ? 'bg-green-100 text-green-700' :
-                  s.status === 'CLOSED' ? 'bg-gray-100 text-gray-500' :
-                  'bg-gray-50 text-gray-400'
-                }`}>
-                  {s.status.charAt(0) + s.status.slice(1).toLowerCase()}
-                </span>
+                <div className="flex items-center gap-2">
+                  {s.targetSection && (
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
+                      §{s.targetSection.name}
+                    </span>
+                  )}
+                  <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${
+                    s.status === 'DRAFT' ? 'bg-yellow-50 text-yellow-600' :
+                    s.status === 'OPEN' ? 'bg-green-100 text-green-700' :
+                    s.status === 'CLOSED' ? 'bg-gray-100 text-gray-500' :
+                    'bg-gray-50 text-gray-400'
+                  }`}>
+                    {s.status.charAt(0) + s.status.slice(1).toLowerCase()}
+                  </span>
+                </div>
               </Link>
             ))}
           </div>
@@ -281,12 +354,13 @@ export default function ClassPage() {
                   <th className="px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Name</th>
                   <th className="px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">NetID</th>
                   <th className="px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Email</th>
+                  {sections.length > 0 && <th className="px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Section</th>}
                   <th className="px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Participation</th>
                   <th className="px-5 py-3"></th>
                 </tr>
               </thead>
               <tbody>
-                {rosterData.map((e: { student: Student; stats: StudentStats }) => {
+                {rosterData.map((e: { student: Student; stats: StudentStats; section: { id: string; name: string } | null }) => {
                   const isExpanded = expandedStudent === e.student.id
                   const activity = activityCache[e.student.id]
 
@@ -312,6 +386,18 @@ export default function ClassPage() {
                         </td>
                         <td className="px-5 py-3.5 font-mono text-gray-600">{e.student.netId}</td>
                         <td className="px-5 py-3.5 text-gray-500">{e.student.email}</td>
+                        {sections.length > 0 && (
+                          <td className="px-5 py-3.5" onClick={(ev) => ev.stopPropagation()}>
+                            <select
+                              value={e.section?.id ?? ''}
+                              onChange={(ev) => assignSection(e.student.id, ev.target.value || null)}
+                              className="text-xs border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                            >
+                              <option value="">— unassigned</option>
+                              {sections.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                            </select>
+                          </td>
+                        )}
                         <td className="px-5 py-3.5 text-gray-600">
                           {e.stats.totalClosedSessions > 0 ? (
                             <span className={e.stats.sessionsParticipated === 0 ? 'text-gray-400' : ''}>
@@ -333,7 +419,7 @@ export default function ClassPage() {
 
                       {isExpanded && (
                         <tr key={`${e.student.id}-detail`} className="border-t border-gray-50 bg-gray-50">
-                          <td colSpan={5} className="px-5 py-4">
+                          <td colSpan={sections.length > 0 ? 6 : 5} className="px-5 py-4">
                             {!activity ? (
                               <p className="text-xs text-gray-400">Loading…</p>
                             ) : activity.length === 0 ? (
