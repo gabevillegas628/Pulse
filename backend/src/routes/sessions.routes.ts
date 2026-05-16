@@ -354,36 +354,49 @@ router.post('/sessions/:sessionId/questions/:questionId/grade', requireProfessor
       throw new AppError('Session must be closed before grading', 400)
     if (question.responses.length === 0) throw new AppError('No responses to grade', 400)
 
-    const graded = await Promise.all(
-      question.responses.map(async (resp) => {
-        const msg = await anthropic.messages.create({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 256,
-          messages: [
-            {
-              role: 'user',
-              content: `You are grading a student's free-text response to a classroom question. Be strict but fair.
+    const responseList = question.responses
+      .map((r, i) => `[${i}] ${r.responseText}`)
+      .join('\n')
+
+    const msg = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 4096,
+      messages: [
+        {
+          role: 'user',
+          content: `You are grading student responses to a classroom question. Be strict but fair and consistent across all responses.
 
 Question: "${question.text}"
-Student response: "${resp.responseText}"
 
-Assess whether the response demonstrates genuine understanding of the concept.
-- full_credit: correct and shows understanding
-- partial_credit: partially correct, vague, or on the right track but incomplete
-- no_credit: wrong, irrelevant, or no real effort (e.g. "idk", "bad", very short with no substance)
+Student responses (indexed):
+${responseList}
 
-Return JSON only, no other text: {"score": "full_credit" | "partial_credit" | "no_credit", "reason": "one short sentence"}`,
-            },
-          ],
+Grade each response:
+- full_credit: correct and shows genuine understanding of the concept
+- partial_credit: partially correct, vague, or on the right track but missing key details
+- no_credit: wrong, irrelevant, or no real effort (e.g. "idk", one word, clearly off-topic)
+
+Return a JSON array with one object per response in the same order as the input. No other text.
+[{"index": 0, "score": "full_credit" | "partial_credit" | "no_credit", "reason": "one short sentence"}, ...]`,
+        },
+      ],
+    })
+
+    const text = msg.content.find((b) => b.type === 'text')?.text ?? '[]'
+    let parsed: { index: number; score: string; reason: string }[]
+    try { parsed = JSON.parse(text) } catch { parsed = [] }
+
+    const graded = (
+      await Promise.all(
+        parsed.map(async ({ index, score, reason }) => {
+          const resp = question.responses[index]
+          if (!resp) return null
+          const aiScore = score === 'no_credit' ? 0 : score === 'partial_credit' ? 0.5 : 1.0
+          await prisma.response.update({ where: { id: resp.id }, data: { aiScore } })
+          return { id: resp.id, studentId: resp.studentId, aiScore, reason }
         })
-        const text = msg.content.find((b) => b.type === 'text')?.text ?? '{}'
-        let parsed: { score: string; reason: string }
-        try { parsed = JSON.parse(text) } catch { parsed = { score: 'full_credit', reason: 'Parse error' } }
-        const aiScore = parsed.score === 'no_credit' ? 0 : parsed.score === 'partial_credit' ? 0.5 : 1.0
-        await prisma.response.update({ where: { id: resp.id }, data: { aiScore } })
-        return { id: resp.id, studentId: resp.studentId, aiScore, reason: parsed.reason }
-      })
-    )
+      )
+    ).filter((r): r is NonNullable<typeof r> => r !== null)
 
     res.json({ success: true, data: { grades: graded } })
   } catch (err) {
