@@ -358,39 +358,46 @@ router.post('/sessions/:sessionId/questions/:questionId/grade', requireProfessor
       .map((r, i) => `[${i}] ${r.responseText}`)
       .join('\n')
 
+    const n = question.responses.length
     const msg = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
+      max_tokens: 8192,
       messages: [
         {
           role: 'user',
-          content: `You are grading student responses to a classroom question. Be strict but fair and consistent across all responses.
+          content: `You are grading student responses to a classroom question. Be strict but fair and consistent.
 
 Question: "${question.text}"
 
-Student responses (indexed):
+Student responses (${n} total, indexed 0 to ${n - 1}):
 ${responseList}
 
 Grade each response:
-- full_credit: correct and shows genuine understanding of the concept
+- full_credit: correct and shows genuine understanding
 - partial_credit: partially correct, vague, or on the right track but missing key details
-- no_credit: wrong, irrelevant, or no real effort (e.g. "idk", one word, clearly off-topic)
+- no_credit: wrong, irrelevant, or clearly no effort (e.g. "idk", one word, off-topic)
 
-Return a JSON array with one object per response in the same order as the input. No other text.
+IMPORTANT: You MUST return exactly ${n} objects — one for every index from 0 to ${n - 1}. Do not skip any.
+Return a JSON array only, no other text:
 [{"index": 0, "score": "full_credit" | "partial_credit" | "no_credit", "reason": "one short sentence"}, ...]`,
         },
       ],
     })
 
-    const text = msg.content.find((b) => b.type === 'text')?.text ?? '[]'
+    const raw = msg.content.find((b) => b.type === 'text')?.text ?? '[]'
+    const cleanText = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
     let parsed: { index: number; score: string; reason: string }[]
-    try { parsed = JSON.parse(text) } catch { parsed = [] }
+    try { parsed = JSON.parse(cleanText) } catch { parsed = [] }
+
+    // Build a map so we can detect any indices Claude skipped
+    const gradeMap = new Map(parsed.map((g) => [g.index, g]))
 
     const graded = (
       await Promise.all(
-        parsed.map(async ({ index, score, reason }) => {
-          const resp = question.responses[index]
-          if (!resp) return null
+        question.responses.map(async (resp, index) => {
+          const g = gradeMap.get(index)
+          const score = g?.score ?? 'full_credit' // default to full credit if Claude skipped
+          const reason = g?.reason ?? 'Not individually graded'
           const aiScore = score === 'no_credit' ? 0 : score === 'partial_credit' ? 0.5 : 1.0
           await prisma.response.update({ where: { id: resp.id }, data: { aiScore } })
           return { id: resp.id, studentId: resp.studentId, aiScore, reason }
@@ -473,10 +480,12 @@ Only return the JSON array, no other text.`,
       ],
     })
 
-    const text = message.content.find((b) => b.type === 'text')?.text ?? '[]'
+    const raw = message.content.find((b) => b.type === 'text')?.text ?? '[]'
+    const text = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
     let categories: { label: string; description: string; count: number }[]
     try {
       categories = JSON.parse(text)
+      if (!Array.isArray(categories)) throw new Error('not an array')
     } catch {
       throw new AppError('Failed to parse summary from AI', 500)
     }
