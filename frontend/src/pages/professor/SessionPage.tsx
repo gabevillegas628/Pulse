@@ -452,7 +452,13 @@ export default function SessionPage() {
             <div className="mb-5">
               {(data.status === SessionStatus.CLOSED || data.status === SessionStatus.ARCHIVED) && (
                 <button
-                  onClick={() => gradeMutation.mutate(activeQuestion.id)}
+                  onClick={() => {
+                    const alreadyGraded = activeQuestion.responses.filter(r => r.aiScore !== null).length
+                    if (alreadyGraded > 0 && !window.confirm(
+                      `${alreadyGraded} response${alreadyGraded !== 1 ? 's' : ''} already have AI scores (including any manual edits). Re-grading will overwrite them. Continue?`
+                    )) return
+                    gradeMutation.mutate(activeQuestion.id)
+                  }}
                   disabled={gradeMutation.isPending}
                   className="flex items-center gap-1.5 text-sm text-green-700 border border-green-200 px-3 py-2 rounded-lg hover:bg-green-50 disabled:opacity-50 mb-2"
                 >

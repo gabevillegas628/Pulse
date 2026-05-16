@@ -457,8 +457,7 @@ router.post('/sessions/:sessionId/questions/:questionId/summarize', requireProfe
 
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
-      thinking: { type: 'adaptive' },
+      max_tokens: 8192,
       messages: [
         {
           role: 'user',
