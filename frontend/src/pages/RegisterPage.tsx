@@ -18,6 +18,7 @@ const professorSchema = z.object({
   name: z.string().min(1, 'Enter your name'),
   email: z.string().email('Enter a valid email'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
+  inviteCode: z.string().min(1, 'Enter your invite code'),
 })
 
 type StudentForm = z.infer<typeof studentSchema>
@@ -55,7 +56,7 @@ export default function RegisterPage() {
   async function onProfessorSubmit(data: ProfessorForm) {
     setError('')
     try {
-      await professorRegister(data.name, data.email, data.password)
+      await professorRegister(data.name, data.email, data.password, data.inviteCode)
       navigate('/professor', { replace: true })
     } catch (e: unknown) {
       const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
@@ -187,6 +188,17 @@ export default function RegisterPage() {
                   />
                   {professorForm.formState.errors.password && (
                     <p className="text-red-500 text-xs mt-1">{professorForm.formState.errors.password.message}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Invite code</label>
+                  <input
+                    {...professorForm.register('inviteCode')}
+                    type="password"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                  {professorForm.formState.errors.inviteCode && (
+                    <p className="text-red-500 text-xs mt-1">{professorForm.formState.errors.inviteCode.message}</p>
                   )}
                 </div>
                 {error && <p className="text-red-500 text-sm bg-red-50 rounded-lg px-3 py-2">{error}</p>}

@@ -15,6 +15,7 @@ const professorRegisterSchema = z.object({
   name: z.string().min(1),
   email: rutgersEmail,
   password: z.string().min(8),
+  inviteCode: z.string().min(1),
 })
 
 const professorLoginSchema = z.object({
@@ -39,6 +40,8 @@ const studentLoginSchema = z.object({
 router.post('/professor/register', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = professorRegisterSchema.parse(req.body)
+    if (!config.professorInviteCode || body.inviteCode !== config.professorInviteCode)
+      throw new AppError('Invalid invite code', 403)
     const existing = await prisma.professor.findUnique({ where: { email: body.email } })
     if (existing) throw new AppError('Email already in use', 409)
 

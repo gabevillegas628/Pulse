@@ -7,7 +7,7 @@ interface ProfessorAuthState {
   isAuthenticated: boolean
   isLoading: boolean
   login: (email: string, password: string) => Promise<void>
-  register: (name: string, email: string, password: string) => Promise<void>
+  register: (name: string, email: string, password: string, inviteCode: string) => Promise<void>
   logout: () => void
 }
 
@@ -32,8 +32,8 @@ export function ProfessorAuthProvider({ children }: { children: ReactNode }) {
     setProfessor(r.data.data.professor)
   }
 
-  async function register(name: string, email: string, password: string) {
-    const r = await api.post('/auth/professor/register', { name, email, password })
+  async function register(name: string, email: string, password: string, inviteCode: string) {
+    const r = await api.post('/auth/professor/register', { name, email, password, inviteCode })
     setProfessorToken(r.data.data.token)
     setProfessor(r.data.data.professor)
   }

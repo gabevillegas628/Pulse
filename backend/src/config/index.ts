@@ -7,4 +7,5 @@ export const config = {
   frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:5173',
   isDev: (process.env.NODE_ENV ?? 'development') === 'development',
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? '',
+  professorInviteCode: process.env.PROFESSOR_INVITE_CODE ?? '',
 }
