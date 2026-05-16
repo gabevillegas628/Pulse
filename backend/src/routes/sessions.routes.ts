@@ -318,8 +318,8 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
         if (!opts.includes(correctAnswer))
           throw new AppError('correctAnswer must be one of the question options', 400)
       }
-      if (question.type === 'FREE_TEXT' || question.type === 'RATING')
-        throw new AppError('Cannot set correct answer for this question type', 400)
+      if (question.type === 'RATING')
+        throw new AppError('Cannot set correct answer for rating questions', 400)
     }
 
     const updated = await prisma.question.update({
@@ -359,23 +359,28 @@ router.post('/sessions/:sessionId/questions/:questionId/grade', requireProfessor
       .join('\n')
 
     const n = question.responses.length
+    const rubricLine = question.correctAnswer
+      ? `\nReference answer (what the professor was looking for): "${question.correctAnswer}"\n`
+      : ''
+
     const msg = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 8192,
+      temperature: 0,
       messages: [
         {
           role: 'user',
-          content: `You are grading student responses to a classroom question. Be strict but fair and consistent.
-
+          content: `You are grading student responses to a classroom question for participation credit. Judge whether each student engaged with the right concept — not whether they stated it perfectly.
+${rubricLine}
 Question: "${question.text}"
 
 Student responses (${n} total, indexed 0 to ${n - 1}):
 ${responseList}
 
 Grade each response:
-- full_credit: correct and shows genuine understanding
-- partial_credit: partially correct, vague, or on the right track but missing key details
-- no_credit: wrong, irrelevant, or clearly no effort (e.g. "idk", one word, off-topic)
+- full_credit: makes sense — the student engaged with the relevant concept, even if their wording or details aren't perfect
+- partial_credit: almost there — clearly trying but vague, confused, or only partly on the right track
+- no_credit: didn't engage — off-topic, trivial (e.g. "it's bad for you"), restating the question, "idk", single word, or no real thought
 
 IMPORTANT: You MUST return exactly ${n} objects — one for every index from 0 to ${n - 1}. Do not skip any.
 Return a JSON array only, no other text:

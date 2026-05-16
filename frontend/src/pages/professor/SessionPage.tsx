@@ -29,6 +29,7 @@ export default function SessionPage() {
   const [summaryQuestionId, setSummaryQuestionId] = useState<string | null>(null)
 
   const [copiedQrId, setCopiedQrId] = useState<string | null>(null)
+  const [rubricDraft, setRubricDraft] = useState<Record<string, string>>({})
 
   async function copyQrWithCode(qrDataUrl: string, accessCode: string) {
     const qrSize = 400
@@ -401,6 +402,27 @@ export default function SessionPage() {
               </div>
             </div>
           </div>
+
+          {/* Rubric hint — FREE_TEXT, closed sessions only */}
+          {(data.status === SessionStatus.CLOSED || data.status === SessionStatus.ARCHIVED) &&
+            activeQuestion.type === 'FREE_TEXT' && (
+            <div className="mt-3 pt-3 border-t border-primary-100">
+              <p className="text-xs text-primary-500 font-medium mb-1.5">What were you looking for? <span className="text-primary-300 font-normal">(optional — helps AI grade more accurately)</span></p>
+              <div className="flex gap-2">
+                <input
+                  value={rubricDraft[activeQuestion.id] ?? activeQuestion.correctAnswer ?? ''}
+                  onChange={(e) => setRubricDraft((d) => ({ ...d, [activeQuestion.id]: e.target.value }))}
+                  onBlur={() => {
+                    const val = (rubricDraft[activeQuestion.id] ?? activeQuestion.correctAnswer ?? '').trim()
+                    if (val === (activeQuestion.correctAnswer ?? '')) return
+                    setCorrectAnswerMutation.mutate({ questionId: activeQuestion.id, correctAnswer: val || null })
+                  }}
+                  placeholder="e.g. dissipates the proton motive force, increases ETC flux"
+                  className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Mark correct answer — MCQ / YES_NO, closed sessions only */}
           {(data.status === SessionStatus.CLOSED || data.status === SessionStatus.ARCHIVED) &&
