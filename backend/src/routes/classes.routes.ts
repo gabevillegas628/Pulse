@@ -7,6 +7,7 @@ import { AppError } from '../middleware/error.middleware.js'
 import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
 
 const nanoid = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 6)
+const nanoidDigits = customAlphabet('0123456789', 4)
 
 const router = Router()
 
@@ -96,6 +97,143 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
       data: body,
     })
     res.json({ success: true, data: { class: updated } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+const duplicateSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().optional(),
+  transferQrCodes: z.boolean().default(false),
+})
+
+router.post('/:id/duplicate', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+    const sourceId = p(req.params.id)
+    const { name, description, transferQrCodes } = duplicateSchema.parse(req.body)
+
+    const source = await prisma.class.findFirst({
+      where: { id: sourceId, professorId: professor.id },
+      include: {
+        sessions: {
+          orderBy: { createdAt: 'asc' },
+          include: { questions: { orderBy: { order: 'asc' } } },
+        },
+      },
+    })
+    if (!source) throw new AppError('Class not found', 404)
+
+    // Pre-generate all codes needed before the transaction.
+    // Session and question codes go into separate tables so we track uniqueness separately.
+
+    let joinCode: string
+    let jAttempts = 0
+    do {
+      joinCode = nanoid()
+      jAttempts++
+      if (jAttempts > 10) throw new AppError('Failed to generate unique join code', 500)
+    } while (await prisma.class.findUnique({ where: { joinCode } }))
+
+    const usedSessionCodes = new Set<string>()
+    async function uniqueSessionCode(): Promise<string> {
+      let code: string
+      let att = 0
+      do {
+        code = nanoidDigits()
+        att++
+        if (att > 20) throw new AppError('Failed to generate unique session code', 500)
+      } while (usedSessionCodes.has(code) || await prisma.session.findUnique({ where: { accessCode: code } }))
+      usedSessionCodes.add(code)
+      return code
+    }
+
+    const usedQuestionCodes = new Set<string>()
+    async function uniqueQuestionCode(): Promise<string> {
+      let code: string
+      let att = 0
+      do {
+        code = nanoidDigits()
+        att++
+        if (att > 20) throw new AppError('Failed to generate unique question code', 500)
+      } while (usedQuestionCodes.has(code) || await prisma.question.findUnique({ where: { accessCode: code } }))
+      usedQuestionCodes.add(code)
+      return code
+    }
+
+    const newSessionCodes: string[] = []
+    for (const _ of source.sessions) newSessionCodes.push(await uniqueSessionCode())
+
+    // newQuestionCodes[i][j] = fresh code for session i, question j
+    // tempQuestionCodes[i][j] = temp placeholder used during the 3-step swap
+    const newQuestionCodes: string[][] = []
+    const tempQuestionCodes: string[][] = []
+    for (const session of source.sessions) {
+      const qCodes: string[] = []
+      const tCodes: string[] = []
+      for (const _ of session.questions) {
+        qCodes.push(await uniqueQuestionCode())
+        if (transferQrCodes) tCodes.push(await uniqueQuestionCode())
+      }
+      newQuestionCodes.push(qCodes)
+      tempQuestionCodes.push(tCodes)
+    }
+
+    const newClass = await prisma.$transaction(async (tx) => {
+      const cls = await tx.class.create({
+        data: { name, description: description ?? null, joinCode, professorId: professor.id },
+      })
+
+      type NewSession = { id: string; questions: { id: string; accessCode: string }[] }
+      const newSessions: NewSession[] = []
+      for (let i = 0; i < source.sessions.length; i++) {
+        const src = source.sessions[i]
+        const session = await tx.session.create({
+          data: {
+            classId: cls.id,
+            title: src.title,
+            accessCode: newSessionCodes[i],
+            status: 'DRAFT',
+            questions: {
+              create: src.questions.map((q, j) => ({
+                text: q.text,
+                type: q.type,
+                options: q.options ?? undefined,
+                order: q.order,
+                accessCode: newQuestionCodes[i][j],
+                correctAnswer: q.correctAnswer,
+              })),
+            },
+          },
+          include: { questions: { orderBy: { order: 'asc' } } },
+        })
+        newSessions.push(session as NewSession)
+      }
+
+      if (transferQrCodes) {
+        for (let i = 0; i < source.sessions.length; i++) {
+          const srcQuestions = source.sessions[i].questions
+          const newQuestions = newSessions[i].questions
+          for (let j = 0; j < srcQuestions.length; j++) {
+            const oldCode = srcQuestions[j].accessCode
+            const newCode = newQuestionCodes[i][j]
+            const tempCode = tempQuestionCodes[i][j]
+            // 3-step swap to satisfy the unique constraint at each statement
+            await tx.question.update({ where: { id: srcQuestions[j].id }, data: { accessCode: tempCode } })
+            await tx.question.update({ where: { id: newQuestions[j].id }, data: { accessCode: oldCode } })
+            await tx.question.update({ where: { id: srcQuestions[j].id }, data: { accessCode: newCode } })
+          }
+        }
+      }
+
+      return tx.class.findUnique({
+        where: { id: cls.id },
+        include: { _count: { select: { sessions: true, enrollments: true } } },
+      })
+    })
+
+    res.status(201).json({ success: true, data: { class: newClass } })
   } catch (err) {
     next(err)
   }

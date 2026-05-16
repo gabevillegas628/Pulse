@@ -48,7 +48,7 @@ async function attachQuestionQrs(questions: { id: string; accessCode: string; [k
   return Promise.all(
     questions.map(async (q) => ({
       ...q,
-      qrDataUrl: await generateQr(`${config.baseUrl}/q/${q.id}`),
+      qrDataUrl: await generateQr(`${config.baseUrl}/q/code/${q.accessCode}`),
     }))
   )
 }
@@ -165,6 +165,7 @@ router.patch('/sessions/:id', requireProfessor, async (req: Request, res: Respon
       where: { id: p(req.params.id) },
       data: {
         status,
+        openedAt: status === SessionStatus.OPEN && !existing.openedAt ? new Date() : existing.openedAt,
         closedAt: status === SessionStatus.CLOSED && !existing.closedAt ? new Date() : existing.closedAt,
       },
     })

@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
-import { Plus, Trash2, X, ChevronLeft, ChevronDown, Download, KeyRound } from 'lucide-react'
+import { Plus, Trash2, X, ChevronLeft, ChevronDown, Download, KeyRound, Copy } from 'lucide-react'
 import type { QuestionType } from 'shared'
 
 interface StudentStats {
@@ -60,10 +60,17 @@ interface Student {
 
 export default function ClassPage() {
   const { classId } = useParams<{ classId: string }>()
+  const navigate = useNavigate()
   const qc = useQueryClient()
   const [tab, setTab] = useState<'sessions' | 'roster'>('sessions')
   const [showModal, setShowModal] = useState(false)
   const [createError, setCreateError] = useState('')
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false)
+  const [dupName, setDupName] = useState('')
+  const [dupDescription, setDupDescription] = useState('')
+  const [dupTransferQr, setDupTransferQr] = useState(true)
+  const [dupError, setDupError] = useState('')
+  const [dupLoading, setDupLoading] = useState(false)
   const [resetTarget, setResetTarget] = useState<Student | null>(null)
   const [newPassword, setNewPassword] = useState('')
   const [resetError, setResetError] = useState('')
@@ -130,6 +137,36 @@ export default function ClassPage() {
     setResetSuccess(false)
   }
 
+  function openDuplicate() {
+    setDupName(data?.name ?? '')
+    setDupDescription(data?.description ?? '')
+    setDupTransferQr(true)
+    setDupError('')
+    setShowDuplicateModal(true)
+  }
+
+  async function submitDuplicate(e: React.FormEvent) {
+    e.preventDefault()
+    setDupError('')
+    setDupLoading(true)
+    try {
+      const r = await api.post(`/classes/${classId}/duplicate`, {
+        name: dupName,
+        description: dupDescription || undefined,
+        transferQrCodes: dupTransferQr,
+      })
+      const newClassId = r.data.data.class.id
+      setShowDuplicateModal(false)
+      qc.invalidateQueries({ queryKey: ['classes'] })
+      navigate(`/professor/classes/${newClassId}`)
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
+      setDupError(msg ?? 'Failed to duplicate class')
+    } finally {
+      setDupLoading(false)
+    }
+  }
+
   const watchedQuestions = watch('questions')
 
   if (isLoading) return <ProfessorLayout><p className="text-gray-400">Loading…</p></ProfessorLayout>
@@ -150,6 +187,13 @@ export default function ClassPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={openDuplicate}
+              className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2 rounded-lg text-sm hover:bg-gray-50"
+              title="Duplicate this class for a new semester"
+            >
+              <Copy size={14} /> Duplicate
+            </button>
             <a
               href={`/api/classes/${classId}/grades`}
               className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2 rounded-lg text-sm hover:bg-gray-50"
@@ -484,6 +528,77 @@ export default function ClassPage() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+      {/* Duplicate class modal */}
+      {showDuplicateModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-semibold text-gray-900">Duplicate class</h2>
+              <button onClick={() => setShowDuplicateModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={submitDuplicate} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Class name</label>
+                <input
+                  value={dupName}
+                  onChange={(e) => setDupName(e.target.value)}
+                  placeholder="Biochemistry 395"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  autoFocus
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description (optional)</label>
+                <input
+                  value={dupDescription}
+                  onChange={(e) => setDupDescription(e.target.value)}
+                  placeholder="Spring 2027"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+
+              <label className="flex items-start gap-3 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={dupTransferQr}
+                  onChange={(e) => setDupTransferQr(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span>
+                  <span className="block text-sm font-medium text-gray-700">Transfer QR codes</span>
+                  <span className="block text-xs text-gray-400 mt-0.5">
+                    QR codes in your slides will point to the new class's sessions. The old class keeps its history but gets new codes.
+                  </span>
+                </span>
+              </label>
+
+              {dupError && <p className="text-red-500 text-sm">{dupError}</p>}
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowDuplicateModal(false)}
+                  className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={dupLoading || !dupName.trim()}
+                  className="px-5 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
+                >
+                  {dupLoading ? 'Duplicating…' : 'Duplicate'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
