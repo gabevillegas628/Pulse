@@ -6,6 +6,37 @@ import { useStudentAuth } from '@/context/StudentAuthContext'
 import StudentLayout from '@/components/layout/StudentLayout'
 import { BookOpen, LogOut, KeyRound, X } from 'lucide-react'
 
+type GradeSession = { id: string; title: string; earned: number; max: number }
+
+function ClassGrades({ classId }: { classId: string }) {
+  const { data } = useQuery<{ sessions: GradeSession[]; totalEarned: number; totalMax: number }>({
+    queryKey: ['student-grades', classId],
+    queryFn: () => api.get(`/student/classes/${classId}/grades`).then((r) => r.data.data),
+  })
+
+  if (!data || data.sessions.length === 0) return null
+
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-100">
+      <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Grades</p>
+      <div className="space-y-1.5">
+        {data.sessions.map((s) => (
+          <div key={s.id} className="flex justify-between items-center">
+            <p className="text-xs text-gray-600 truncate pr-2">{s.title}</p>
+            <p className="text-xs font-medium text-gray-900 shrink-0">{s.earned}/{s.max}</p>
+          </div>
+        ))}
+      </div>
+      {data.sessions.length > 1 && (
+        <div className="flex justify-between mt-2 pt-2 border-t border-gray-100">
+          <p className="text-xs text-gray-400">Total</p>
+          <p className="text-xs font-semibold text-gray-900">{data.totalEarned}/{data.totalMax}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function MyClassesPage() {
   const { student, logout } = useStudentAuth()
   const navigate = useNavigate()
@@ -100,6 +131,7 @@ export default function MyClassesPage() {
               {enrollment.class.sessions.length > 0 && (
                 <p className="text-xs text-green-600 mt-1.5 font-medium">Session in progress</p>
               )}
+              <ClassGrades classId={enrollment.class.id} />
             </div>
           ))}
         </div>

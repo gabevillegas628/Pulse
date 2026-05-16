@@ -135,6 +135,74 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
   }
 })
 
+function calcScore(
+  qType: string,
+  correctAnswer: string | null,
+  response: { responseText: string; aiScore: number | null } | null
+): number {
+  if (!response) return 0
+  if (qType === 'MULTIPLE_CHOICE' || qType === 'YES_NO') {
+    if (!correctAnswer) return 1.0
+    return response.responseText === correctAnswer ? 1.0 : 0.5
+  }
+  if (qType === 'FREE_TEXT') {
+    return response.aiScore !== null && response.aiScore !== undefined ? response.aiScore : 1.0
+  }
+  return 1.0 // RATING
+}
+
+// Student: grades for all closed sessions in a class
+router.get('/student/classes/:classId/grades', requireStudent, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const student = (req as StudentRequest).student
+    const classId = p(req.params.classId)
+
+    const enrollment = await prisma.enrollment.findUnique({
+      where: { studentId_classId: { studentId: student.id, classId } },
+    })
+    if (!enrollment) throw new AppError('Not enrolled in this class', 403)
+
+    const sessions = await prisma.session.findMany({
+      where: { classId, status: { in: ['CLOSED', 'ARCHIVED'] } },
+      orderBy: { closedAt: 'desc' },
+      include: {
+        questions: {
+          orderBy: { order: 'asc' },
+          include: {
+            responses: {
+              where: { studentId: student.id },
+              select: { responseText: true, aiScore: true },
+            },
+          },
+        },
+      },
+    })
+
+    const result = sessions.map((session) => {
+      let earned = 0
+      const max = session.questions.length
+      for (const q of session.questions) {
+        const resp = q.responses[0] ?? null
+        earned += calcScore(q.type, q.correctAnswer, resp)
+      }
+      return {
+        id: session.id,
+        title: session.title,
+        closedAt: session.closedAt,
+        earned: Math.round(earned * 10) / 10,
+        max,
+      }
+    })
+
+    const totalEarned = Math.round(result.reduce((a, b) => a + b.earned, 0) * 10) / 10
+    const totalMax = result.reduce((a, b) => a + b.max, 0)
+
+    res.json({ success: true, data: { sessions: result, totalEarned, totalMax } })
+  } catch (err) {
+    next(err)
+  }
+})
+
 // Student: list enrolled classes
 router.get('/student/classes', requireStudent, async (req: Request, res: Response, next: NextFunction) => {
   try {

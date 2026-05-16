@@ -61,6 +61,7 @@ model Session {
   status     SessionStatus @default(DRAFT)
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
+  openedAt   DateTime?
   closedAt   DateTime?
   questions  Question[]
 }
