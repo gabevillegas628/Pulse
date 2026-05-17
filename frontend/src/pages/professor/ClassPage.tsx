@@ -6,8 +6,9 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
-import { Plus, Trash2, X, ChevronLeft, ChevronDown, Download, KeyRound, Copy, Users } from 'lucide-react'
+import { Plus, Trash2, X, ChevronLeft, ChevronDown, Download, KeyRound, Copy, Users, BookOpen } from 'lucide-react'
 import type { QuestionType } from 'shared'
+import RichTextEditor from '@/components/RichTextEditor'
 
 interface StudentStats {
   totalResponses: number
@@ -32,11 +33,32 @@ interface ActivitySession {
   questions: ActivityQuestion[]
 }
 
+interface Assignment {
+  id: string
+  title: string
+  status: string
+  deadline: string | null
+  _count: { questions: number }
+}
+
 const questionSchema = z.object({
   text: z.string().min(1, 'Question text required'),
   type: z.enum(['FREE_TEXT', 'MULTIPLE_CHOICE', 'RATING', 'YES_NO']),
   options: z.array(z.string()).optional(),
 })
+
+const assignmentQuestionSchema = z.object({
+  text: z.string().min(1, 'Question text required'),
+  type: z.enum(['FREE_TEXT', 'MULTIPLE_CHOICE', 'RATING', 'YES_NO']),
+  options: z.array(z.string()).optional(),
+})
+
+const assignmentSchema = z.object({
+  title: z.string().min(1, 'Title required'),
+  deadline: z.string().min(1, 'Deadline required'),
+  questions: z.array(assignmentQuestionSchema).min(1, 'Add at least one question'),
+})
+type AssignmentFormData = z.infer<typeof assignmentSchema>
 
 const sessionSchema = z.object({
   title: z.string().min(1, 'Title required'),
@@ -68,9 +90,12 @@ export default function ClassPage() {
   const { classId } = useParams<{ classId: string }>()
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const [tab, setTab] = useState<'sessions' | 'roster'>('sessions')
+  const [tab, setTab] = useState<'sessions' | 'assignments' | 'roster'>('sessions')
   const [showModal, setShowModal] = useState(false)
   const [createError, setCreateError] = useState('')
+  const [showAssignmentModal, setShowAssignmentModal] = useState(false)
+  const [assignmentError, setAssignmentError] = useState('')
+  const [hwQuestionTexts, setHwQuestionTexts] = useState<string[]>([''])
   const [showDuplicateModal, setShowDuplicateModal] = useState(false)
   const [dupName, setDupName] = useState('')
   const [dupDescription, setDupDescription] = useState('')
@@ -101,6 +126,12 @@ export default function ClassPage() {
   const { data: sectionsData } = useQuery<Section[]>({
     queryKey: ['sections', classId],
     queryFn: () => api.get(`/classes/${classId}/sections`).then((r) => r.data.data.sections),
+  })
+
+  const { data: assignmentsData } = useQuery<Assignment[]>({
+    queryKey: ['assignments', classId],
+    queryFn: () => api.get(`/classes/${classId}/sessions?type=HOMEWORK`).then((r) => r.data.data.sessions),
+    enabled: tab === 'assignments',
   })
 
   const sections = sectionsData ?? []
@@ -145,6 +176,46 @@ export default function ClassPage() {
     onError: (e: unknown) => {
       const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
       setCreateError(msg ?? 'Failed to create session')
+    },
+  })
+
+  const {
+    register: regHw,
+    control: ctrlHw,
+    handleSubmit: handleHwSubmit,
+    reset: resetHw,
+    watch: watchHw,
+    setValue: setHwValue,
+    formState: { errors: hwErrors, isSubmitting: hwSubmitting },
+  } = useForm<AssignmentFormData>({
+    resolver: zodResolver(assignmentSchema),
+    defaultValues: { title: '', deadline: '', questions: [{ text: '', type: 'FREE_TEXT', options: [] }] },
+  })
+
+  const { fields: hwFields, append: appendHw, remove: removeHw } = useFieldArray({ control: ctrlHw, name: 'questions' })
+  const watchedHwQuestions = watchHw('questions')
+
+  const createAssignmentMutation = useMutation({
+    mutationFn: (body: AssignmentFormData) =>
+      api.post(`/classes/${classId}/sessions`, {
+        type: 'HOMEWORK',
+        title: body.title,
+        deadline: new Date(body.deadline).toISOString(),
+        questions: body.questions.map((q, i) => ({
+          ...q,
+          text: hwQuestionTexts[i] ?? q.text,
+          order: i,
+        })),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['assignments', classId] })
+      setShowAssignmentModal(false)
+      resetHw()
+      setHwQuestionTexts([''])
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
+      setAssignmentError(msg ?? 'Failed to create assignment')
     },
   })
 
@@ -275,23 +346,35 @@ export default function ClassPage() {
                 <Plus size={16} /> New session
               </button>
             )}
+            {tab === 'assignments' && (
+              <button
+                onClick={() => { setAssignmentError(''); setShowAssignmentModal(true) }}
+                className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors"
+              >
+                <Plus size={16} /> New assignment
+              </button>
+            )}
           </div>
         </div>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-1 mb-6 border-b border-gray-200">
-        {(['sessions', 'roster'] as const).map((t) => (
+        {([
+          { key: 'sessions', label: 'Sessions' },
+          { key: 'assignments', label: 'Assignments' },
+          { key: 'roster', label: 'Roster' },
+        ] as const).map(({ key, label }) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors capitalize ${
-              tab === t
+            key={key}
+            onClick={() => setTab(key)}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              tab === key
                 ? 'border-primary-600 text-primary-700'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            {t}
+            {label}
           </button>
         ))}
       </div>
@@ -332,6 +415,43 @@ export default function ClassPage() {
                     {s.status.charAt(0) + s.status.slice(1).toLowerCase()}
                   </span>
                 </div>
+              </Link>
+            ))}
+          </div>
+        )
+      )}
+
+      {/* Assignments tab */}
+      {tab === 'assignments' && (
+        !assignmentsData ? (
+          <p className="text-gray-400 text-center py-8">Loading…</p>
+        ) : assignmentsData.length === 0 ? (
+          <div className="text-center py-16 text-gray-400">
+            <BookOpen size={32} className="mx-auto mb-3 opacity-30" />
+            <p className="text-sm">No assignments yet — create one above</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {assignmentsData.map((a) => (
+              <Link
+                key={a.id}
+                to={`/professor/classes/${classId}/assignments/${a.id}`}
+                className="flex items-center justify-between bg-white border border-gray-200 rounded-xl p-5 hover:shadow-sm transition-shadow"
+              >
+                <div>
+                  <p className="font-medium text-gray-900">{a.title}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {a._count.questions} question{a._count.questions !== 1 ? 's' : ''}{a.deadline ? ` · Due ${new Date(a.deadline).toLocaleDateString()}` : ''}
+                  </p>
+                </div>
+                <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${
+                  a.status === 'DRAFT' ? 'bg-yellow-50 text-yellow-600' :
+                  a.status === 'OPEN' ? 'bg-green-100 text-green-700' :
+                  a.status === 'CLOSED' ? 'bg-gray-100 text-gray-500' :
+                  'bg-gray-50 text-gray-400'
+                }`}>
+                  {a.status.charAt(0) + a.status.slice(1).toLowerCase()}
+                </span>
               </Link>
             ))}
           </div>
@@ -617,6 +737,146 @@ export default function ClassPage() {
           </div>
         </div>
       )}
+      {/* Create assignment modal */}
+      {showAssignmentModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-start justify-center z-50 px-4 py-8 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-6 my-auto">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-semibold">New assignment</h2>
+              <button onClick={() => { setShowAssignmentModal(false); resetHw(); setHwQuestionTexts(['']) }}>
+                <X size={20} className="text-gray-400" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={handleHwSubmit((d) => {
+                setAssignmentError('')
+                createAssignmentMutation.mutate(d)
+              })}
+              className="space-y-5"
+            >
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                  <input
+                    {...regHw('title')}
+                    placeholder="Homework 1"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    autoFocus
+                  />
+                  {hwErrors.title && <p className="text-red-500 text-xs mt-1">{hwErrors.title.message}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Deadline</label>
+                  <input
+                    {...regHw('deadline')}
+                    type="datetime-local"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                  {hwErrors.deadline && <p className="text-red-500 text-xs mt-1">{hwErrors.deadline.message}</p>}
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-medium text-gray-700">Questions</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      appendHw({ text: '', type: 'FREE_TEXT', options: [] })
+                      setHwQuestionTexts((prev) => [...prev, ''])
+                    }}
+                    className="text-xs text-primary-600 hover:text-primary-800 flex items-center gap-1"
+                  >
+                    <Plus size={13} /> Add question
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  {hwFields.map((field, idx) => (
+                    <div key={field.id} className="border border-gray-200 rounded-xl p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium text-gray-400">Question {idx + 1}</span>
+                        {hwFields.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              removeHw(idx)
+                              setHwQuestionTexts((prev) => prev.filter((_, i) => i !== idx))
+                            }}
+                            className="text-gray-300 hover:text-red-400"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+
+                      <RichTextEditor
+                        content={hwQuestionTexts[idx] ?? ''}
+                        onChange={(json) => {
+                          setHwQuestionTexts((prev) => {
+                            const next = [...prev]
+                            next[idx] = json
+                            return next
+                          })
+                          setHwValue(`questions.${idx}.text`, json)
+                        }}
+                      />
+                      {hwErrors.questions?.[idx]?.text && (
+                        <p className="text-red-500 text-xs">{hwErrors.questions[idx]?.text?.message}</p>
+                      )}
+
+                      <select
+                        {...regHw(`questions.${idx}.type`)}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+                      >
+                        {Object.entries(TYPE_LABELS).map(([val, label]) => (
+                          <option key={val} value={val}>{label}</option>
+                        ))}
+                      </select>
+
+                      {watchedHwQuestions[idx]?.type === 'MULTIPLE_CHOICE' && (
+                        <div className="space-y-2">
+                          <p className="text-xs text-gray-500">Options (one per line)</p>
+                          <textarea
+                            rows={3}
+                            placeholder={"Option A\nOption B\nOption C"}
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+                            onChange={(e) => {
+                              const opts = e.target.value.split('\n').map((s) => s.trim()).filter(Boolean)
+                              setHwValue(`questions.${idx}.options`, opts)
+                            }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {assignmentError && <p className="text-red-500 text-sm">{assignmentError}</p>}
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => { setShowAssignmentModal(false); resetHw(); setHwQuestionTexts(['']) }}
+                  className="px-4 py-2 text-sm text-gray-600"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={hwSubmitting}
+                  className="px-5 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
+                >
+                  {hwSubmitting ? 'Creating…' : 'Create assignment'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Duplicate class modal */}
       {showDuplicateModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">

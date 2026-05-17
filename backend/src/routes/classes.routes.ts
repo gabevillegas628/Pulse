@@ -467,7 +467,23 @@ function calcScore(
   return 1.0 // RATING
 }
 
-// Class-wide grades export — one row per student, one column per closed session
+type GradeQuestion = {
+  type: string
+  correctAnswer: string | null
+  responses: { studentId: string; responseText: string; aiScore: number | null }[]
+}
+type GradeSession = {
+  id: string
+  title: string
+  type: string
+  questions: GradeQuestion[]
+}
+type GradeEnrollment = {
+  student: { id: string; netId: string; name: string }
+  section: { name: string } | null
+}
+
+// Class-wide grades export — participation columns + homework columns, one row per student
 router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
@@ -483,7 +499,7 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
           },
         },
         sessions: {
-          where: { status: { in: ['CLOSED', 'ARCHIVED'] } },
+          where: { status: { in: ['CLOSED' as const, 'ARCHIVED' as const] } },
           orderBy: { createdAt: 'asc' },
           include: {
             questions: {
@@ -498,32 +514,56 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
     })
     if (!cls) throw new AppError('Class not found', 404)
 
-    const enrollments = cls.enrollments
-    const sessions = cls.sessions
+    const allSessions = cls.sessions as unknown as GradeSession[]
+    const enrollments = cls.enrollments as unknown as GradeEnrollment[]
 
-    const sessionMaxes = sessions.map((s) => s.questions.length)
-    const grandMax = sessionMaxes.reduce((a, b) => a + b, 0)
+    const participationSessions = allSessions.filter((s) => s.type !== 'HOMEWORK')
+    const homeworkSessions = allSessions.filter((s) => s.type === 'HOMEWORK')
 
-    const sessionHeaders = sessions.map((s) => s.title.replace(/,/g, ' '))
-    const header = ['NetID', 'Name', 'Section', ...sessionHeaders, 'Grand Total', `Grand Max (${grandMax})`].join(',')
+    const participationMax = participationSessions.reduce((sum, s) => sum + s.questions.length, 0)
+    const homeworkMax = homeworkSessions.reduce((sum, s) => sum + s.questions.length, 0)
+
+    const participationHeaders = participationSessions.map((s) => s.title.replace(/,/g, ' '))
+    const homeworkHeaders = homeworkSessions.map((s) => `HW: ${s.title.replace(/,/g, ' ')}`)
+
+    const header = [
+      'NetID', 'Name', 'Section',
+      ...participationHeaders,
+      'Participation Total', `Participation Max (${participationMax})`,
+      ...homeworkHeaders,
+      'HW Total', `HW Max (${homeworkMax})`,
+    ].join(',')
 
     const csvRows = enrollments.map((enrollment) => {
       const student = enrollment.student
       const sectionName = enrollment.section?.name ?? ''
-      const sessionTotals = sessions.map((session) => {
-        return session.questions.reduce((sum, q) => {
+
+      const pTotals = participationSessions.map((session) =>
+        session.questions.reduce((sum: number, q: GradeQuestion) => {
           const resp = q.responses.find((r) => r.studentId === student.id) ?? null
           return sum + calcScore(q.type, q.correctAnswer, resp)
         }, 0)
-      })
-      const grandTotal = sessionTotals.reduce((a, b) => a + b, 0)
+      )
+      const hwTotals = homeworkSessions.map((session) =>
+        session.questions.reduce((sum: number, q: GradeQuestion) => {
+          const resp = q.responses.find((r) => r.studentId === student.id) ?? null
+          return sum + calcScore(q.type, q.correctAnswer, resp)
+        }, 0)
+      )
+
+      const pTotal = pTotals.reduce((a, b) => a + b, 0)
+      const hwTotal = hwTotals.reduce((a, b) => a + b, 0)
+
       return [
         student.netId,
         `"${student.name}"`,
         sectionName,
-        ...sessionTotals.map((t) => t.toFixed(1)),
-        grandTotal.toFixed(1),
-        grandMax.toFixed(1),
+        ...pTotals.map((t) => t.toFixed(1)),
+        pTotal.toFixed(1),
+        participationMax.toFixed(1),
+        ...hwTotals.map((t) => t.toFixed(1)),
+        hwTotal.toFixed(1),
+        homeworkMax.toFixed(1),
       ].join(',')
     })
 

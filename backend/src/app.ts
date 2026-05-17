@@ -3,6 +3,7 @@ import helmet from 'helmet'
 import cors from 'cors'
 import compression from 'compression'
 import path from 'path'
+import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { config } from './config/index.js'
 import { errorMiddleware } from './middleware/error.middleware.js'
@@ -10,6 +11,7 @@ import authRoutes from './routes/auth.routes.js'
 import classRoutes from './routes/classes.routes.js'
 import sessionRoutes from './routes/sessions.routes.js'
 import responseRoutes from './routes/responses.routes.js'
+import uploadRoutes from './routes/uploads.routes.js'
 
 const app = express()
 
@@ -27,14 +29,27 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+const uploadDir = path.isAbsolute(config.uploadDir)
+  ? config.uploadDir
+  : path.resolve(__dirname, '..', '..', config.uploadDir)
+
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true })
+}
+
+app.use('/uploads', express.static(uploadDir))
+
 app.use('/api/auth', authRoutes)
 app.use('/api/classes', classRoutes)
 app.use('/api', sessionRoutes)
 app.use('/api', responseRoutes)
+app.use('/api', uploadRoutes)
 
 // Serve frontend in production
 if (!config.isDev) {
-  const __dirname = path.dirname(fileURLToPath(import.meta.url))
   const frontendDist = path.join(__dirname, '..', '..', 'frontend', 'dist')
   app.use(express.static(frontendDist))
   app.get('*', (_req, res) => {

@@ -107,6 +107,12 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
     if (!question) throw new AppError('Question not found', 404)
     if (question.session.status !== 'OPEN') throw new AppError('Session is not open', 409)
 
+    // Deadline enforcement for homework assignments
+    const sess = question.session as typeof question.session & { type: string; deadline: Date | null }
+    if (sess.type === 'HOMEWORK' && sess.deadline && sess.deadline < new Date()) {
+      throw new AppError('This assignment is past due', 403)
+    }
+
     const wordCount = question.type === 'FREE_TEXT'
       ? responseText.trim().split(/\s+/).filter(Boolean).length
       : 0
@@ -174,7 +180,7 @@ router.get('/student/classes/:classId/grades', requireStudent, async (req: Reque
     if (!enrollment) throw new AppError('Not enrolled in this class', 403)
 
     const sessions = await prisma.session.findMany({
-      where: { classId, status: { in: ['CLOSED', 'ARCHIVED'] } },
+      where: { classId, status: { in: ['CLOSED', 'ARCHIVED'] }, type: 'IN_CLASS' } as object,
       orderBy: { closedAt: 'desc' },
       include: {
         questions: {
@@ -226,7 +232,7 @@ router.get('/student/classes', requireStudent, async (req: Request, res: Respons
           include: {
             professor: { select: { name: true } },
             sessions: {
-              where: { status: 'OPEN' },
+              where: { status: 'OPEN', type: 'IN_CLASS' } as object,
               orderBy: { createdAt: 'desc' },
               select: { id: true, title: true, status: true },
             },
@@ -272,6 +278,116 @@ router.post('/student/enroll', requireStudent, async (req: Request, res: Respons
       include: { class: { include: { professor: { select: { name: true } } } } },
     })
     res.json({ success: true, data: { enrollment } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Student: list open homework assignments for an enrolled class
+router.get('/student/classes/:classId/assignments', requireStudent, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const student = (req as StudentRequest).student
+    const classId = p(req.params.classId)
+
+    const enrollment = await prisma.enrollment.findUnique({
+      where: { studentId_classId: { studentId: student.id, classId } },
+    })
+    if (!enrollment) throw new AppError('Not enrolled in this class', 403)
+
+    const assignments = await prisma.session.findMany({
+      where: { classId, status: 'OPEN', type: 'HOMEWORK' } as object,
+      orderBy: { deadline: 'asc' } as object,
+      include: {
+        _count: { select: { questions: true } },
+        questions: {
+          select: { id: true },
+          include: {
+            responses: {
+              where: { studentId: student.id },
+              select: { id: true },
+            },
+          },
+        },
+      },
+    })
+
+    type AssignmentRow = {
+      id: string
+      title: string
+      deadline: Date | null
+      questionCount: number
+      submittedCount: number
+    }
+
+    const result: AssignmentRow[] = assignments.map((a) => {
+      const qs = a.questions as Array<{ id: string; responses: Array<{ id: string }> }>
+      return {
+        id: a.id,
+        title: a.title,
+        deadline: (a as typeof a & { deadline: Date | null }).deadline,
+        questionCount: qs.length,
+        submittedCount: qs.filter((q) => q.responses.length > 0).length,
+      }
+    })
+
+    res.json({ success: true, data: { assignments: result } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Student: get a homework assignment with all questions
+router.get('/student/assignments/:id', requireStudent, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const student = (req as StudentRequest).student
+
+    const assignment = await prisma.session.findFirst({
+      where: { id: p(req.params.id), status: 'OPEN', type: 'HOMEWORK' } as object,
+      include: {
+        class: { select: { id: true, name: true } },
+        questions: {
+          orderBy: { order: 'asc' },
+          include: {
+            responses: {
+              where: { studentId: student.id },
+              select: { id: true, responseText: true, submittedAt: true },
+            },
+          },
+        },
+      },
+    })
+    if (!assignment) throw new AppError('Assignment not found', 404)
+
+    const enrollment = await prisma.enrollment.findUnique({
+      where: { studentId_classId: { studentId: student.id, classId: assignment.classId } },
+    })
+    if (!enrollment) throw new AppError('Not enrolled in this class', 403)
+
+    const deadline = (assignment as typeof assignment & { deadline: Date | null }).deadline
+    const isPastDue = deadline !== null && deadline < new Date()
+
+    const questions = assignment.questions.map((q) => ({
+      id: q.id,
+      text: q.text,
+      type: q.type,
+      options: q.options,
+      order: q.order,
+      existingResponse: q.responses[0] ?? null,
+    }))
+
+    res.json({
+      success: true,
+      data: {
+        assignment: {
+          id: assignment.id,
+          title: assignment.title,
+          deadline,
+          isPastDue,
+          class: assignment.class,
+          questions,
+        },
+      },
+    })
   } catch (err) {
     next(err)
   }

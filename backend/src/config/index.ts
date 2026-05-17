@@ -8,4 +8,5 @@ export const config = {
   isDev: (process.env.NODE_ENV ?? 'development') === 'development',
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? '',
   professorInviteCode: process.env.PROFESSOR_INVITE_CODE ?? '',
+  uploadDir: process.env.UPLOAD_DIR ?? './uploads',
 }

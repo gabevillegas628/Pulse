@@ -9,6 +9,7 @@ import RegisterPage from '@/pages/RegisterPage'
 import DashboardPage from '@/pages/professor/DashboardPage'
 import ClassPage from '@/pages/professor/ClassPage'
 import SessionPage from '@/pages/professor/SessionPage'
+import AssignmentDetailPage from '@/pages/professor/AssignmentDetailPage'
 
 // Student pages
 import CodeEntryPage from '@/pages/student/CodeEntryPage'
@@ -16,6 +17,7 @@ import QuestionPage from '@/pages/student/QuestionPage'
 import QuestionRedirectPage from '@/pages/student/QuestionRedirectPage'
 import ConfirmationPage from '@/pages/student/ConfirmationPage'
 import MyClassesPage from '@/pages/student/MyClassesPage'
+import AssignmentPage from '@/pages/student/AssignmentPage'
 
 function ProfessorProtected({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useProfessorAuth()
@@ -49,11 +51,14 @@ export default function App() {
       {/* Professor routes */}
       <Route path="/professor" element={<ProfessorProtected><DashboardPage /></ProfessorProtected>} />
       <Route path="/professor/classes/:classId" element={<ProfessorProtected><ClassPage /></ProfessorProtected>} />
+      <Route path="/professor/classes/:classId/assignments/:assignmentId" element={<ProfessorProtected><AssignmentDetailPage /></ProfessorProtected>} />
       <Route path="/professor/sessions/:sessionId" element={<ProfessorProtected><SessionPage /></ProfessorProtected>} />
 
       {/* Student routes */}
       <Route path="/student/enter-code" element={<CodeEntryPage />} />
       <Route path="/student" element={<StudentProtected><MyClassesPage /></StudentProtected>} />
+      <Route path="/student/classes" element={<StudentProtected><MyClassesPage /></StudentProtected>} />
+      <Route path="/student/assignments/:assignmentId" element={<StudentProtected><AssignmentPage /></StudentProtected>} />
       <Route path="/q/code/:code" element={<QuestionRedirectPage />} />
       <Route path="/q/:questionId" element={<QuestionPage />} />
       <Route path="/q/:questionId/confirmation" element={<ConfirmationPage />} />

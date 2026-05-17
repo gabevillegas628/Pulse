@@ -1,10 +1,53 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import { useStudentAuth } from '@/context/StudentAuthContext'
 import StudentLayout from '@/components/layout/StudentLayout'
-import { BookOpen, LogOut, KeyRound, X } from 'lucide-react'
+import { BookOpen, LogOut, KeyRound, X, Clock } from 'lucide-react'
+
+function ClassAssignments({ classId, className }: { classId: string; className: string }) {
+  const { data } = useQuery<{ assignments: Array<{ id: string; title: string; deadline: string | null; questionCount: number; submittedCount: number }> }>({
+    queryKey: ['student-assignments', classId],
+    queryFn: () => api.get(`/student/classes/${classId}/assignments`).then((r) => r.data.data),
+  })
+
+  if (!data?.assignments?.length) return null
+
+  return (
+    <>
+      {data.assignments.map((a) => {
+        const isPastDue = a.deadline && new Date(a.deadline) < new Date()
+        const isComplete = a.submittedCount >= a.questionCount
+        return (
+          <Link
+            key={a.id}
+            to={`/student/assignments/${a.id}`}
+            className="flex items-center justify-between bg-white border border-gray-200 rounded-xl px-4 py-3 hover:shadow-sm transition-shadow"
+          >
+            <div>
+              <p className="text-sm font-medium text-gray-900">{a.title}</p>
+              <p className="text-xs text-gray-400">{className}</p>
+            </div>
+            <div className="flex items-center gap-3 shrink-0">
+              {a.deadline && (
+                <span className={`flex items-center gap-1 text-xs ${isPastDue ? 'text-red-500' : 'text-gray-400'}`}>
+                  <Clock size={11} />
+                  {isPastDue ? 'Past due' : new Date(a.deadline).toLocaleDateString()}
+                </span>
+              )}
+              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                isComplete ? 'bg-green-100 text-green-700' : 'bg-yellow-50 text-yellow-700'
+              }`}>
+                {isComplete ? 'Done' : `${a.submittedCount}/${a.questionCount}`}
+              </span>
+            </div>
+          </Link>
+        )
+      })}
+    </>
+  )
+}
 
 type GradeSession = { id: string; title: string; earned: number; max: number }
 
@@ -102,6 +145,20 @@ export default function MyClassesPage() {
         <p className="text-lg font-semibold mb-0.5">Enter question code</p>
         <p className="text-primary-200 text-sm">Enter the 4-digit code your professor displays</p>
       </button>
+
+      {/* Upcoming assignments */}
+      {!isLoading && data?.length > 0 && (
+        <>
+          <div className="mb-3">
+            <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Upcoming Assignments</p>
+          </div>
+          <div className="space-y-2 mb-6">
+            {data.map((enrollment: { class: { id: string; name: string } }) => (
+              <ClassAssignments key={enrollment.class.id} classId={enrollment.class.id} className={enrollment.class.name} />
+            ))}
+          </div>
+        </>
+      )}
 
       {/* Enrolled classes — context only */}
       <div className="mb-3">

@@ -26,6 +26,8 @@ const questionInputSchema = z.object({
 
 const createSessionSchema = z.object({
   title: z.string().min(1),
+  type: z.enum(['IN_CLASS', 'HOMEWORK']).optional().default('IN_CLASS'),
+  deadline: z.string().datetime().optional(),
   questions: z.array(questionInputSchema).min(1),
 })
 
@@ -79,6 +81,8 @@ router.post('/classes/:classId/sessions', requireProfessor, async (req: Request,
       data: {
         classId: cls.id,
         title: body.title,
+        type: body.type,
+        deadline: body.deadline ? new Date(body.deadline) : undefined,
         accessCode,
         questions: {
           create: body.questions.map((q, i) => ({
@@ -108,8 +112,12 @@ router.get('/classes/:classId/sessions', requireProfessor, async (req: Request, 
     })
     if (!cls) throw new AppError('Class not found', 404)
 
+    const typeFilter = req.query.type as string | undefined
     const sessions = await prisma.session.findMany({
-      where: { classId: cls.id },
+      where: {
+        classId: cls.id,
+        ...(typeFilter === 'IN_CLASS' || typeFilter === 'HOMEWORK' ? { type: typeFilter } : {}),
+      },
       orderBy: { createdAt: 'desc' },
       include: {
         questions: { orderBy: { order: 'asc' } },
@@ -158,6 +166,7 @@ router.patch('/sessions/:id', requireProfessor, async (req: Request, res: Respon
     const body = z.object({
       status: z.nativeEnum(SessionStatus).optional(),
       targetSectionId: z.string().nullable().optional(),
+      deadline: z.string().datetime().nullable().optional(),
     }).parse(req.body)
 
     const existing = await prisma.session.findFirst({
@@ -187,6 +196,7 @@ router.patch('/sessions/:id', requireProfessor, async (req: Request, res: Respon
           closedAt: status === SessionStatus.CLOSED && !existing.closedAt ? new Date() : existing.closedAt,
         }),
         ...(body.targetSectionId !== undefined && { targetSectionId: body.targetSectionId }),
+        ...(body.deadline !== undefined && { deadline: body.deadline ? new Date(body.deadline) : null }),
       },
       include: { targetSection: { select: { id: true, name: true } } },
     })
