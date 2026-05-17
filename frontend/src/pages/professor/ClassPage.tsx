@@ -43,13 +43,13 @@ interface Assignment {
 
 const questionSchema = z.object({
   text: z.string().min(1, 'Question text required'),
-  type: z.enum(['FREE_TEXT', 'MULTIPLE_CHOICE', 'RATING', 'YES_NO']),
+  type: z.enum(['FREE_TEXT', 'MULTIPLE_CHOICE', 'MULTI_SELECT', 'RATING', 'YES_NO', 'NUMERIC', 'ORDERING', 'STRUCTURE']),
   options: z.array(z.string()).optional(),
 })
 
 const assignmentQuestionSchema = z.object({
   text: z.string().min(1, 'Question text required'),
-  type: z.enum(['FREE_TEXT', 'MULTIPLE_CHOICE', 'RATING', 'YES_NO']),
+  type: z.enum(['FREE_TEXT', 'MULTIPLE_CHOICE', 'MULTI_SELECT', 'RATING', 'YES_NO', 'NUMERIC', 'ORDERING', 'STRUCTURE']),
   options: z.array(z.string()).optional(),
 })
 
@@ -69,8 +69,12 @@ type SessionFormData = z.infer<typeof sessionSchema>
 const TYPE_LABELS: Record<QuestionType, string> = {
   FREE_TEXT: 'Free text',
   MULTIPLE_CHOICE: 'Multiple choice',
+  MULTI_SELECT: 'Multi-select',
+  ORDERING: 'Ordering',
+  STRUCTURE: 'Structure drawing',
   RATING: 'Rating (1–5)',
   YES_NO: 'Yes / No',
+  NUMERIC: 'Numeric',
 }
 
 interface Student {
@@ -126,6 +130,12 @@ export default function ClassPage() {
   const { data: sectionsData } = useQuery<Section[]>({
     queryKey: ['sections', classId],
     queryFn: () => api.get(`/classes/${classId}/sections`).then((r) => r.data.data.sections),
+  })
+
+  const { data: sessionsData } = useQuery<{ id: string; title: string; status: string; questions: Array<{ id: string }>; createdAt: string; targetSection?: { id: string; name: string } | null }[]>({
+    queryKey: ['sessions', classId],
+    queryFn: () => api.get(`/classes/${classId}/sessions?type=IN_CLASS`).then((r) => r.data.data.sessions),
+    enabled: tab === 'sessions',
   })
 
   const { data: assignmentsData } = useQuery<Assignment[]>({
@@ -381,13 +391,15 @@ export default function ClassPage() {
 
       {/* Sessions tab */}
       {tab === 'sessions' && (
-        data?.sessions?.length === 0 ? (
+        !sessionsData ? (
+          <p className="text-gray-400 text-center py-8">Loading…</p>
+        ) : sessionsData.length === 0 ? (
           <div className="text-center py-16 text-gray-400">
             <p className="text-sm">No sessions yet — create one to start collecting responses</p>
           </div>
         ) : (
           <div className="space-y-3">
-            {data?.sessions?.map((s: { id: string; title: string; status: string; questions: Array<{ id: string }>; createdAt: string; targetSection?: { id: string; name: string } | null }) => (
+            {sessionsData.map((s) => (
               <Link
                 key={s.id}
                 to={`/professor/sessions/${s.id}`}

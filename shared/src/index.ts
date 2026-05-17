@@ -12,6 +12,10 @@ export enum QuestionType {
   MULTIPLE_CHOICE = 'MULTIPLE_CHOICE',
   RATING = 'RATING',
   YES_NO = 'YES_NO',
+  NUMERIC = 'NUMERIC',
+  MULTI_SELECT = 'MULTI_SELECT',
+  ORDERING = 'ORDERING',
+  STRUCTURE = 'STRUCTURE',
 }
 
 // Entities
@@ -49,15 +53,27 @@ export interface Enrollment {
   enrolledAt: string
 }
 
+export interface QuestionGroup {
+  id: string
+  sessionId: string
+  title: string
+  text: string | null
+  order: number
+  createdAt: string
+}
+
 export interface Question {
   id: string
   sessionId: string
+  groupId: string | null
   text: string
   type: QuestionType
   options: string[] | null
   order: number
   accessCode: string
   correctAnswer: string | null
+  tolerance: number | null
+  unit: string | null
 }
 
 export interface Session {
@@ -193,6 +209,7 @@ export interface QuestionWithResponses extends Question {
 
 export interface SessionDetail extends Session {
   questions: QuestionWithResponses[]
+  groups: QuestionGroup[]
   class: Pick<Class, 'id' | 'name'>
   qrDataUrl: string
 }

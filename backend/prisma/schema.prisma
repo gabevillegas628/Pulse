@@ -27,6 +27,7 @@ model Student {
   updatedAt    DateTime     @updatedAt
   enrollments  Enrollment[]
   responses    Response[]
+  extensions   DeadlineExtension[]
 }
 
 model Class {
@@ -82,6 +83,34 @@ model Session {
   targetSectionId String?
   targetSection   Section?      @relation(fields: [targetSectionId], references: [id])
   questions       Question[]
+  groups          QuestionGroup[]
+  extensions      DeadlineExtension[]
+}
+
+model DeadlineExtension {
+  id        String   @id @default(cuid())
+  sessionId String
+  studentId String
+  deadline  DateTime
+  createdAt DateTime @default(now())
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, studentId])
+  @@index([sessionId])
+}
+
+model QuestionGroup {
+  id        String     @id @default(cuid())
+  sessionId String
+  session   Session    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  title     String
+  text      String?
+  order     Int
+  createdAt DateTime   @default(now())
+  questions Question[]
+
+  @@index([sessionId])
 }
 
 enum SessionStatus {
@@ -97,18 +126,23 @@ enum SessionType {
 }
 
 model Question {
-  id            String       @id @default(cuid())
+  id            String         @id @default(cuid())
   sessionId     String
-  session       Session      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session       Session        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  groupId       String?
+  group         QuestionGroup? @relation(fields: [groupId], references: [id])
   text          String
-  type          QuestionType @default(FREE_TEXT)
+  type          QuestionType   @default(FREE_TEXT)
   options       Json?
   order         Int
-  accessCode    String       @unique
+  accessCode    String         @unique
   correctAnswer String?
+  tolerance     Float?
+  unit          String?
   responses     Response[]
 
   @@index([sessionId])
+  @@index([groupId])
 }
 
 enum QuestionType {
@@ -116,6 +150,10 @@ enum QuestionType {
   MULTIPLE_CHOICE
   RATING
   YES_NO
+  NUMERIC
+  MULTI_SELECT
+  ORDERING
+  STRUCTURE
 }
 
 model Response {

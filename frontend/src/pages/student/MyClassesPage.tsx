@@ -6,46 +6,52 @@ import { useStudentAuth } from '@/context/StudentAuthContext'
 import StudentLayout from '@/components/layout/StudentLayout'
 import { BookOpen, LogOut, KeyRound, X, Clock } from 'lucide-react'
 
-function ClassAssignments({ classId, className }: { classId: string; className: string }) {
-  const { data } = useQuery<{ assignments: Array<{ id: string; title: string; deadline: string | null; questionCount: number; submittedCount: number }> }>({
+type AssignmentRow = { id: string; title: string; status: string; deadline: string | null; questionCount: number; submittedCount: number }
+
+function useClassAssignments(classId: string) {
+  return useQuery<{ assignments: AssignmentRow[] }>({
     queryKey: ['student-assignments', classId],
     queryFn: () => api.get(`/student/classes/${classId}/assignments`).then((r) => r.data.data),
   })
+}
 
-  if (!data?.assignments?.length) return null
+function FilteredClassAssignments({ classId, className, filter }: { classId: string; className: string; filter: 'open' | 'past' }) {
+  const { data } = useClassAssignments(classId)
+  const assignments = (data?.assignments ?? []).filter((a) =>
+    filter === 'open' ? a.status === 'OPEN' : a.status === 'CLOSED' || a.status === 'ARCHIVED'
+  )
+  return <>{assignments.map((a) => <AssignmentLink key={a.id} a={a} className={className} />)}</>
+}
 
+function AssignmentLink({ a, className }: { a: AssignmentRow; className: string }) {
+  const isPastDue = a.deadline && new Date(a.deadline) < new Date()
+  const isComplete = a.submittedCount >= a.questionCount
+  const isClosed = a.status === 'CLOSED' || a.status === 'ARCHIVED'
   return (
-    <>
-      {data.assignments.map((a) => {
-        const isPastDue = a.deadline && new Date(a.deadline) < new Date()
-        const isComplete = a.submittedCount >= a.questionCount
-        return (
-          <Link
-            key={a.id}
-            to={`/student/assignments/${a.id}`}
-            className="flex items-center justify-between bg-white border border-gray-200 rounded-xl px-4 py-3 hover:shadow-sm transition-shadow"
-          >
-            <div>
-              <p className="text-sm font-medium text-gray-900">{a.title}</p>
-              <p className="text-xs text-gray-400">{className}</p>
-            </div>
-            <div className="flex items-center gap-3 shrink-0">
-              {a.deadline && (
-                <span className={`flex items-center gap-1 text-xs ${isPastDue ? 'text-red-500' : 'text-gray-400'}`}>
-                  <Clock size={11} />
-                  {isPastDue ? 'Past due' : new Date(a.deadline).toLocaleDateString()}
-                </span>
-              )}
-              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                isComplete ? 'bg-green-100 text-green-700' : 'bg-yellow-50 text-yellow-700'
-              }`}>
-                {isComplete ? 'Done' : `${a.submittedCount}/${a.questionCount}`}
-              </span>
-            </div>
-          </Link>
-        )
-      })}
-    </>
+    <Link
+      to={`/student/assignments/${a.id}`}
+      className="flex items-center justify-between bg-white border border-gray-200 rounded-xl px-4 py-3 hover:shadow-sm transition-shadow"
+    >
+      <div>
+        <p className="text-sm font-medium text-gray-900">{a.title}</p>
+        <p className="text-xs text-gray-400">{className}</p>
+      </div>
+      <div className="flex items-center gap-3 shrink-0">
+        {isClosed ? (
+          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Closed</span>
+        ) : a.deadline ? (
+          <span className={`flex items-center gap-1 text-xs ${isPastDue ? 'text-red-500' : 'text-gray-400'}`}>
+            <Clock size={11} />
+            {isPastDue ? 'Past due' : new Date(a.deadline).toLocaleDateString()}
+          </span>
+        ) : null}
+        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+          isComplete ? 'bg-green-100 text-green-700' : 'bg-yellow-50 text-yellow-700'
+        }`}>
+          {isComplete ? 'Done' : `${a.submittedCount}/${a.questionCount}`}
+        </span>
+      </div>
+    </Link>
   )
 }
 
@@ -154,7 +160,15 @@ export default function MyClassesPage() {
           </div>
           <div className="space-y-2 mb-6">
             {data.map((enrollment: { class: { id: string; name: string } }) => (
-              <ClassAssignments key={enrollment.class.id} classId={enrollment.class.id} className={enrollment.class.name} />
+              <FilteredClassAssignments key={enrollment.class.id} classId={enrollment.class.id} className={enrollment.class.name} filter="open" />
+            ))}
+          </div>
+          <div className="mb-3">
+            <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Past Assignments</p>
+          </div>
+          <div className="space-y-2 mb-6">
+            {data.map((enrollment: { class: { id: string; name: string } }) => (
+              <FilteredClassAssignments key={enrollment.class.id} classId={enrollment.class.id} className={enrollment.class.name} filter="past" />
             ))}
           </div>
         </>

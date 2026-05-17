@@ -107,10 +107,16 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
     if (!question) throw new AppError('Question not found', 404)
     if (question.session.status !== 'OPEN') throw new AppError('Session is not open', 409)
 
-    // Deadline enforcement for homework assignments
+    // Deadline enforcement for homework assignments (check per-student extension first)
     const sess = question.session as typeof question.session & { type: string; deadline: Date | null }
-    if (sess.type === 'HOMEWORK' && sess.deadline && sess.deadline < new Date()) {
-      throw new AppError('This assignment is past due', 403)
+    if (sess.type === 'HOMEWORK' && sess.deadline) {
+      const extension = await prisma.deadlineExtension.findUnique({
+        where: { sessionId_studentId: { sessionId: sess.id, studentId: student.id } },
+      })
+      const effectiveDeadline = extension ? extension.deadline : sess.deadline
+      if (effectiveDeadline < new Date()) {
+        throw new AppError('This assignment is past due', 403)
+      }
     }
 
     const wordCount = question.type === 'FREE_TEXT'
@@ -155,7 +161,8 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
 function calcScore(
   qType: string,
   correctAnswer: string | null,
-  response: { responseText: string; aiScore: number | null } | null
+  response: { responseText: string; aiScore: number | null } | null,
+  tolerance?: number | null
 ): number {
   if (!response) return 0
   if (qType === 'MULTIPLE_CHOICE' || qType === 'YES_NO') {
@@ -164,6 +171,38 @@ function calcScore(
   }
   if (qType === 'FREE_TEXT') {
     return response.aiScore !== null && response.aiScore !== undefined ? response.aiScore : 1.0
+  }
+  if (qType === 'NUMERIC') {
+    if (!correctAnswer) return 1.0
+    const correct = parseFloat(correctAnswer)
+    const student = parseFloat(response.responseText)
+    if (isNaN(student)) return 0
+    const tol = tolerance ?? 0
+    return Math.abs(student - correct) <= tol ? 1.0 : 0.0
+  }
+  if (qType === 'MULTI_SELECT') {
+    if (!correctAnswer) return 1.0
+    let studentArr: string[] = []
+    try { studentArr = JSON.parse(response.responseText) } catch { return 0 }
+    if (!Array.isArray(studentArr) || studentArr.length === 0) return 0
+    const correctArr: string[] = JSON.parse(correctAnswer)
+    const sSet = new Set(studentArr)
+    const cSet = new Set(correctArr)
+    return sSet.size === cSet.size && [...cSet].every(v => sSet.has(v)) ? 1.0 : 0.5
+  }
+  if (qType === 'ORDERING') {
+    if (!correctAnswer) return 1.0
+    let studentArr: string[] = []
+    try { studentArr = JSON.parse(response.responseText) } catch { return 0 }
+    if (!Array.isArray(studentArr) || studentArr.length === 0) return 0
+    const correctArr: string[] = JSON.parse(correctAnswer)
+    return correctArr.length === studentArr.length && correctArr.every((v, i) => v === studentArr[i]) ? 1.0 : 0.5
+  }
+  if (qType === 'STRUCTURE') {
+    if (response.aiScore !== null && response.aiScore !== undefined) return response.aiScore
+    if (!correctAnswer) return 1.0
+    if (!response.responseText) return 0
+    return response.responseText === correctAnswer ? 1.0 : 0.5
   }
   return 1.0 // RATING
 }
@@ -200,7 +239,7 @@ router.get('/student/classes/:classId/grades', requireStudent, async (req: Reque
       const max = session.questions.length
       for (const q of session.questions) {
         const resp = q.responses[0] ?? null
-        earned += calcScore(q.type, q.correctAnswer, resp)
+        earned += calcScore(q.type, q.correctAnswer, resp, q.tolerance)
       }
       return {
         id: session.id,
@@ -283,7 +322,7 @@ router.post('/student/enroll', requireStudent, async (req: Request, res: Respons
   }
 })
 
-// Student: list open homework assignments for an enrolled class
+// Student: list homework assignments for an enrolled class (open + closed/archived)
 router.get('/student/classes/:classId/assignments', requireStudent, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const student = (req as StudentRequest).student
@@ -295,7 +334,7 @@ router.get('/student/classes/:classId/assignments', requireStudent, async (req: 
     if (!enrollment) throw new AppError('Not enrolled in this class', 403)
 
     const assignments = await prisma.session.findMany({
-      where: { classId, status: 'OPEN', type: 'HOMEWORK' } as object,
+      where: { classId, status: { in: ['OPEN', 'CLOSED', 'ARCHIVED'] }, type: 'HOMEWORK' } as object,
       orderBy: { deadline: 'asc' } as object,
       include: {
         _count: { select: { questions: true } },
@@ -314,6 +353,7 @@ router.get('/student/classes/:classId/assignments', requireStudent, async (req: 
     type AssignmentRow = {
       id: string
       title: string
+      status: string
       deadline: Date | null
       questionCount: number
       submittedCount: number
@@ -324,6 +364,7 @@ router.get('/student/classes/:classId/assignments', requireStudent, async (req: 
       return {
         id: a.id,
         title: a.title,
+        status: a.status,
         deadline: (a as typeof a & { deadline: Date | null }).deadline,
         questionCount: qs.length,
         submittedCount: qs.filter((q) => q.responses.length > 0).length,
@@ -342,9 +383,10 @@ router.get('/student/assignments/:id', requireStudent, async (req: Request, res:
     const student = (req as StudentRequest).student
 
     const assignment = await prisma.session.findFirst({
-      where: { id: p(req.params.id), status: 'OPEN', type: 'HOMEWORK' } as object,
+      where: { id: p(req.params.id), status: { in: ['OPEN', 'CLOSED', 'ARCHIVED'] }, type: 'HOMEWORK' } as object,
       include: {
         class: { select: { id: true, name: true } },
+        groups: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] },
         questions: {
           orderBy: { order: 'asc' },
           include: {
@@ -363,8 +405,17 @@ router.get('/student/assignments/:id', requireStudent, async (req: Request, res:
     })
     if (!enrollment) throw new AppError('Not enrolled in this class', 403)
 
-    const deadline = (assignment as typeof assignment & { deadline: Date | null }).deadline
+    const sessionDeadline = (assignment as typeof assignment & { deadline: Date | null }).deadline
+    const extension = sessionDeadline
+      ? await prisma.deadlineExtension.findUnique({
+          where: { sessionId_studentId: { sessionId: assignment.id, studentId: student.id } },
+        })
+      : null
+    const deadline = extension ? extension.deadline : sessionDeadline
     const isPastDue = deadline !== null && deadline < new Date()
+
+    const groups = (assignment as typeof assignment & { groups: { id: string; title: string; text: string | null; order: number }[] }).groups
+      .map((g) => ({ id: g.id, title: g.title, text: g.text, order: g.order }))
 
     const questions = assignment.questions.map((q) => ({
       id: q.id,
@@ -372,6 +423,8 @@ router.get('/student/assignments/:id', requireStudent, async (req: Request, res:
       type: q.type,
       options: q.options,
       order: q.order,
+      groupId: (q as typeof q & { groupId: string | null }).groupId,
+      unit: (q as typeof q & { unit: string | null }).unit,
       existingResponse: q.responses[0] ?? null,
     }))
 
@@ -381,10 +434,79 @@ router.get('/student/assignments/:id', requireStudent, async (req: Request, res:
         assignment: {
           id: assignment.id,
           title: assignment.title,
+          status: assignment.status,
           deadline,
           isPastDue,
           class: assignment.class,
+          groups,
           questions,
+        },
+      },
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Student: grades for a specific homework assignment (after it closes)
+router.get('/student/assignments/:id/grades', requireStudent, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const student = (req as StudentRequest).student
+
+    const assignment = await prisma.session.findFirst({
+      where: { id: p(req.params.id), type: 'HOMEWORK', status: { in: ['CLOSED', 'ARCHIVED'] } } as object,
+      include: {
+        class: { select: { id: true, name: true } },
+        groups: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] },
+        questions: {
+          orderBy: { order: 'asc' },
+          include: {
+            responses: {
+              where: { studentId: student.id },
+              select: { id: true, responseText: true, aiScore: true, submittedAt: true },
+            },
+          },
+        },
+      },
+    })
+    if (!assignment) throw new AppError('Assignment not found or not yet closed', 404)
+
+    const enrollment = await prisma.enrollment.findUnique({
+      where: { studentId_classId: { studentId: student.id, classId: assignment.classId } },
+    })
+    if (!enrollment) throw new AppError('Not enrolled in this class', 403)
+
+    let earned = 0
+    const questions = assignment.questions.map((q) => {
+      const resp = q.responses[0] ?? null
+      const score = calcScore(q.type, q.correctAnswer, resp, q.tolerance)
+      earned += score
+      return {
+        id: q.id,
+        text: q.text,
+        type: q.type,
+        options: q.options,
+        order: q.order,
+        groupId: (q as typeof q & { groupId: string | null }).groupId,
+        response: resp ? { responseText: resp.responseText, aiScore: resp.aiScore, submittedAt: resp.submittedAt } : null,
+        score,
+      }
+    })
+
+    const groups = (assignment as typeof assignment & { groups: { id: string; title: string; text: string | null; order: number }[] }).groups
+      .map((g) => ({ id: g.id, title: g.title, text: g.text, order: g.order }))
+
+    res.json({
+      success: true,
+      data: {
+        assignment: {
+          id: assignment.id,
+          title: assignment.title,
+          class: assignment.class,
+          groups,
+          questions,
+          earned: Math.round(earned * 10) / 10,
+          max: assignment.questions.length,
         },
       },
     })
