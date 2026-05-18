@@ -925,7 +925,6 @@ function ResponseList({
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
                 <p className="text-xs text-gray-400 mb-1">
-                  {(resp as ResponseWithStudent).student?.name} ·{' '}
                   <span className="font-mono">{(resp as ResponseWithStudent).student?.netId}</span>
                 </p>
                 {(q.type as string) === 'STRUCTURE'
@@ -960,6 +959,66 @@ function ResponseList({
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
+function PreviewInput({ q }: { q: QWithGroup }) {
+  const opts = q.options as string[] | null
+  if (q.type === 'FREE_TEXT') return (
+    <textarea disabled rows={3} placeholder="Student answer…" className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-400 bg-gray-50 resize-none" />
+  )
+  if (q.type === 'MULTIPLE_CHOICE' && opts) return (
+    <div className="space-y-2">
+      {opts.map((o) => (
+        <div key={o} className="flex items-center gap-3 p-3 border border-gray-200 rounded-xl opacity-60">
+          <div className="w-4 h-4 rounded-full border-2 border-gray-300 shrink-0" />
+          <span className="text-sm text-gray-700">{o}</span>
+        </div>
+      ))}
+    </div>
+  )
+  if (q.type === 'MULTI_SELECT' && opts) return (
+    <div className="space-y-2">
+      {opts.map((o) => (
+        <div key={o} className="flex items-center gap-3 p-3 border border-gray-200 rounded-xl opacity-60">
+          <div className="w-4 h-4 rounded border-2 border-gray-300 shrink-0" />
+          <span className="text-sm text-gray-700">{o}</span>
+        </div>
+      ))}
+    </div>
+  )
+  if (q.type === 'YES_NO') return (
+    <div className="flex gap-3">
+      {['Yes', 'No'].map((o) => (
+        <div key={o} className="flex-1 py-2.5 border-2 border-gray-200 rounded-xl text-center text-sm text-gray-400 opacity-60">{o}</div>
+      ))}
+    </div>
+  )
+  if (q.type === 'RATING') return (
+    <div className="flex gap-2">
+      {[1,2,3,4,5].map((n) => (
+        <div key={n} className="w-10 h-10 border-2 border-gray-200 rounded-xl flex items-center justify-center text-sm text-gray-400 opacity-60">{n}</div>
+      ))}
+    </div>
+  )
+  if (q.type === 'NUMERIC') return (
+    <div className="flex items-center gap-2">
+      <div className="w-36 h-9 border border-gray-200 rounded-lg bg-gray-50 opacity-60" />
+      {(q as { unit?: string | null }).unit && <span className="text-sm text-gray-400">{(q as { unit?: string | null }).unit}</span>}
+    </div>
+  )
+  if (q.type === 'ORDERING' && opts) return (
+    <div className="space-y-2">
+      {opts.map((o, i) => (
+        <div key={o} className="flex items-center gap-2 px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-500 opacity-60">
+          <span className="text-gray-300">{i + 1}.</span> {o}
+        </div>
+      ))}
+    </div>
+  )
+  if (q.type === 'STRUCTURE') return (
+    <div className="h-20 border border-gray-200 rounded-xl bg-gray-50 flex items-center justify-center text-xs text-gray-400 opacity-60">Structure drawing (JSME editor)</div>
+  )
+  return null
+}
+
 export default function AssignmentDetailPage() {
   const { assignmentId } = useParams<{ assignmentId: string }>()
   const qc = useQueryClient()
@@ -976,6 +1035,7 @@ export default function AssignmentDetailPage() {
 
   // Extensions panel
   const [showExtensions, setShowExtensions] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
   const [extStudentId, setExtStudentId] = useState('')
   const [extDeadline, setExtDeadline] = useState('')
 
@@ -1093,13 +1153,13 @@ export default function AssignmentDetailPage() {
     },
   })
 
-  const extensionsQuery = useQuery<{ id: string; studentId: string; deadline: string; student: { id: string; name: string; netId: string } }[]>({
+  const extensionsQuery = useQuery<{ id: string; studentId: string; deadline: string; student: { id: string; netId: string } }[]>({
     queryKey: ['extensions', assignmentId],
     queryFn: () => api.get(`/sessions/${assignmentId}/extensions`).then((r) => r.data.data.extensions),
     enabled: showExtensions,
   })
 
-  const rosterQuery = useQuery<{ student: { id: string; name: string; netId: string } }[]>({
+  const rosterQuery = useQuery<{ student: { id: string; netId: string } }[]>({
     queryKey: ['roster', data?.class?.id],
     queryFn: () => api.get(`/classes/${data!.class.id}/enrollments`).then((r) => r.data.data.enrollments),
     enabled: showExtensions && !!data?.class?.id,
@@ -1121,7 +1181,7 @@ export default function AssignmentDetailPage() {
   })
 
   const submissionStatusQuery = useQuery<{
-    students: { student: { id: string; name: string; netId: string }; section: { name: string } | null; submittedCount: number; totalQuestions: number; isComplete: boolean }[]
+    students: { student: { id: string; netId: string }; section: { name: string } | null; submittedCount: number; totalQuestions: number; isComplete: boolean }[]
     totalQuestions: number
   }>({
     queryKey: ['submission-status', assignmentId],
@@ -1282,7 +1342,7 @@ export default function AssignmentDetailPage() {
                   <div className="space-y-2 mb-3">
                     {extensions.map((ext) => (
                       <div key={ext.studentId} className="flex items-center justify-between gap-3 text-sm">
-                        <span className="text-gray-700 font-medium">{ext.student.name} <span className="text-gray-400 font-normal">({ext.student.netId})</span></span>
+                        <span className="text-gray-700 font-medium font-mono">{ext.student.netId}</span>
                         <span className="text-gray-500 text-xs shrink-0">{new Date(ext.deadline).toLocaleString()}</span>
                         <button
                           onClick={() => removeExtensionMutation.mutate(ext.studentId)}
@@ -1304,7 +1364,7 @@ export default function AssignmentDetailPage() {
                   >
                     <option value="">Select student…</option>
                     {availableForExtension.map((e) => (
-                      <option key={e.student.id} value={e.student.id}>{e.student.name} ({e.student.netId})</option>
+                      <option key={e.student.id} value={e.student.id}>{e.student.netId}</option>
                     ))}
                   </select>
                   <input
@@ -1327,6 +1387,12 @@ export default function AssignmentDetailPage() {
             <a href={`/api/sessions/${assignmentId}/export`} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2 rounded-lg text-sm hover:bg-gray-50">
               <Download size={14} /> Export CSV
             </a>
+            <button
+              onClick={() => setShowPreview(true)}
+              className="flex items-center gap-1.5 text-sm text-gray-500 border border-gray-200 px-3 py-2 rounded-lg hover:bg-gray-50"
+            >
+              Preview
+            </button>
             {data.status === SessionStatus.DRAFT ? (
               <button onClick={() => statusMutation.mutate(SessionStatus.OPEN)} disabled={statusMutation.isPending} className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50">Publish</button>
             ) : data.status === SessionStatus.OPEN ? (
@@ -1611,8 +1677,7 @@ export default function AssignmentDetailPage() {
                     {submissionStatusQuery.data?.students.map((s) => (
                       <tr key={s.student.id} className="border-b border-gray-50 last:border-0">
                         <td className="px-5 py-2.5">
-                          <p className="font-medium text-gray-800">{s.student.name}</p>
-                          <p className="text-xs text-gray-400">{s.student.netId}</p>
+                          <p className="font-medium text-gray-800 font-mono">{s.student.netId}</p>
                         </td>
                         <td className="px-3 py-2.5 text-xs text-gray-400">{s.section?.name ?? '—'}</td>
                         <td className="px-5 py-2.5 text-right">
@@ -1638,6 +1703,67 @@ export default function AssignmentDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Student preview modal */}
+      {showPreview && (
+        <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 px-4 py-8 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl my-auto overflow-hidden">
+            <div className="bg-primary-600 px-6 py-4 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-primary-100 text-xs font-medium uppercase tracking-wide">{data.class.name}</p>
+                <h2 className="text-white text-lg font-semibold mt-0.5">{data.title}</h2>
+              </div>
+              <button onClick={() => setShowPreview(false)} className="text-primary-200 hover:text-white mt-0.5 shrink-0">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {(() => {
+                const groups = data.groups as QuestionGroup[]
+                const questions = data.questions as QWithGroup[]
+                const usedIds = new Set<string>()
+                const items: React.ReactNode[] = []
+
+                groups.forEach((group) => {
+                  const parts = questions.filter((q) => q.groupId === group.id)
+                  if (parts.length === 0) return
+                  parts.forEach((q) => usedIds.add(q.id))
+                  items.push(
+                    <div key={group.id} className="border border-amber-200 bg-amber-50 rounded-2xl p-5 space-y-4">
+                      <div>
+                        <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1">{group.title}</p>
+                        {group.text && <RichTextRenderer content={group.text} />}
+                      </div>
+                      {parts.map((q, pi) => (
+                        <div key={q.id} className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
+                          <p className="text-xs font-medium text-gray-400">Part {String.fromCharCode(65 + pi)}</p>
+                          <RichTextRenderer content={q.text} />
+                          <PreviewInput q={q} />
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })
+
+                questions.filter((q) => !usedIds.has(q.id)).forEach((q, qi) => {
+                  items.push(
+                    <div key={q.id} className="border border-gray-200 rounded-2xl p-5 space-y-3">
+                      <p className="text-xs font-medium text-gray-400">Question {qi + 1}</p>
+                      <RichTextRenderer content={q.text} />
+                      <PreviewInput q={q} />
+                    </div>
+                  )
+                })
+
+                return items
+              })()}
+
+              <p className="text-center text-xs text-gray-400 pt-2">— Preview only — students submit individually —</p>
+            </div>
+          </div>
+        </div>
+      )}
     </ProfessorLayout>
   )
 }

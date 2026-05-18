@@ -8,7 +8,6 @@ import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import { Plus, Trash2, X, ChevronLeft, ChevronDown, Download, KeyRound, Copy, Users, BookOpen } from 'lucide-react'
 import type { QuestionType } from 'shared'
-import RichTextEditor from '@/components/RichTextEditor'
 
 interface StudentStats {
   totalResponses: number
@@ -47,16 +46,9 @@ const questionSchema = z.object({
   options: z.array(z.string()).optional(),
 })
 
-const assignmentQuestionSchema = z.object({
-  text: z.string().min(1, 'Question text required'),
-  type: z.enum(['FREE_TEXT', 'MULTIPLE_CHOICE', 'MULTI_SELECT', 'RATING', 'YES_NO', 'NUMERIC', 'ORDERING', 'STRUCTURE']),
-  options: z.array(z.string()).optional(),
-})
-
 const assignmentSchema = z.object({
   title: z.string().min(1, 'Title required'),
   deadline: z.string().min(1, 'Deadline required'),
-  questions: z.array(assignmentQuestionSchema).min(1, 'Add at least one question'),
 })
 type AssignmentFormData = z.infer<typeof assignmentSchema>
 
@@ -99,7 +91,6 @@ export default function ClassPage() {
   const [createError, setCreateError] = useState('')
   const [showAssignmentModal, setShowAssignmentModal] = useState(false)
   const [assignmentError, setAssignmentError] = useState('')
-  const [hwQuestionTexts, setHwQuestionTexts] = useState<string[]>([''])
   const [showDuplicateModal, setShowDuplicateModal] = useState(false)
   const [dupName, setDupName] = useState('')
   const [dupDescription, setDupDescription] = useState('')
@@ -191,19 +182,13 @@ export default function ClassPage() {
 
   const {
     register: regHw,
-    control: ctrlHw,
     handleSubmit: handleHwSubmit,
     reset: resetHw,
-    watch: watchHw,
-    setValue: setHwValue,
     formState: { errors: hwErrors, isSubmitting: hwSubmitting },
   } = useForm<AssignmentFormData>({
     resolver: zodResolver(assignmentSchema),
-    defaultValues: { title: '', deadline: '', questions: [{ text: '', type: 'FREE_TEXT', options: [] }] },
+    defaultValues: { title: '', deadline: '' },
   })
-
-  const { fields: hwFields, append: appendHw, remove: removeHw } = useFieldArray({ control: ctrlHw, name: 'questions' })
-  const watchedHwQuestions = watchHw('questions')
 
   const createAssignmentMutation = useMutation({
     mutationFn: (body: AssignmentFormData) =>
@@ -211,17 +196,12 @@ export default function ClassPage() {
         type: 'HOMEWORK',
         title: body.title,
         deadline: new Date(body.deadline).toISOString(),
-        questions: body.questions.map((q, i) => ({
-          ...q,
-          text: hwQuestionTexts[i] ?? q.text,
-          order: i,
-        })),
+        questions: [],
       }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['assignments', classId] })
+    onSuccess: (res) => {
       setShowAssignmentModal(false)
       resetHw()
-      setHwQuestionTexts([''])
+      navigate(`/professor/classes/${classId}/assignments/${res.data.data.session.id}`)
     },
     onError: (e: unknown) => {
       const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
@@ -483,7 +463,6 @@ export default function ClassPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 text-left">
-                  <th className="px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Name</th>
                   <th className="px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">NetID</th>
                   <th className="px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Email</th>
                   {sections.length > 0 && <th className="px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Section</th>}
@@ -514,9 +493,9 @@ export default function ClassPage() {
                       >
                         <td className="px-5 py-3.5 font-medium text-gray-900 flex items-center gap-1.5">
                           <ChevronDown size={14} className={`text-gray-300 transition-transform shrink-0 ${isExpanded ? 'rotate-180' : ''}`} />
-                          {e.student.name}
+                          {e.student.netId}
                         </td>
-                        <td className="px-5 py-3.5 font-mono text-gray-600">{e.student.netId}</td>
+                        <td className="px-5 py-3.5 text-gray-600">{e.student.email}</td>
                         <td className="px-5 py-3.5 text-gray-500">{e.student.email}</td>
                         {sections.length > 0 && (
                           <td className="px-5 py-3.5" onClick={(ev) => ev.stopPropagation()}>
@@ -717,13 +696,13 @@ export default function ClassPage() {
             {resetSuccess ? (
               <div className="text-center py-4">
                 <p className="text-green-600 font-medium mb-1">Password updated</p>
-                <p className="text-sm text-gray-500 mb-5">{resetTarget.name}'s password has been reset.</p>
+                <p className="text-sm text-gray-500 mb-5">{resetTarget.netId}'s password has been reset.</p>
                 <button onClick={closeReset} className="text-sm text-primary-600 hover:underline">Close</button>
               </div>
             ) : (
               <>
                 <p className="text-sm text-gray-500 mb-4">
-                  Setting a new password for <span className="font-medium text-gray-800">{resetTarget.name}</span> ({resetTarget.netId})
+                  Setting a new password for <span className="font-medium text-gray-800">{resetTarget.netId}</span>
                 </p>
                 <input
                   type="password"
@@ -751,11 +730,11 @@ export default function ClassPage() {
       )}
       {/* Create assignment modal */}
       {showAssignmentModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-start justify-center z-50 px-4 py-8 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-6 my-auto">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-semibold">New assignment</h2>
-              <button onClick={() => { setShowAssignmentModal(false); resetHw(); setHwQuestionTexts(['']) }}>
+              <button onClick={() => { setShowAssignmentModal(false); resetHw() }}>
                 <X size={20} className="text-gray-400" />
               </button>
             </div>
@@ -765,113 +744,35 @@ export default function ClassPage() {
                 setAssignmentError('')
                 createAssignmentMutation.mutate(d)
               })}
-              className="space-y-5"
+              className="space-y-4"
             >
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-                  <input
-                    {...regHw('title')}
-                    placeholder="Homework 1"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    autoFocus
-                  />
-                  {hwErrors.title && <p className="text-red-500 text-xs mt-1">{hwErrors.title.message}</p>}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Deadline</label>
-                  <input
-                    {...regHw('deadline')}
-                    type="datetime-local"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  />
-                  {hwErrors.deadline && <p className="text-red-500 text-xs mt-1">{hwErrors.deadline.message}</p>}
-                </div>
-              </div>
-
               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-sm font-medium text-gray-700">Questions</label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      appendHw({ text: '', type: 'FREE_TEXT', options: [] })
-                      setHwQuestionTexts((prev) => [...prev, ''])
-                    }}
-                    className="text-xs text-primary-600 hover:text-primary-800 flex items-center gap-1"
-                  >
-                    <Plus size={13} /> Add question
-                  </button>
-                </div>
-
-                <div className="space-y-4">
-                  {hwFields.map((field, idx) => (
-                    <div key={field.id} className="border border-gray-200 rounded-xl p-4 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium text-gray-400">Question {idx + 1}</span>
-                        {hwFields.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              removeHw(idx)
-                              setHwQuestionTexts((prev) => prev.filter((_, i) => i !== idx))
-                            }}
-                            className="text-gray-300 hover:text-red-400"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </div>
-
-                      <RichTextEditor
-                        content={hwQuestionTexts[idx] ?? ''}
-                        onChange={(json) => {
-                          setHwQuestionTexts((prev) => {
-                            const next = [...prev]
-                            next[idx] = json
-                            return next
-                          })
-                          setHwValue(`questions.${idx}.text`, json)
-                        }}
-                      />
-                      {hwErrors.questions?.[idx]?.text && (
-                        <p className="text-red-500 text-xs">{hwErrors.questions[idx]?.text?.message}</p>
-                      )}
-
-                      <select
-                        {...regHw(`questions.${idx}.type`)}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
-                      >
-                        {Object.entries(TYPE_LABELS).map(([val, label]) => (
-                          <option key={val} value={val}>{label}</option>
-                        ))}
-                      </select>
-
-                      {watchedHwQuestions[idx]?.type === 'MULTIPLE_CHOICE' && (
-                        <div className="space-y-2">
-                          <p className="text-xs text-gray-500">Options (one per line)</p>
-                          <textarea
-                            rows={3}
-                            placeholder={"Option A\nOption B\nOption C"}
-                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
-                            onChange={(e) => {
-                              const opts = e.target.value.split('\n').map((s) => s.trim()).filter(Boolean)
-                              setHwValue(`questions.${idx}.options`, opts)
-                            }}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                <input
+                  {...regHw('title')}
+                  placeholder="Homework 1"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  autoFocus
+                />
+                {hwErrors.title && <p className="text-red-500 text-xs mt-1">{hwErrors.title.message}</p>}
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Deadline</label>
+                <input
+                  {...regHw('deadline')}
+                  type="datetime-local"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+                {hwErrors.deadline && <p className="text-red-500 text-xs mt-1">{hwErrors.deadline.message}</p>}
+              </div>
+              <p className="text-xs text-gray-400">Questions are added in the assignment editor after creation.</p>
 
               {assignmentError && <p className="text-red-500 text-sm">{assignmentError}</p>}
 
-              <div className="flex justify-end gap-3 pt-2">
+              <div className="flex justify-end gap-3 pt-1">
                 <button
                   type="button"
-                  onClick={() => { setShowAssignmentModal(false); resetHw(); setHwQuestionTexts(['']) }}
+                  onClick={() => { setShowAssignmentModal(false); resetHw() }}
                   className="px-4 py-2 text-sm text-gray-600"
                 >
                   Cancel
@@ -881,7 +782,7 @@ export default function ClassPage() {
                   disabled={hwSubmitting}
                   className="px-5 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
                 >
-                  {hwSubmitting ? 'Creating…' : 'Create assignment'}
+                  {hwSubmitting ? 'Creating…' : 'Create & edit'}
                 </button>
               </div>
             </form>

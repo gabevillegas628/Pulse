@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, lazy, Suspense } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useForm, Controller } from 'react-hook-form'
 import { api } from '@/api/client'
@@ -6,6 +6,41 @@ import { useStudentAuth } from '@/context/StudentAuthContext'
 import StudentLayout from '@/components/layout/StudentLayout'
 import { io } from 'socket.io-client'
 import type { StudentQuestion } from 'shared'
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import { GripVertical } from 'lucide-react'
+
+const Jsme = lazy(() => import('@loschmidt/jsme-react').then(m => ({ default: m.Jsme })))
+
+function SortableOrderItem({ id, label }: { id: string; label: string }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-2 px-3 py-2.5 border border-gray-300 rounded-xl text-sm text-gray-800 bg-white cursor-grab active:cursor-grabbing"
+    >
+      <span {...attributes} {...listeners} className="text-gray-300 hover:text-gray-500">
+        <GripVertical size={14} />
+      </span>
+      {label}
+    </div>
+  )
+}
 
 export default function QuestionPage() {
   const { questionId } = useParams<{ questionId: string }>()
@@ -17,6 +52,11 @@ export default function QuestionPage() {
   const [loadError, setLoadError] = useState('')
   const [submitError, setSubmitError] = useState('')
   const [sessionClosed, setSessionClosed] = useState(false)
+  const [orderedItems, setOrderedItems] = useState<string[]>([])
+  const [selectedOptions, setSelectedOptions] = useState<string[]>([])
+  const [structureSmiles, setStructureSmiles] = useState('')
+  const jsmeInitialSmiles = useRef('')
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   const { control, handleSubmit, register, formState: { isSubmitting } } = useForm<{ response: string }>()
 
@@ -33,6 +73,12 @@ export default function QuestionPage() {
         const q: StudentQuestion = r.data.data.question
         setQuestion(q)
         if (q.session.status !== 'OPEN') setSessionClosed(true)
+        if (q.type === 'ORDERING' && q.options) {
+          setOrderedItems([...q.options].sort(() => Math.random() - 0.5))
+        }
+        jsmeInitialSmiles.current = ''
+        setStructureSmiles('')
+        setSelectedOptions([])
       })
       .catch((e) => {
         const msg = e?.response?.data?.error
@@ -50,11 +96,25 @@ export default function QuestionPage() {
     return () => { socket.disconnect() }
   }, [question])
 
+  function handleOrderDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    setOrderedItems((items) => {
+      const oldIdx = items.indexOf(String(active.id))
+      const newIdx = items.indexOf(String(over.id))
+      return arrayMove(items, oldIdx, newIdx)
+    })
+  }
+
   async function onSubmit(data: { response: string }) {
     if (!question) return
     setSubmitError('')
+    let responseText = data.response ?? ''
+    if (question.type === 'ORDERING') responseText = JSON.stringify(orderedItems)
+    if (question.type === 'MULTI_SELECT') responseText = JSON.stringify(selectedOptions)
+    if (question.type === 'STRUCTURE') responseText = structureSmiles
     try {
-      await api.post('/responses', { questionId: question.id, responseText: data.response ?? '' })
+      await api.post('/responses', { questionId: question.id, responseText })
       navigate(`/q/${question.id}/confirmation`)
     } catch (e: unknown) {
       const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
@@ -109,6 +169,8 @@ export default function QuestionPage() {
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-6">
+          <p className="text-sm font-medium text-gray-800">{q.text}</p>
+
           <div>
             {q.type === 'FREE_TEXT' && (
               <textarea
@@ -190,6 +252,76 @@ export default function QuestionPage() {
                   </div>
                 )}
               />
+            )}
+
+            {q.type === 'NUMERIC' && (
+              <Controller
+                name="response"
+                control={control}
+                render={({ field }) => (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={field.value ?? ''}
+                      onChange={(e) => field.onChange(e.target.value)}
+                      placeholder="Your answer…"
+                      className="w-48 border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    />
+                    {q.unit && <span className="text-sm text-gray-500">{q.unit}</span>}
+                  </div>
+                )}
+              />
+            )}
+
+            {q.type === 'MULTI_SELECT' && q.options && (
+              <div className="space-y-2">
+                {q.options.map((opt) => {
+                  const isChecked = selectedOptions.includes(opt)
+                  return (
+                    <label key={opt} className={`flex items-center gap-3 p-3 border rounded-xl cursor-pointer transition-colors ${
+                      isChecked ? 'border-primary-500 bg-primary-50' : 'border-gray-200 hover:border-gray-300'
+                    }`}>
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => {
+                          const next = isChecked
+                            ? selectedOptions.filter(v => v !== opt)
+                            : [...selectedOptions, opt]
+                          setSelectedOptions(next)
+                        }}
+                        className="accent-primary-600"
+                      />
+                      <span className="text-gray-800">{opt}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+
+            {q.type === 'ORDERING' && orderedItems.length > 0 && (
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleOrderDragEnd}>
+                <SortableContext items={orderedItems} strategy={verticalListSortingStrategy}>
+                  <div className="space-y-2">
+                    {orderedItems.map((item) => (
+                      <SortableOrderItem key={item} id={item} label={item} />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
+            )}
+
+            {q.type === 'STRUCTURE' && (
+              <Suspense fallback={<div className="h-40 bg-gray-50 rounded-xl animate-pulse" />}>
+                <Jsme
+                  height="420px"
+                  width="600px"
+                  smiles={jsmeInitialSmiles.current}
+                  onChange={(s) => setStructureSmiles(s)}
+                  options="oldlook"
+                />
+              </Suspense>
             )}
           </div>
 

@@ -6,7 +6,7 @@ import { useStudentAuth } from '@/context/StudentAuthContext'
 import StudentLayout from '@/components/layout/StudentLayout'
 import { BookOpen, LogOut, KeyRound, X, Clock } from 'lucide-react'
 
-type AssignmentRow = { id: string; title: string; status: string; deadline: string | null; questionCount: number; submittedCount: number }
+type AssignmentRow = { id: string; title: string; status: string; deadline: string | null; questionCount: number; submittedCount: number; earnedScore: number | null; maxScore: number | null }
 
 function useClassAssignments(classId: string) {
   return useQuery<{ assignments: AssignmentRow[] }>({
@@ -38,7 +38,13 @@ function AssignmentLink({ a, className }: { a: AssignmentRow; className: string 
       </div>
       <div className="flex items-center gap-3 shrink-0">
         {isClosed ? (
-          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Closed</span>
+          <>
+            {a.earnedScore !== null && a.maxScore !== null ? (
+              <span className="text-xs font-medium text-gray-700">{a.earnedScore.toFixed(1)}/{a.maxScore}</span>
+            ) : (
+              <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Closed</span>
+            )}
+          </>
         ) : a.deadline ? (
           <span className={`flex items-center gap-1 text-xs ${isPastDue ? 'text-red-500' : 'text-gray-400'}`}>
             <Clock size={11} />
@@ -131,7 +137,7 @@ export default function MyClassesPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-gray-900">My Classes</h1>
-          <p className="text-sm text-gray-500">{student?.name} · {student?.netId}</p>
+          <p className="text-sm text-gray-500">{student?.netId}</p>
         </div>
         <div className="flex items-center gap-3">
           <button onClick={openPwModal} className="text-gray-400 hover:text-gray-600" title="Change password">

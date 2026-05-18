@@ -9,7 +9,6 @@ import { useStudentAuth } from '@/context/StudentAuthContext'
 type Role = 'student' | 'professor'
 
 const studentSchema = z.object({
-  name: z.string().min(1, 'Enter your name'),
   netId: z.string().min(1, 'Enter your NetID'),
   email: z.string().email('Enter a valid email'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
@@ -45,7 +44,7 @@ export default function RegisterPage() {
   async function onStudentSubmit(data: StudentForm) {
     setError('')
     try {
-      await studentRegister(data.name, data.netId, data.email, data.password)
+      await studentRegister(data.netId, data.email, data.password)
       navigate(next ?? '/student', { replace: true })
     } catch (e: unknown) {
       const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
@@ -91,17 +90,6 @@ export default function RegisterPage() {
           <div className="p-8">
             {role === 'student' ? (
               <form onSubmit={studentForm.handleSubmit(onStudentSubmit)} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Full name</label>
-                  <input
-                    {...studentForm.register('name')}
-                    placeholder="Jane Smith"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  />
-                  {studentForm.formState.errors.name && (
-                    <p className="text-red-500 text-xs mt-1">{studentForm.formState.errors.name.message}</p>
-                  )}
-                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">NetID</label>
                   <input

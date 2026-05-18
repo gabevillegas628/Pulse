@@ -32,7 +32,6 @@ export interface Student {
   id: string
   netId: string
   email: string
-  name: string
   createdAt: string
   updatedAt: string
 }
@@ -131,7 +130,6 @@ export interface StudentLoginRequest {
 }
 
 export interface StudentRegisterRequest {
-  name: string
   netId: string
   email: string
   password: string
@@ -179,6 +177,7 @@ export interface StudentQuestion {
   options: string[] | null
   order: number
   accessCode: string
+  unit: string | null
   session: {
     id: string
     title: string
@@ -200,7 +199,7 @@ export interface ClassWithCounts extends Class {
 }
 
 export interface ResponseWithStudent extends Response {
-  student: Pick<Student, 'id' | 'netId' | 'name'>
+  student: Pick<Student, 'id' | 'netId'>
 }
 
 export interface QuestionWithResponses extends Question {

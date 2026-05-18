@@ -146,7 +146,7 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
     })
 
     getIo().to(question.session.id).emit('new_response', {
-      student: { id: student.id, netId: student.netId, name: student.name },
+      student: { id: student.id, netId: student.netId },
       response,
       questionId,
       sessionId: question.session.id,
@@ -337,13 +337,12 @@ router.get('/student/classes/:classId/assignments', requireStudent, async (req: 
       where: { classId, status: { in: ['OPEN', 'CLOSED', 'ARCHIVED'] }, type: 'HOMEWORK' } as object,
       orderBy: { deadline: 'asc' } as object,
       include: {
-        _count: { select: { questions: true } },
         questions: {
-          select: { id: true },
+          select: { id: true, type: true, correctAnswer: true, tolerance: true },
           include: {
             responses: {
               where: { studentId: student.id },
-              select: { id: true },
+              select: { id: true, responseText: true, aiScore: true },
             },
           },
         },
@@ -357,17 +356,29 @@ router.get('/student/classes/:classId/assignments', requireStudent, async (req: 
       deadline: Date | null
       questionCount: number
       submittedCount: number
+      earnedScore: number | null
+      maxScore: number | null
     }
 
     const result: AssignmentRow[] = assignments.map((a) => {
-      const qs = a.questions as Array<{ id: string; responses: Array<{ id: string }> }>
+      const qs = a.questions as Array<{ id: string; type: string; correctAnswer: string | null; tolerance: number | null; responses: Array<{ id: string; responseText: string; aiScore: number | null }> }>
+      const isClosed = a.status === 'CLOSED' || a.status === 'ARCHIVED'
+      const submittedCount = qs.filter((q) => q.responses.length > 0).length
+      let earnedScore: number | null = null
+      let maxScore: number | null = null
+      if (isClosed && qs.length > 0) {
+        earnedScore = qs.reduce((sum, q) => sum + calcScore(q.type, q.correctAnswer, q.responses[0] ?? null, q.tolerance), 0)
+        maxScore = qs.length
+      }
       return {
         id: a.id,
         title: a.title,
         status: a.status,
         deadline: (a as typeof a & { deadline: Date | null }).deadline,
         questionCount: qs.length,
-        submittedCount: qs.filter((q) => q.responses.length > 0).length,
+        submittedCount,
+        earnedScore,
+        maxScore,
       }
     })
 

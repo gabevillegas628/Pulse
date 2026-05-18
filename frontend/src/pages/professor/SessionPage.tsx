@@ -579,7 +579,6 @@ export default function SessionPage() {
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-gray-800">{r.student.netId}</span>
-                      <span className="text-xs text-gray-400">{r.student.name}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       {r.isFlagged && (

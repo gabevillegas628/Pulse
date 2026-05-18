@@ -28,7 +28,7 @@ const createSessionSchema = z.object({
   title: z.string().min(1),
   type: z.enum(['IN_CLASS', 'HOMEWORK']).optional().default('IN_CLASS'),
   deadline: z.string().datetime().optional(),
-  questions: z.array(questionInputSchema).min(1),
+  questions: z.array(questionInputSchema).default([]),
 })
 
 async function generateUniqueQuestionCode(): Promise<string> {
@@ -143,7 +143,7 @@ router.get('/sessions/:id', requireProfessor, async (req: Request, res: Response
           orderBy: { order: 'asc' },
           include: {
             responses: {
-              include: { student: { select: { id: true, netId: true, name: true } } },
+              include: { student: { select: { id: true, netId: true } } },
               orderBy: { submittedAt: 'desc' },
             },
           },
@@ -358,7 +358,7 @@ router.get('/sessions/:id/extensions', requireProfessor, async (req: Request, re
 
     const extensions = await prisma.deadlineExtension.findMany({
       where: { sessionId: session.id },
-      include: { student: { select: { id: true, name: true, netId: true } } },
+      include: { student: { select: { id: true, netId: true } } },
       orderBy: { createdAt: 'asc' },
     })
     res.json({ success: true, data: { extensions } })
@@ -389,7 +389,7 @@ router.post('/sessions/:id/extensions', requireProfessor, async (req: Request, r
       where: { sessionId_studentId: { sessionId: session.id, studentId } },
       create: { sessionId: session.id, studentId, deadline: new Date(deadline) },
       update: { deadline: new Date(deadline) },
-      include: { student: { select: { id: true, name: true, netId: true } } },
+      include: { student: { select: { id: true, netId: true } } },
     })
     res.status(201).json({ success: true, data: { extension } })
   } catch (err) {
@@ -421,7 +421,7 @@ router.get('/sessions/:id/export', requireProfessor, async (req: Request, res: R
     const session = await prisma.session.findFirst({
       where: { id: p(req.params.id), class: { professorId: professor.id } },
       include: {
-        class: { include: { enrollments: { include: { student: { select: { id: true, netId: true, name: true } } } } } },
+        class: { include: { enrollments: { include: { student: { select: { id: true, netId: true } } } } } },
         questions: {
           orderBy: { order: 'asc' },
           include: {
@@ -435,23 +435,23 @@ router.get('/sessions/:id/export', requireProfessor, async (req: Request, res: R
     // All enrolled students as the row set
     const students = session.class.enrollments.map((e) => e.student)
 
-    type Row = { netId: string; name: string; scores: number[] }
+    type Row = { netId: string; scores: number[] }
     const rows: Row[] = students.map((s) => {
       const scores = session.questions.map((q) => {
         const resp = q.responses.find((r) => r.studentId === s.id) ?? null
         return calcScore(q.type, q.correctAnswer, resp, q.tolerance)
       })
-      return { netId: s.netId, name: s.name, scores }
+      return { netId: s.netId, scores }
     })
 
     const maxPerQ = session.questions.map(() => 1.0)
     const grandMax = maxPerQ.reduce((a, b) => a + b, 0)
 
     const qHeaders = session.questions.map((_q, i) => `Q${i + 1} Score`)
-    const header = ['NetID', 'Name', ...qHeaders, 'Total', `Max (${grandMax})`].join(',')
+    const header = ['NetID', ...qHeaders, 'Total', `Max (${grandMax})`].join(',')
     const csvRows = rows.map((r) => {
       const total = r.scores.reduce((a, b) => a + b, 0)
-      return [r.netId, `"${r.name}"`, ...r.scores.map(String), total.toFixed(1), grandMax.toFixed(1)].join(',')
+      return [r.netId, ...r.scores.map(String), total.toFixed(1), grandMax.toFixed(1)].join(',')
     })
 
     const csv = [header, ...csvRows].join('\n')
@@ -675,7 +675,7 @@ router.post('/sessions/:sessionId/questions/:questionId/grade', requireProfessor
       },
       include: {
         session: true,
-        responses: { include: { student: { select: { id: true, netId: true, name: true } } } },
+        responses: { include: { student: { select: { id: true, netId: true } } } },
       },
     })
     if (!question) throw new AppError('Question not found', 404)
@@ -848,7 +848,7 @@ router.get('/sessions/:id/submission-status', requireProfessor, async (req: Requ
     const enrollments = await prisma.enrollment.findMany({
       where: { classId: session.classId },
       include: {
-        student: { select: { id: true, name: true, netId: true } },
+        student: { select: { id: true, netId: true } },
         section: { select: { id: true, name: true } },
       },
       orderBy: [{ section: { name: 'asc' } }],
@@ -875,10 +875,10 @@ router.get('/sessions/:id/submission-status', requireProfessor, async (req: Requ
       }
     })
 
-    // Sort: incomplete first, then by name
+    // Sort: incomplete first, then by netId
     students.sort((a, b) => {
       if (a.isComplete !== b.isComplete) return a.isComplete ? 1 : -1
-      return a.student.name.localeCompare(b.student.name)
+      return a.student.netId.localeCompare(b.student.netId)
     })
 
     res.json({ success: true, data: { students, totalQuestions } })

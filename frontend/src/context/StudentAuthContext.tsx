@@ -7,7 +7,7 @@ interface StudentAuthState {
   isAuthenticated: boolean
   isLoading: boolean
   login: (credential: string, password: string) => Promise<void>
-  register: (name: string, netId: string, email: string, password: string) => Promise<void>
+  register: (netId: string, email: string, password: string) => Promise<void>
   logout: () => void
 }
 
@@ -32,8 +32,8 @@ export function StudentAuthProvider({ children }: { children: ReactNode }) {
     setStudent(r.data.data.student)
   }
 
-  async function register(name: string, netId: string, email: string, password: string) {
-    const r = await api.post('/auth/student/register', { name, netId, email, password })
+  async function register(netId: string, email: string, password: string) {
+    const r = await api.post('/auth/student/register', { netId, email, password })
     setStudentToken(r.data.data.token)
     setStudent(r.data.data.student)
   }

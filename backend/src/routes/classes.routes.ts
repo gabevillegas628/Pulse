@@ -334,7 +334,7 @@ router.get('/:id/enrollments', async (req: Request, res: Response, next: NextFun
       prisma.enrollment.findMany({
         where: { classId },
         include: {
-          student: { select: { id: true, netId: true, name: true, email: true } },
+          student: { select: { id: true, netId: true, email: true } },
           section: { select: { id: true, name: true } },
         },
         orderBy: { enrolledAt: 'desc' },
@@ -494,7 +494,7 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
       include: {
         enrollments: {
           include: {
-            student: { select: { id: true, netId: true, name: true } },
+            student: { select: { id: true, netId: true } },
             section: { select: { name: true } },
           },
         },
@@ -527,7 +527,7 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
     const homeworkHeaders = homeworkSessions.map((s) => `HW: ${s.title.replace(/,/g, ' ')}`)
 
     const header = [
-      'NetID', 'Name', 'Section',
+      'NetID', 'Section',
       ...participationHeaders,
       'Participation Total', `Participation Max (${participationMax})`,
       ...homeworkHeaders,
@@ -556,7 +556,6 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
 
       return [
         student.netId,
-        `"${student.name}"`,
         sectionName,
         ...pTotals.map((t) => t.toFixed(1)),
         pTotal.toFixed(1),

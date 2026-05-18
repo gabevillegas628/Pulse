@@ -27,7 +27,6 @@ const professorLoginSchema = z.object({
 })
 
 const studentRegisterSchema = z.object({
-  name: z.string().min(1),
   netId: z.string().min(1),
   email: rutgersEmail,
   password: z.string().min(8),
@@ -121,7 +120,7 @@ router.post('/student/register', async (req: Request, res: Response, next: NextF
 
     const passwordHash = await bcrypt.hash(body.password, 12)
     const student = await prisma.student.create({
-      data: { name: body.name, netId: body.netId, email: body.email, passwordHash },
+      data: { netId: body.netId, email: body.email, passwordHash },
     })
 
     const token = jwt.sign({ sub: student.id, role: 'student' }, config.jwtSecret, {
