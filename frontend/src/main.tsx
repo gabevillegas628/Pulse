@@ -6,6 +6,7 @@ import { ProfessorAuthProvider } from '@/context/ProfessorAuthContext'
 import { StudentAuthProvider } from '@/context/StudentAuthContext'
 import App from './App'
 import './styles/globals.css'
+import 'katex/dist/katex.min.css'
 
 const queryClient = new QueryClient({
   defaultOptions: {

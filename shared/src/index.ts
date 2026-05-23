@@ -42,6 +42,9 @@ export interface Class {
   name: string
   description: string | null
   joinCode: string
+  textbookRepo: string | null
+  textbookPath: string | null
+  textbookBranch: string | null
   createdAt: string
   updatedAt: string
 }

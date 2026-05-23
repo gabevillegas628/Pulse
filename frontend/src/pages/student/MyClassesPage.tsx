@@ -199,16 +199,30 @@ export default function MyClassesPage() {
             class: {
               id: string
               name: string
+              textbookRepo: string | null
               professor: { name: string }
               sessions: Array<{ id: string; title: string; status: string }>
             }
           }) => (
             <div key={enrollment.class.id} className="bg-white border border-gray-200 rounded-2xl p-5">
-              <p className="font-semibold text-gray-900">{enrollment.class.name}</p>
-              <p className="text-xs text-gray-400">
-                {enrollment.class.professor.name}
-                {enrollment.section && <span className="ml-1">· Section {enrollment.section.name}</span>}
-              </p>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-semibold text-gray-900">{enrollment.class.name}</p>
+                  <p className="text-xs text-gray-400">
+                    {enrollment.class.professor.name}
+                    {enrollment.section && <span className="ml-1">· Section {enrollment.section.name}</span>}
+                  </p>
+                </div>
+                {enrollment.class.textbookRepo && (
+                  <Link
+                    to={`/student/classes/${enrollment.class.id}/textbook`}
+                    className="shrink-0 flex items-center gap-1 text-xs text-primary-600 hover:text-primary-800 font-medium"
+                  >
+                    <BookOpen size={13} />
+                    Textbook
+                  </Link>
+                )}
+              </div>
               {enrollment.class.sessions.length > 0 && (
                 <p className="text-xs text-green-600 mt-1.5 font-medium">Session in progress</p>
               )}

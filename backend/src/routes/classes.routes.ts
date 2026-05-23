@@ -18,6 +18,9 @@ router.use(requireProfessor)
 const createClassSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
+  textbookRepo: z.string().optional().nullable(),
+  textbookPath: z.string().optional().nullable(),
+  textbookBranch: z.string().optional().nullable(),
 })
 
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {

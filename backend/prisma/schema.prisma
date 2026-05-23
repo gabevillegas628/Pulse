@@ -30,17 +30,20 @@ model Student {
 }
 
 model Class {
-  id          String       @id @default(cuid())
-  professorId String
-  professor   Professor    @relation(fields: [professorId], references: [id], onDelete: Cascade)
-  name        String
-  description String?
-  joinCode    String       @unique
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  sessions    Session[]
-  enrollments Enrollment[]
-  sections    Section[]
+  id             String       @id @default(cuid())
+  professorId    String
+  professor      Professor    @relation(fields: [professorId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?
+  joinCode       String       @unique
+  textbookRepo   String?
+  textbookPath   String?
+  textbookBranch String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  sessions       Session[]
+  enrollments    Enrollment[]
+  sections       Section[]
 }
 
 model Section {

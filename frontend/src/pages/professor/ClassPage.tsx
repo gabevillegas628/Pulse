@@ -6,8 +6,9 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
-import { Plus, Trash2, X, ChevronLeft, ChevronDown, Download, KeyRound, Copy, Users, BookOpen } from 'lucide-react'
+import { Plus, Trash2, X, ChevronLeft, ChevronDown, Download, KeyRound, Copy, Users, BookOpen, Settings } from 'lucide-react'
 import type { QuestionType } from 'shared'
+import TextbookPage from '@/pages/shared/TextbookPage'
 
 interface StudentStats {
   totalResponses: number
@@ -86,7 +87,12 @@ export default function ClassPage() {
   const { classId } = useParams<{ classId: string }>()
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const [tab, setTab] = useState<'sessions' | 'assignments' | 'roster'>('sessions')
+  const [tab, setTab] = useState<'sessions' | 'assignments' | 'roster' | 'textbook'>('sessions')
+  const [showTextbookSettings, setShowTextbookSettings] = useState(false)
+  const [tbRepo, setTbRepo] = useState('')
+  const [tbPath, setTbPath] = useState('')
+  const [tbSaving, setTbSaving] = useState(false)
+  const [tbError, setTbError] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [createError, setCreateError] = useState('')
   const [showAssignmentModal, setShowAssignmentModal] = useState(false)
@@ -265,6 +271,25 @@ export default function ClassPage() {
 
   const watchedQuestions = watch('questions')
 
+  async function saveTextbook(e: React.FormEvent) {
+    e.preventDefault()
+    setTbError('')
+    setTbSaving(true)
+    try {
+      await api.patch(`/classes/${classId}`, {
+        textbookRepo: tbRepo.trim() || null,
+        textbookPath: tbPath.trim() || null,
+      })
+      qc.invalidateQueries({ queryKey: ['class', classId] })
+      setShowTextbookSettings(false)
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
+      setTbError(msg ?? 'Failed to save')
+    } finally {
+      setTbSaving(false)
+    }
+  }
+
   if (isLoading) return <ProfessorLayout><p className="text-gray-400">Loading…</p></ProfessorLayout>
 
   return (
@@ -354,6 +379,7 @@ export default function ClassPage() {
           { key: 'sessions', label: 'Sessions' },
           { key: 'assignments', label: 'Assignments' },
           { key: 'roster', label: 'Roster' },
+          { key: 'textbook', label: 'Textbook' },
         ] as const).map(({ key, label }) => (
           <button
             key={key}
@@ -582,6 +608,109 @@ export default function ClassPage() {
           </div>
         )
       )}
+
+      {/* Textbook tab */}
+      {tab === 'textbook' && (() => {
+        const repo = data?.textbookRepo ?? ''
+        const path = data?.textbookPath ?? ''
+
+        if (showTextbookSettings || !repo) {
+          return (
+            <div className="max-w-lg">
+              <h2 className="text-base font-semibold text-gray-800 mb-1">
+                {repo ? 'Edit textbook' : 'Link a textbook'}
+              </h2>
+              <p className="text-sm text-gray-500 mb-5">
+                Point to a public GitHub repo containing <code className="bg-gray-100 px-1 rounded">.md</code> chapter files.
+                The chapter list is read from the GitHub Contents API.
+              </p>
+              <form onSubmit={saveTextbook} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    GitHub repo <span className="text-gray-400 font-normal">(owner/repo)</span>
+                  </label>
+                  <input
+                    value={tbRepo}
+                    onChange={(e) => setTbRepo(e.target.value)}
+                    placeholder="gabevillegas628/BiochemistryLifeSci"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    autoFocus
+                    onFocus={() => { if (!tbRepo && repo) setTbRepo(repo) }}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Sub-folder <span className="text-gray-400 font-normal">(leave blank if .md files are at the root)</span>
+                  </label>
+                  <input
+                    value={tbPath}
+                    onChange={(e) => setTbPath(e.target.value)}
+                    placeholder="chapters"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    onFocus={() => { if (!tbPath && path) setTbPath(path) }}
+                  />
+                </div>
+                {tbError && <p className="text-red-500 text-sm">{tbError}</p>}
+                <div className="flex items-center gap-3 pt-1">
+                  {repo && (
+                    <button type="button" onClick={() => setShowTextbookSettings(false)} className="text-sm text-gray-500 hover:text-gray-700">
+                      Cancel
+                    </button>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={tbSaving || !tbRepo.trim()}
+                    className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
+                  >
+                    {tbSaving ? 'Saving…' : repo ? 'Save changes' : 'Link textbook'}
+                  </button>
+                  {repo && (
+                    <button
+                      type="button"
+                      disabled={tbSaving}
+                      onClick={async () => {
+                        setTbSaving(true)
+                        try {
+                          await api.patch(`/classes/${classId}`, { textbookRepo: null, textbookPath: null })
+                          qc.invalidateQueries({ queryKey: ['class', classId] })
+                          setShowTextbookSettings(false)
+                        } finally { setTbSaving(false) }
+                      }}
+                      className="ml-auto text-sm text-red-400 hover:text-red-600 disabled:opacity-50"
+                    >
+                      Remove textbook
+                    </button>
+                  )}
+                </div>
+              </form>
+            </div>
+          )
+        }
+
+        return (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm text-gray-500">
+                <BookOpen size={14} />
+                <span className="font-mono text-gray-700">{repo}</span>
+                {path && <span className="text-gray-400">/{path}</span>}
+              </div>
+              <button
+                onClick={() => { setTbRepo(repo); setTbPath(path); setShowTextbookSettings(true) }}
+                className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-700"
+              >
+                <Settings size={13} /> Edit
+              </button>
+            </div>
+            <div
+              className="border border-gray-200 rounded-xl overflow-hidden flex"
+              style={{ height: 'calc(100vh - 400px)', minHeight: '480px' }}
+            >
+              <TextbookPage repo={repo} path={path} />
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Create session modal */}
       {showModal && (

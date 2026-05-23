@@ -18,6 +18,7 @@ import QuestionRedirectPage from '@/pages/student/QuestionRedirectPage'
 import ConfirmationPage from '@/pages/student/ConfirmationPage'
 import MyClassesPage from '@/pages/student/MyClassesPage'
 import AssignmentPage from '@/pages/student/AssignmentPage'
+import StudentTextbookPage from '@/pages/student/StudentTextbookPage'
 
 function ProfessorProtected({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useProfessorAuth()
@@ -58,6 +59,7 @@ export default function App() {
       <Route path="/student/enter-code" element={<CodeEntryPage />} />
       <Route path="/student" element={<StudentProtected><MyClassesPage /></StudentProtected>} />
       <Route path="/student/classes" element={<StudentProtected><MyClassesPage /></StudentProtected>} />
+      <Route path="/student/classes/:classId/textbook" element={<StudentProtected><StudentTextbookPage /></StudentProtected>} />
       <Route path="/student/assignments/:assignmentId" element={<StudentProtected><AssignmentPage /></StudentProtected>} />
       <Route path="/q/code/:code" element={<QuestionRedirectPage />} />
       <Route path="/q/:questionId" element={<QuestionPage />} />

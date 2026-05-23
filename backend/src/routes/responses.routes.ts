@@ -259,6 +259,26 @@ router.get('/student/classes/:classId/grades', requireStudent, async (req: Reque
   }
 })
 
+// Student: get textbook config for a single enrolled class
+router.get('/student/classes/:classId/textbook', requireStudent, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const student = (req as StudentRequest).student
+    const classId = p(req.params.classId)
+    const enrollment = await prisma.enrollment.findUnique({
+      where: { studentId_classId: { studentId: student.id, classId } },
+      include: {
+        class: {
+          select: { id: true, name: true, textbookRepo: true, textbookPath: true, textbookBranch: true },
+        },
+      },
+    })
+    if (!enrollment) throw new AppError('Not enrolled in this class', 403)
+    res.json({ success: true, data: { class: enrollment.class } })
+  } catch (err) {
+    next(err)
+  }
+})
+
 // Student: list enrolled classes
 router.get('/student/classes', requireStudent, async (req: Request, res: Response, next: NextFunction) => {
   try {
