@@ -168,6 +168,7 @@ model Response {
   wordCount    Int
   isFlagged    Boolean  @default(false)
   aiScore      Float?
+  isDraft      Boolean  @default(true)
   submittedAt  DateTime @default(now())
 
   @@unique([questionId, studentId])

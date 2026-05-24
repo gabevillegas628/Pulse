@@ -17,6 +17,7 @@ import QuestionPage from '@/pages/student/QuestionPage'
 import QuestionRedirectPage from '@/pages/student/QuestionRedirectPage'
 import ConfirmationPage from '@/pages/student/ConfirmationPage'
 import MyClassesPage from '@/pages/student/MyClassesPage'
+import StudentClassPage from '@/pages/student/StudentClassPage'
 import AssignmentPage from '@/pages/student/AssignmentPage'
 import StudentTextbookPage from '@/pages/student/StudentTextbookPage'
 
@@ -59,6 +60,7 @@ export default function App() {
       <Route path="/student/enter-code" element={<CodeEntryPage />} />
       <Route path="/student" element={<StudentProtected><MyClassesPage /></StudentProtected>} />
       <Route path="/student/classes" element={<StudentProtected><MyClassesPage /></StudentProtected>} />
+      <Route path="/student/classes/:classId" element={<StudentProtected><StudentClassPage /></StudentProtected>} />
       <Route path="/student/classes/:classId/textbook" element={<StudentProtected><StudentTextbookPage /></StudentProtected>} />
       <Route path="/student/assignments/:assignmentId" element={<StudentProtected><AssignmentPage /></StudentProtected>} />
       <Route path="/q/code/:code" element={<QuestionRedirectPage />} />

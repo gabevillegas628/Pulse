@@ -84,7 +84,9 @@ router.get('/student/questions/:id', requireStudent, async (req: Request, res: R
   }
 })
 
-// Student: submit a single question response
+// Student: submit or auto-save a question response
+// - IN_CLASS sessions: create only (locked after first submission)
+// - HOMEWORK sessions: upsert (auto-save until deadline or explicit submit)
 router.post('/responses', requireStudent, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { questionId, responseText } = z.object({
@@ -101,8 +103,9 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
     if (!question) throw new AppError('Question not found', 404)
     if (question.session.status !== 'OPEN') throw new AppError('Session is not open', 409)
 
-    // Deadline enforcement for homework assignments (check per-student extension first)
     const sess = question.session as typeof question.session & { type: string; deadline: Date | null }
+
+    // Deadline enforcement for homework
     if (sess.type === 'HOMEWORK' && sess.deadline) {
       const extension = await prisma.deadlineExtension.findUnique({
         where: { sessionId_studentId: { sessionId: sess.id, studentId: student.id } },
@@ -113,21 +116,37 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
       }
     }
 
+    // IN_CLASS: reject if already answered (clicker answers are final)
+    if (sess.type === 'IN_CLASS') {
+      const existing = await prisma.response.findUnique({
+        where: { questionId_studentId: { questionId, studentId: student.id } },
+      })
+      if (existing) throw new AppError('Already answered', 409)
+    }
+
     const wordCount = question.type === 'FREE_TEXT'
       ? responseText.trim().split(/\s+/).filter(Boolean).length
       : 0
 
-    const response = await prisma.response.create({
-      data: {
+    const response = await prisma.response.upsert({
+      where: { questionId_studentId: { questionId, studentId: student.id } },
+      create: {
         questionId,
         studentId: student.id,
         responseText,
         wordCount,
         isFlagged: question.type === 'FREE_TEXT' && wordCount < 10,
+        isDraft: sess.type === 'HOMEWORK',
+      },
+      update: {
+        responseText,
+        wordCount,
+        isFlagged: question.type === 'FREE_TEXT' && wordCount < 10,
+        submittedAt: new Date(),
       },
     })
 
-    // Auto-enroll; set sectionId from session target if student has no section yet
+    // Auto-enroll
     await upsertEnrollment(student.id, question.session.classId, question.session.targetSectionId)
 
     getIo().to(question.session.id).emit('new_response', {
@@ -138,6 +157,51 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
     })
 
     res.status(201).json({ success: true, data: { response } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Student: explicitly submit a homework assignment (locks all draft responses)
+router.post('/student/assignments/:id/submit', requireStudent, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const student = (req as StudentRequest).student
+    const assignmentId = p(req.params.id)
+
+    const session = await prisma.session.findUnique({
+      where: { id: assignmentId },
+      select: { id: true, type: true, status: true, deadline: true, classId: true },
+    })
+    if (!session) throw new AppError('Assignment not found', 404)
+    if ((session as typeof session & { type: string }).type !== 'HOMEWORK') throw new AppError('Not a homework assignment', 400)
+    if (session.status !== 'OPEN') throw new AppError('Assignment is not open', 409)
+
+    // Check deadline (with per-student extension)
+    const sess = session as typeof session & { deadline: Date | null }
+    if (sess.deadline) {
+      const extension = await prisma.deadlineExtension.findUnique({
+        where: { sessionId_studentId: { sessionId: session.id, studentId: student.id } },
+      })
+      const effectiveDeadline = extension ? extension.deadline : sess.deadline
+      if (effectiveDeadline < new Date()) throw new AppError('Assignment is past due', 403)
+    }
+
+    // Lock all draft responses for this student on this assignment
+    const questionIds = (await prisma.question.findMany({
+      where: { sessionId: assignmentId },
+      select: { id: true },
+    })).map((q) => q.id)
+
+    const result = await prisma.response.updateMany({
+      where: {
+        studentId: student.id,
+        questionId: { in: questionIds },
+        isDraft: true,
+      },
+      data: { isDraft: false, submittedAt: new Date() },
+    })
+
+    res.json({ success: true, data: { submitted: result.count } })
   } catch (err) {
     next(err)
   }
@@ -295,7 +359,6 @@ router.get('/student/classes/:classId/assignments', requireStudent, async (req: 
       orderBy: { deadline: 'asc' } as object,
       include: {
         questions: {
-          select: { id: true, type: true, correctAnswer: true, tolerance: true },
           include: {
             responses: {
               where: { studentId: student.id },

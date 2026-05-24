@@ -25,6 +25,13 @@ interface Chapter {
 
 // ─── Chapter list sidebar ─────────────────────────────────────────────────────
 
+const FONT_SIZES = [
+  { label: 'Normal', value: '1rem' },
+  { label: 'Medium', value: '1.125rem' },
+  { label: 'Large', value: '1.25rem' },
+] as const
+type FontSize = typeof FONT_SIZES[number]['value']
+
 function ChapterSidebar({
   chapters,
   selectedName,
@@ -33,6 +40,8 @@ function ChapterSidebar({
   onToggleExpand,
   contentWidth,
   onWidthChange,
+  fontSize,
+  onFontSizeChange,
 }: {
   chapters: Chapter[]
   selectedName: string | null
@@ -41,6 +50,8 @@ function ChapterSidebar({
   onToggleExpand: () => void
   contentWidth: number
   onWidthChange: (w: number) => void
+  fontSize: FontSize
+  onFontSizeChange: (s: FontSize) => void
 }) {
   return (
     <aside className="w-64 shrink-0 bg-white border-r border-gray-200 flex flex-col">
@@ -73,21 +84,41 @@ function ChapterSidebar({
           )
         })}
       </nav>
-      {/* Width control */}
-      <div className="px-4 py-3 border-t border-gray-100 shrink-0">
-        <div className="flex items-center justify-between mb-1.5">
-          <p className="text-xs text-gray-400">Text width</p>
-          <span className="text-xs font-medium text-gray-500 tabular-nums">{contentWidth}px</span>
+      {/* Width + font size controls */}
+      <div className="px-4 py-3 border-t border-gray-100 shrink-0 space-y-3">
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-xs text-gray-400">Text width</p>
+            <span className="text-xs font-medium text-gray-500 tabular-nums">{contentWidth}px</span>
+          </div>
+          <input
+            type="range"
+            min={400}
+            max={1100}
+            step={20}
+            value={contentWidth}
+            onChange={(e) => onWidthChange(Number(e.target.value))}
+            className="w-full accent-primary-600"
+          />
         </div>
-        <input
-          type="range"
-          min={400}
-          max={1100}
-          step={20}
-          value={contentWidth}
-          onChange={(e) => onWidthChange(Number(e.target.value))}
-          className="w-full accent-primary-600"
-        />
+        <div>
+          <p className="text-xs text-gray-400 mb-1.5">Text size</p>
+          <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+            {FONT_SIZES.map((s) => (
+              <button
+                key={s.value}
+                onClick={() => onFontSizeChange(s.value)}
+                className={`flex-1 text-xs py-1.5 transition-colors ${
+                  fontSize === s.value
+                    ? 'bg-primary-600 text-white font-medium'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     </aside>
   )
@@ -99,12 +130,14 @@ function ChapterContent({
   name,
   downloadUrl,
   contentWidth,
+  fontSize,
   expanded,
   onToggleExpand,
 }: {
   name: string
   downloadUrl: string
   contentWidth: number
+  fontSize: FontSize
   expanded: boolean
   onToggleExpand: () => void
 }) {
@@ -150,7 +183,7 @@ function ChapterContent({
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto px-8 py-10" style={{ maxWidth: contentWidth }}>
-          <div className="textbook-prose">
+          <div className="textbook-prose" style={{ fontSize }}>
             <ReactMarkdown
               remarkPlugins={[remarkMath, remarkGfm]}
               rehypePlugins={[rehypeKatex, rehypeRaw, rehypeSlug]}
@@ -187,6 +220,8 @@ function Reader({
   onToggleExpand,
   contentWidth,
   onWidthChange,
+  fontSize,
+  onFontSizeChange,
 }: {
   chapters: Chapter[]
   selectedName: string | null
@@ -195,6 +230,8 @@ function Reader({
   onToggleExpand: () => void
   contentWidth: number
   onWidthChange: (w: number) => void
+  fontSize: FontSize
+  onFontSizeChange: (s: FontSize) => void
 }) {
   const selectedChapter = chapters.find((c) => c.name === selectedName) ?? null
   return (
@@ -207,9 +244,11 @@ function Reader({
         onToggleExpand={onToggleExpand}
         contentWidth={contentWidth}
         onWidthChange={onWidthChange}
+        fontSize={fontSize}
+        onFontSizeChange={onFontSizeChange}
       />
       {selectedChapter ? (
-        <ChapterContent name={selectedChapter.name} downloadUrl={selectedChapter.downloadUrl} contentWidth={contentWidth} expanded={expanded} onToggleExpand={onToggleExpand} />
+        <ChapterContent name={selectedChapter.name} downloadUrl={selectedChapter.downloadUrl} contentWidth={contentWidth} fontSize={fontSize} expanded={expanded} onToggleExpand={onToggleExpand} />
       ) : (
         <EmptyState />
       )}
@@ -230,6 +269,7 @@ export default function TextbookPage({ repo, path }: TextbookPageProps) {
   const selectedName = searchParams.get('chapter')
   const [expanded, setExpanded] = useState(false)
   const [contentWidth, setContentWidth] = useState(672)
+  const [fontSize, setFontSize] = useState<FontSize>('1rem')
 
   // Close on Escape
   useEffect(() => {
@@ -285,6 +325,8 @@ export default function TextbookPage({ repo, path }: TextbookPageProps) {
         onToggleExpand={() => setExpanded(true)}
         contentWidth={contentWidth}
         onWidthChange={setContentWidth}
+        fontSize={fontSize}
+        onFontSizeChange={setFontSize}
       />
 
       {/* Fullscreen overlay */}
@@ -315,6 +357,8 @@ export default function TextbookPage({ repo, path }: TextbookPageProps) {
               onToggleExpand={() => setExpanded(false)}
               contentWidth={contentWidth}
               onWidthChange={setContentWidth}
+              fontSize={fontSize}
+              onFontSizeChange={setFontSize}
             />
           </div>
         </div>
