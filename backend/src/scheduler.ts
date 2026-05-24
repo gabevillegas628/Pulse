@@ -9,7 +9,7 @@ export function startScheduler() {
     try {
       const cutoff = new Date(Date.now() - SESSION_TIMEOUT_MS)
       const expired = await prisma.session.findMany({
-        where: { status: 'OPEN', openedAt: { lte: cutoff } },
+        where: { status: 'OPEN', type: 'IN_CLASS', openedAt: { lte: cutoff } },
         select: { id: true, title: true },
       })
 

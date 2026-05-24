@@ -173,7 +173,7 @@ router.patch('/sessions/:id', requireProfessor, async (req: Request, res: Respon
       data: {
         ...(status !== undefined && {
           status,
-          openedAt: status === SessionStatus.OPEN && !existing.openedAt ? new Date() : existing.openedAt,
+          openedAt: status === SessionStatus.OPEN ? new Date() : existing.openedAt,
           closedAt: status === SessionStatus.CLOSED && !existing.closedAt ? new Date() : existing.closedAt,
         }),
         ...(body.targetSectionId !== undefined && { targetSectionId: body.targetSectionId }),
