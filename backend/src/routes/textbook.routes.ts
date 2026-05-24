@@ -66,7 +66,7 @@ router.get('/textbook/render', async (req, res, next) => {
     // so we detect display math structurally: a <p> whose entire content is a
     // single mjx-container (no surrounding text). Mark it for CSS centering.
     const html = String(file).replace(
-      /<p>\s*(<mjx-container[\s\S]*?<\/mjx-container>)\s*<\/p>/g,
+      /<p>(<mjx-container(?:(?!<\/p>)[\s\S])*?<\/mjx-container>)<\/p>/g,
       '<p class="math-display">$1</p>',
     )
 
