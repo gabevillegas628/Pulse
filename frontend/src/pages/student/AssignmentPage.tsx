@@ -18,7 +18,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { api } from '@/api/client'
 import RichTextRenderer from '@/components/RichTextRenderer'
-import { ChevronLeft, ChevronRight, Check, Clock, GripVertical, Save } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Check, Clock, GripVertical, Save, Loader2 } from 'lucide-react'
 
 const Jsme = lazy(() => import('@loschmidt/jsme-react').then(m => ({ default: m.Jsme })))
 
@@ -239,9 +239,10 @@ export default function AssignmentPage() {
 
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [currentStep, setCurrentStep] = useState(0)
-  const [saveStatus, setSaveStatus] = useState<Record<string, 'saving' | 'saved' | null>>({})
+  const [lastSaved, setLastSaved] = useState<Date | null>(null)
   const jsmeInitialSmiles = useRef<Record<string, string>>({})
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  const currentItemRef = useRef<DisplayItem | undefined>(undefined)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   const { data, isLoading } = useQuery<AssignmentData>({
@@ -276,14 +277,12 @@ export default function AssignmentPage() {
   const saveMutation = useMutation({
     mutationFn: ({ questionId, responseText }: { questionId: string; responseText: string }) =>
       api.post('/responses', { questionId, responseText }),
-    onSuccess: (_res, { questionId }) => {
-      setSaveStatus((prev) => ({ ...prev, [questionId]: 'saved' }))
+    onSuccess: () => {
+      setLastSaved(new Date())
       qc.invalidateQueries({ queryKey: ['student-assignment', assignmentId] })
       qc.invalidateQueries({ queryKey: ['student-assignments'] })
     },
-    onError: (_err, { questionId }) => {
-      setSaveStatus((prev) => ({ ...prev, [questionId]: null }))
-    },
+    onError: () => { /* save failed — auto-save will retry on next change */ },
   })
 
   // Submit assignment mutation
@@ -297,7 +296,6 @@ export default function AssignmentPage() {
 
   // Debounced auto-save
   function scheduleAutoSave(questionId: string, responseText: string) {
-    setSaveStatus((prev) => ({ ...prev, [questionId]: 'saving' }))
     clearTimeout(saveTimers.current[questionId])
     saveTimers.current[questionId] = setTimeout(() => {
       saveMutation.mutate({ questionId, responseText })
@@ -307,6 +305,20 @@ export default function AssignmentPage() {
   function setAnswer(questionId: string, value: string) {
     setAnswers((prev) => ({ ...prev, [questionId]: value }))
     scheduleAutoSave(questionId, value)
+  }
+
+  function saveCurrentNow() {
+    const item = currentItemRef.current
+    if (!item) return
+    const qs = item.kind === 'group'
+      ? item.questions.map(({ question }) => question)
+      : [item.question]
+    qs.forEach((q) => {
+      const val = answers[q.id]
+      if (!val || q.existingResponse) return
+      clearTimeout(saveTimers.current[q.id])
+      saveMutation.mutate({ questionId: q.id, responseText: val })
+    })
   }
 
   if (isLoading || !data) {
@@ -337,13 +349,13 @@ export default function AssignmentPage() {
 
   const safeStep = Math.min(currentStep, displayList.length - 1)
   const currentItem = displayList[safeStep]
+  currentItemRef.current = currentItem
   const hasExplicitlySubmitted = submitMutation.isSuccess
 
   function renderQuestionCard(q: AssignmentQuestion, globalIdx: number) {
     const isSubmitted = !!q.existingResponse
     const isDisabled = isLocked || hasExplicitlySubmitted
     const grade = gradeMap.get(q.id)
-    const status = saveStatus[q.id]
 
     return (
       <div key={q.id} className={`bg-white border rounded-2xl p-6 ${isSubmitted ? 'border-green-200' : 'border-gray-200'}`}>
@@ -356,8 +368,6 @@ export default function AssignmentPage() {
                 <Check size={12} /> Saved
               </span>
             )}
-            {!isSubmitted && status === 'saving' && <span className="text-xs text-gray-400">Saving…</span>}
-            {!isSubmitted && status === 'saved' && <span className="text-xs text-green-500">Saved ✓</span>}
           </div>
         </div>
 
@@ -574,7 +584,7 @@ export default function AssignmentPage() {
             {currentItem?.kind === 'question' && renderQuestionCard(currentItem.question, currentItem.globalIdx)}
           </div>
 
-          {/* Prev / Next */}
+          {/* Prev / Next / Save */}
           <div className="shrink-0 flex items-center justify-between gap-3 px-4 md:px-8 py-4 border-t border-gray-200 bg-white">
             <button
               onClick={() => setCurrentStep((s) => Math.max(0, s - 1))}
@@ -583,7 +593,31 @@ export default function AssignmentPage() {
             >
               <ChevronLeft size={15} /> Previous
             </button>
-            <span className="text-xs text-gray-400">{safeStep + 1} / {displayList.length}</span>
+
+            {/* Save indicator — centre of footer */}
+            <div className="flex flex-col items-center gap-1">
+              {!isLocked && !hasExplicitlySubmitted && (
+                <button
+                  onClick={saveCurrentNow}
+                  disabled={saveMutation.isPending}
+                  className="flex items-center gap-1.5 text-xs text-gray-500 border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-50 disabled:opacity-40 transition-colors"
+                >
+                  {saveMutation.isPending
+                    ? <><Loader2 size={12} className="animate-spin" /> Saving…</>
+                    : <><Save size={12} /> Save</>
+                  }
+                </button>
+              )}
+              {lastSaved && (
+                <span className="text-xs text-gray-400">
+                  Last saved {lastSaved.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+              {!lastSaved && (
+                <span className="text-xs text-gray-400">{safeStep + 1} / {displayList.length}</span>
+              )}
+            </div>
+
             <button
               onClick={() => setCurrentStep((s) => Math.min(displayList.length - 1, s + 1))}
               disabled={safeStep === displayList.length - 1}
