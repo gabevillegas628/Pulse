@@ -15,6 +15,7 @@ import gradingRoutes from './routes/grading.routes.js'
 import extensionRoutes from './routes/extensions.routes.js'
 import responseRoutes from './routes/responses.routes.js'
 import uploadRoutes from './routes/uploads.routes.js'
+import textbookRoutes from './routes/textbook.routes.js'
 
 const app = express()
 
@@ -68,6 +69,7 @@ app.use('/api', gradingRoutes)
 app.use('/api', extensionRoutes)
 app.use('/api', responseRoutes)
 app.use('/api', uploadRoutes)
+app.use('/api', textbookRoutes)
 
 // Serve frontend in production
 if (!config.isDev) {

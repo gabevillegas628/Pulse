@@ -27,8 +27,15 @@
   margin-right: auto;
 }
 
-/* KaTeX display math — give block equations a little breathing room */
-.textbook-prose .katex-display {
+/* MathJax inline math — prose resets custom elements to block; force inline */
+.textbook-prose mjx-container {
+  display: inline-block !important;
+  vertical-align: middle;
+}
+
+/* MathJax display math — rehype-mathjax SVG output never emits display="true",
+   so the backend marks <p> elements that contain only a math container. */
+.textbook-prose p.math-display {
+  text-align: center;
   overflow-x: auto;
-  padding: 0.25rem 0;
 }

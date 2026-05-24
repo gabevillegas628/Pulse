@@ -1,12 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import ReactMarkdown from 'react-markdown'
-import remarkMath from 'remark-math'
-import rehypeKatex from 'rehype-katex'
-import remarkGfm from 'remark-gfm'
-import rehypeRaw from 'rehype-raw'
-import rehypeSlug from 'rehype-slug'
 import { BookOpen, ChevronRight, Maximize2, Minimize2, X } from 'lucide-react'
 import { contentsApiUrl, filenameToTitle, chapterSortKey } from '@/lib/textbook'
 
@@ -141,12 +135,13 @@ function ChapterContent({
   expanded: boolean
   onToggleExpand: () => void
 }) {
-  const { data: markdown, isLoading, isError } = useQuery<string>({
+  const { data: html, isLoading, isError } = useQuery<string>({
     queryKey: ['textbook-chapter', downloadUrl],
     queryFn: () =>
-      fetch(downloadUrl).then((r) => {
+      fetch(`/api/textbook/render?url=${encodeURIComponent(downloadUrl)}`).then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        return r.text()
+        const { html } = await r.json()
+        return html as string
       }),
     staleTime: 5 * 60 * 1000,
   })
@@ -159,7 +154,7 @@ function ChapterContent({
     )
   }
 
-  if (isError || markdown == null) {
+  if (isError || html == null) {
     return (
       <div className="flex-1 flex items-center justify-center text-red-500 text-sm px-8 text-center">
         Could not load "{filenameToTitle(name)}". Check your internet connection.
@@ -183,14 +178,11 @@ function ChapterContent({
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto px-8 py-10" style={{ maxWidth: contentWidth }}>
-          <div className="textbook-prose" style={{ fontSize }}>
-            <ReactMarkdown
-              remarkPlugins={[remarkMath, remarkGfm]}
-              rehypePlugins={[rehypeKatex, rehypeRaw, rehypeSlug]}
-            >
-              {markdown}
-            </ReactMarkdown>
-          </div>
+          <div
+            className="textbook-prose"
+            style={{ fontSize }}
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
         </div>
       </div>
     </article>
