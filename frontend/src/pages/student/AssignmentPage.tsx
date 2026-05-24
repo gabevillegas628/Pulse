@@ -332,35 +332,50 @@ export default function AssignmentPage() {
   // Build display list
   const displayList: DisplayItem[] = []
   const usedIds = new Set<string>()
-  const globalOrder = data.questions
 
   data.groups.forEach((group) => {
     const groupQuestions = data.questions
       .filter((q) => q.groupId === group.id)
-      .map((q) => ({ question: q, globalIdx: globalOrder.findIndex((gq) => gq.id === q.id) }))
+      .map((q) => ({ question: q, globalIdx: 0 })) // globalIdx assigned below
     if (!groupQuestions.length) return
     groupQuestions.forEach(({ question }) => usedIds.add(question.id))
     displayList.push({ kind: 'group', group, questions: groupQuestions })
   })
   data.questions.forEach((q) => {
     if (!usedIds.has(q.id))
-      displayList.push({ kind: 'question', question: q, globalIdx: globalOrder.findIndex((gq) => gq.id === q.id) })
+      displayList.push({ kind: 'question', question: q, globalIdx: 0 }) // globalIdx assigned below
   })
+
+  // Assign sequential question numbers in display order (groups first, then their questions)
+  const questionNumbers = new Map<string, number>()
+  let qCounter = 0
+  for (const item of displayList) {
+    if (item.kind === 'group') {
+      for (const gq of item.questions) {
+        gq.globalIdx = qCounter++
+        questionNumbers.set(gq.question.id, gq.globalIdx)
+      }
+    } else {
+      item.globalIdx = qCounter++
+      questionNumbers.set(item.question.id, item.globalIdx)
+    }
+  }
 
   const safeStep = Math.min(currentStep, displayList.length - 1)
   const currentItem = displayList[safeStep]
   currentItemRef.current = currentItem
   const hasExplicitlySubmitted = submitMutation.isSuccess
 
-  function renderQuestionCard(q: AssignmentQuestion, globalIdx: number) {
+  function renderQuestionCard(q: AssignmentQuestion) {
     const isSubmitted = !!q.existingResponse
     const isDisabled = isLocked || hasExplicitlySubmitted
     const grade = gradeMap.get(q.id)
+    const displayNum = (questionNumbers.get(q.id) ?? 0) + 1
 
     return (
       <div key={q.id} className={`bg-white border rounded-2xl p-6 ${isSubmitted ? 'border-green-200' : 'border-gray-200'}`}>
         <div className="flex items-start justify-between gap-3 mb-4">
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Question {globalIdx + 1}</p>
+          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Question {displayNum}</p>
           <div className="flex items-center gap-2 shrink-0">
             {grade && <ScoreBadge score={grade.score} aiScore={grade.response?.aiScore ?? null} type={q.type} />}
             {!grade && isSubmitted && (
@@ -576,12 +591,12 @@ export default function AssignmentPage() {
                   <p className="text-sm font-semibold text-amber-900 mb-2">{currentItem.group.title}</p>
                   {currentItem.group.text && <RichTextRenderer content={currentItem.group.text} />}
                 </div>
-                {currentItem.questions.map(({ question, globalIdx }) =>
-                  renderQuestionCard(question, globalIdx)
+                {currentItem.questions.map(({ question }) =>
+                  renderQuestionCard(question)
                 )}
               </div>
             )}
-            {currentItem?.kind === 'question' && renderQuestionCard(currentItem.question, currentItem.globalIdx)}
+            {currentItem?.kind === 'question' && renderQuestionCard(currentItem.question)}
           </div>
 
           {/* Prev / Next / Save */}
