@@ -6,6 +6,7 @@ import { useStudentAuth } from '@/context/StudentAuthContext'
 import StudentLayout from '@/components/layout/StudentLayout'
 import { io } from 'socket.io-client'
 import type { Question } from 'shared'
+import { apiError } from '@/lib/errors'
 import {
   DndContext,
   closestCenter,
@@ -94,8 +95,7 @@ export default function SubmitPage() {
         setOrderedItems(initialOrders)
       })
       .catch((e) => {
-        const msg = e?.response?.data?.error
-        setLoadError(msg ?? 'Session not found')
+        setLoadError(apiError(e, 'Session not found'))
       })
   }, [isAuthenticated, sessionId])
 
@@ -136,8 +136,7 @@ export default function SubmitPage() {
       await api.post('/responses', { sessionId: session.id, responses })
       navigate(`/s/${session.id}/confirmation`)
     } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
-      setSubmitError(msg ?? 'Submission failed — please try again')
+            setSubmitError(apiError(e, 'Submission failed — please try again'))
     }
   }
 

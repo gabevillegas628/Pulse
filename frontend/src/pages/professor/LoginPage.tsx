@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useProfessorAuth } from '@/context/ProfessorAuthContext'
+import { apiError } from '@/lib/errors'
 
 const schema = z.object({
   email: z.string().email('Enter a valid email'),
@@ -26,8 +27,7 @@ export default function ProfessorLoginPage() {
       await login(data.email, data.password)
       navigate('/professor', { replace: true })
     } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
-      setError(msg ?? 'Login failed')
+            setError(apiError(e, 'Login failed'))
     }
   }
 

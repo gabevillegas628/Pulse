@@ -5,8 +5,11 @@ import { AppError } from '../middleware/error.middleware.js'
 import { requireStudent, StudentRequest } from '../middleware/auth.middleware.js'
 import { getIo } from '../socket.js'
 
+import { calcScore } from '../utils/scoring.js'
+import { upsertEnrollment } from '../utils/enrollment.js'
+import { p } from '../utils/params.js'
+
 const router = Router()
-const p = (v: string | string[]): string => (Array.isArray(v) ? v[0] : v)
 
 // Student: look up a question by its 4-digit access code
 router.get('/questions/by-code/:code', requireStudent, async (req: Request, res: Response, next: NextFunction) => {
@@ -49,16 +52,7 @@ router.get('/student/questions/:id', requireStudent, async (req: Request, res: R
     }
 
     // Auto-enroll; set sectionId from session target if student has no section yet
-    const classId = question.session.classId
-    const sectionId = question.session.targetSectionId
-    const existingEnrollment = await prisma.enrollment.findUnique({
-      where: { studentId_classId: { studentId: student.id, classId } },
-    })
-    await prisma.enrollment.upsert({
-      where: { studentId_classId: { studentId: student.id, classId } },
-      create: { studentId: student.id, classId, sectionId },
-      update: sectionId && !existingEnrollment?.sectionId ? { sectionId } : {},
-    })
+    await upsertEnrollment(student.id, question.session.classId, question.session.targetSectionId)
 
     const alreadyAnswered = !!(await prisma.response.findUnique({
       where: { questionId_studentId: { questionId: question.id, studentId: student.id } },
@@ -134,16 +128,7 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
     })
 
     // Auto-enroll; set sectionId from session target if student has no section yet
-    const classId = question.session.classId
-    const sectionId = question.session.targetSectionId
-    const existingEnrollment = await prisma.enrollment.findUnique({
-      where: { studentId_classId: { studentId: student.id, classId } },
-    })
-    await prisma.enrollment.upsert({
-      where: { studentId_classId: { studentId: student.id, classId } },
-      create: { studentId: student.id, classId, sectionId },
-      update: sectionId && !existingEnrollment?.sectionId ? { sectionId } : {},
-    })
+    await upsertEnrollment(student.id, question.session.classId, question.session.targetSectionId)
 
     getIo().to(question.session.id).emit('new_response', {
       student: { id: student.id, netId: student.netId },
@@ -158,54 +143,6 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
   }
 })
 
-function calcScore(
-  qType: string,
-  correctAnswer: string | null,
-  response: { responseText: string; aiScore: number | null } | null,
-  tolerance?: number | null
-): number {
-  if (!response) return 0
-  if (qType === 'MULTIPLE_CHOICE' || qType === 'YES_NO') {
-    if (!correctAnswer) return 1.0
-    return response.responseText === correctAnswer ? 1.0 : 0.5
-  }
-  if (qType === 'FREE_TEXT') {
-    return response.aiScore !== null && response.aiScore !== undefined ? response.aiScore : 1.0
-  }
-  if (qType === 'NUMERIC') {
-    if (!correctAnswer) return 1.0
-    const correct = parseFloat(correctAnswer)
-    const student = parseFloat(response.responseText)
-    if (isNaN(student)) return 0
-    const tol = tolerance ?? 0
-    return Math.abs(student - correct) <= tol ? 1.0 : 0.0
-  }
-  if (qType === 'MULTI_SELECT') {
-    if (!correctAnswer) return 1.0
-    let studentArr: string[] = []
-    try { studentArr = JSON.parse(response.responseText) } catch { return 0 }
-    if (!Array.isArray(studentArr) || studentArr.length === 0) return 0
-    const correctArr: string[] = JSON.parse(correctAnswer)
-    const sSet = new Set(studentArr)
-    const cSet = new Set(correctArr)
-    return sSet.size === cSet.size && [...cSet].every(v => sSet.has(v)) ? 1.0 : 0.5
-  }
-  if (qType === 'ORDERING') {
-    if (!correctAnswer) return 1.0
-    let studentArr: string[] = []
-    try { studentArr = JSON.parse(response.responseText) } catch { return 0 }
-    if (!Array.isArray(studentArr) || studentArr.length === 0) return 0
-    const correctArr: string[] = JSON.parse(correctAnswer)
-    return correctArr.length === studentArr.length && correctArr.every((v, i) => v === studentArr[i]) ? 1.0 : 0.5
-  }
-  if (qType === 'STRUCTURE') {
-    if (response.aiScore !== null && response.aiScore !== undefined) return response.aiScore
-    if (!correctAnswer) return 1.0
-    if (!response.responseText) return 0
-    return response.responseText === correctAnswer ? 1.0 : 0.5
-  }
-  return 1.0 // RATING
-}
 
 // Student: grades for all closed sessions in a class
 router.get('/student/classes/:classId/grades', requireStudent, async (req: Request, res: Response, next: NextFunction) => {

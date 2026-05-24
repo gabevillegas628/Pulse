@@ -4,9 +4,9 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import { useStudentAuth } from '@/context/StudentAuthContext'
 import StudentLayout from '@/components/layout/StudentLayout'
-import { BookOpen, LogOut, KeyRound, X, Clock } from 'lucide-react'
-
-type AssignmentRow = { id: string; title: string; status: string; deadline: string | null; questionCount: number; submittedCount: number; earnedScore: number | null; maxScore: number | null }
+import { BookOpen, LogOut, KeyRound, Clock } from 'lucide-react'
+import type { AssignmentRow, GradeSession } from 'shared'
+import PasswordChangeModal from '@/components/PasswordChangeModal'
 
 function useClassAssignments(classId: string) {
   return useQuery<{ assignments: AssignmentRow[] }>({
@@ -61,7 +61,6 @@ function AssignmentLink({ a, className }: { a: AssignmentRow; className: string 
   )
 }
 
-type GradeSession = { id: string; title: string; earned: number; max: number }
 
 function ClassGrades({ classId }: { classId: string }) {
   const { data } = useQuery<{ sessions: GradeSession[]; totalEarned: number; totalMax: number }>({
@@ -96,11 +95,6 @@ export default function MyClassesPage() {
   const { student, logout } = useStudentAuth()
   const navigate = useNavigate()
   const [showPwModal, setShowPwModal] = useState(false)
-  const [currentPw, setCurrentPw] = useState('')
-  const [newPw, setNewPw] = useState('')
-  const [pwError, setPwError] = useState('')
-  const [pwSuccess, setPwSuccess] = useState(false)
-  const [pwLoading, setPwLoading] = useState(false)
 
   const { data, isLoading } = useQuery({
     queryKey: ['student-classes'],
@@ -112,26 +106,6 @@ export default function MyClassesPage() {
     navigate('/student/login')
   }
 
-  function openPwModal() {
-    setCurrentPw(''); setNewPw(''); setPwError(''); setPwSuccess(false)
-    setShowPwModal(true)
-  }
-
-  async function handlePasswordChange(e: React.FormEvent) {
-    e.preventDefault()
-    setPwError('')
-    setPwLoading(true)
-    try {
-      await api.patch('/student/me/password', { currentPassword: currentPw, newPassword: newPw })
-      setPwSuccess(true)
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
-      setPwError(msg ?? 'Something went wrong')
-    } finally {
-      setPwLoading(false)
-    }
-  }
-
   return (
     <StudentLayout>
       <div className="flex items-center justify-between mb-6">
@@ -140,7 +114,7 @@ export default function MyClassesPage() {
           <p className="text-sm text-gray-500">{student?.netId}</p>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={openPwModal} className="text-gray-400 hover:text-gray-600" title="Change password">
+          <button onClick={() => setShowPwModal(true)} className="text-gray-400 hover:text-gray-600" title="Change password">
             <KeyRound size={18} />
           </button>
           <button onClick={handleLogout} className="text-gray-400 hover:text-gray-600" title="Log out">
@@ -231,53 +205,11 @@ export default function MyClassesPage() {
           ))}
         </div>
       )}
-      {/* Change password modal */}
-      {showPwModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-semibold">Change password</h2>
-              <button onClick={() => setShowPwModal(false)}><X size={18} className="text-gray-400" /></button>
-            </div>
-
-            {pwSuccess ? (
-              <div className="text-center py-4">
-                <p className="text-green-600 font-medium mb-1">Password updated</p>
-                <button onClick={() => setShowPwModal(false)} className="text-sm text-primary-600 hover:underline mt-4 block mx-auto">Close</button>
-              </div>
-            ) : (
-              <form onSubmit={handlePasswordChange} className="space-y-3">
-                <input
-                  type="password"
-                  value={currentPw}
-                  onChange={(e) => setCurrentPw(e.target.value)}
-                  placeholder="Current password"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  autoFocus
-                />
-                <input
-                  type="password"
-                  value={newPw}
-                  onChange={(e) => setNewPw(e.target.value)}
-                  placeholder="New password (min 8 chars)"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                />
-                {pwError && <p className="text-red-500 text-xs">{pwError}</p>}
-                <div className="flex justify-end gap-3 pt-1">
-                  <button type="button" onClick={() => setShowPwModal(false)} className="px-4 py-2 text-sm text-gray-600">Cancel</button>
-                  <button
-                    type="submit"
-                    disabled={!currentPw || newPw.length < 8 || pwLoading}
-                    className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
-                  >
-                    {pwLoading ? 'Saving…' : 'Save'}
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
+      <PasswordChangeModal
+        endpoint="/student/me/password"
+        open={showPwModal}
+        onClose={() => setShowPwModal(false)}
+      />
     </StudentLayout>
   )
 }

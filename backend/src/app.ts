@@ -10,12 +10,30 @@ import { errorMiddleware } from './middleware/error.middleware.js'
 import authRoutes from './routes/auth.routes.js'
 import classRoutes from './routes/classes.routes.js'
 import sessionRoutes from './routes/sessions.routes.js'
+import questionRoutes from './routes/questions.routes.js'
+import gradingRoutes from './routes/grading.routes.js'
+import extensionRoutes from './routes/extensions.routes.js'
 import responseRoutes from './routes/responses.routes.js'
 import uploadRoutes from './routes/uploads.routes.js'
 
 const app = express()
 
-app.use(helmet({ contentSecurityPolicy: config.isDev ? false : undefined }))
+app.use(helmet({
+  contentSecurityPolicy: config.isDev ? false : {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'blob:'],
+      fontSrc: ["'self'", 'data:'],
+      connectSrc: [
+        "'self'",
+        'https://api.github.com',
+        'https://raw.githubusercontent.com',
+      ],
+    },
+  },
+}))
 app.use(compression())
 app.use(express.json())
 
@@ -45,6 +63,9 @@ app.use('/uploads', express.static(uploadDir))
 app.use('/api/auth', authRoutes)
 app.use('/api/classes', classRoutes)
 app.use('/api', sessionRoutes)
+app.use('/api', questionRoutes)
+app.use('/api', gradingRoutes)
+app.use('/api', extensionRoutes)
 app.use('/api', responseRoutes)
 app.use('/api', uploadRoutes)
 

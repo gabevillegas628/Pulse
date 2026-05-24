@@ -8,6 +8,7 @@ import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import { Plus, BookOpen, Users, X } from 'lucide-react'
 import type { ClassWithCounts } from 'shared'
+import { apiError } from '@/lib/errors'
 
 const schema = z.object({
   name: z.string().min(1, 'Class name is required'),
@@ -37,8 +38,7 @@ export default function DashboardPage() {
       reset()
     },
     onError: (e: unknown) => {
-      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
-      setCreateError(msg ?? 'Failed to create class')
+            setCreateError(apiError(e, 'Failed to create class'))
     },
   })
 

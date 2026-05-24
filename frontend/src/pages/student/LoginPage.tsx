@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useStudentAuth } from '@/context/StudentAuthContext'
 import StudentLayout from '@/components/layout/StudentLayout'
+import { apiError } from '@/lib/errors'
 
 const schema = z.object({
   credential: z.string().min(1, 'Enter your NetID or email'),
@@ -29,8 +30,7 @@ export default function StudentLoginPage() {
       await login(data.credential, data.password)
       navigate(next, { replace: true })
     } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
-      setError(msg ?? 'Login failed')
+            setError(apiError(e, 'Login failed'))
     }
   }
 

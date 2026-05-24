@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useStudentAuth } from '@/context/StudentAuthContext'
 import StudentLayout from '@/components/layout/StudentLayout'
+import { apiError } from '@/lib/errors'
 
 const schema = z.object({
   netId: z.string().min(1, 'Enter your NetID'),
@@ -30,8 +31,7 @@ export default function StudentRegisterPage() {
       await registerUser(data.netId, data.email, data.password)
       navigate(next, { replace: true })
     } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
-      setError(msg ?? 'Registration failed')
+            setError(apiError(e, 'Registration failed'))
     }
   }
 

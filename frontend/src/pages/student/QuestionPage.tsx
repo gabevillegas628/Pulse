@@ -6,6 +6,7 @@ import { useStudentAuth } from '@/context/StudentAuthContext'
 import StudentLayout from '@/components/layout/StudentLayout'
 import { io } from 'socket.io-client'
 import type { StudentQuestion } from 'shared'
+import { apiError } from '@/lib/errors'
 import {
   DndContext,
   closestCenter,
@@ -81,8 +82,7 @@ export default function QuestionPage() {
         setSelectedOptions([])
       })
       .catch((e) => {
-        const msg = e?.response?.data?.error
-        setLoadError(msg ?? 'Question not found')
+        setLoadError(apiError(e, 'Question not found'))
       })
   }, [isAuthenticated, questionId])
 
@@ -117,8 +117,7 @@ export default function QuestionPage() {
       await api.post('/responses', { questionId: question.id, responseText })
       navigate(`/q/${question.id}/confirmation`)
     } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
-      setSubmitError(msg ?? 'Submission failed — please try again')
+            setSubmitError(apiError(e, 'Submission failed — please try again'))
     }
   }
 

@@ -215,3 +215,58 @@ export interface SessionDetail extends Session {
   class: Pick<Class, 'id' | 'name'>
   qrDataUrl: string
 }
+
+// ─── View model types (used by frontend pages) ────────────────────────────────
+
+/** AI grading / summarize response category */
+export interface SummaryCategory {
+  label: string
+  description: string
+  count: number
+}
+
+/** Aggregate stats shown on a student's class activity tab */
+export interface StudentStats {
+  totalResponses: number
+  sessionsParticipated: number
+  totalClosedSessions: number
+  averageWordCount: number
+}
+
+/** A single question within a student's activity feed */
+export interface ActivityQuestion {
+  id: string
+  text: string
+  type: string
+  number: number
+  response: { responseText: string; wordCount: number; isFlagged: boolean; submittedAt: string } | null
+}
+
+/** A session with its questions, as returned by the student activity endpoint */
+export interface ActivitySession {
+  id: string
+  title: string
+  status: string
+  createdAt: string
+  questions: ActivityQuestion[]
+}
+
+/** A homework assignment row shown in student assignment lists */
+export interface AssignmentRow {
+  id: string
+  title: string
+  status: string
+  deadline: string | null
+  questionCount: number
+  submittedCount: number
+  earnedScore: number | null
+  maxScore: number | null
+}
+
+/** A graded session entry in a student's grade summary */
+export interface GradeSession {
+  id: string
+  title: string
+  earned: number
+  max: number
+}

@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useProfessorAuth } from '@/context/ProfessorAuthContext'
 import { useStudentAuth } from '@/context/StudentAuthContext'
+import { apiError } from '@/lib/errors'
 
 type Role = 'student' | 'professor'
 
@@ -45,8 +46,7 @@ export default function LoginPage() {
       await studentLogin(data.credential, data.password)
       navigate(next ?? '/student', { replace: true })
     } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
-      setError(msg ?? 'Invalid credentials')
+            setError(apiError(e, 'Invalid credentials'))
     }
   }
 
@@ -56,8 +56,7 @@ export default function LoginPage() {
       await professorLogin(data.email, data.password)
       navigate(next ?? '/professor', { replace: true })
     } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
-      setError(msg ?? 'Invalid credentials')
+            setError(apiError(e, 'Invalid credentials'))
     }
   }
 

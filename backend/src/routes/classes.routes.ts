@@ -5,14 +5,14 @@ import { customAlphabet } from 'nanoid'
 import { prisma } from '../db/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
+import { calcScore } from '../utils/scoring.js'
+import { generateUniqueCode } from '../utils/codes.js'
+import { p } from '../utils/params.js'
 
 const nanoid = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 6)
 const nanoidDigits = customAlphabet('0123456789', 4)
 
 const router = Router()
-
-// Express v5 types params as string | string[] — helper to normalize
-const p = (v: string | string[]): string => (Array.isArray(v) ? v[0] : v)
 router.use(requireProfessor)
 
 const createClassSchema = z.object({
@@ -28,13 +28,10 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     const body = createClassSchema.parse(req.body)
     const professor = (req as ProfessorRequest).professor
 
-    let joinCode: string
-    let attempts = 0
-    do {
-      joinCode = nanoid()
-      attempts++
-      if (attempts > 10) throw new AppError('Failed to generate unique join code', 500)
-    } while (await prisma.class.findUnique({ where: { joinCode } }))
+    const joinCode = await generateUniqueCode(
+      nanoid,
+      (code) => prisma.class.findUnique({ where: { joinCode: code } }).then(Boolean)
+    )
 
     const cls = await prisma.class.create({
       data: {
@@ -136,39 +133,26 @@ router.post('/:id/duplicate', async (req: Request, res: Response, next: NextFunc
     // Pre-generate all codes needed before the transaction.
     // Session and question codes go into separate tables so we track uniqueness separately.
 
-    let joinCode: string
-    let jAttempts = 0
-    do {
-      joinCode = nanoid()
-      jAttempts++
-      if (jAttempts > 10) throw new AppError('Failed to generate unique join code', 500)
-    } while (await prisma.class.findUnique({ where: { joinCode } }))
+    const joinCode = await generateUniqueCode(
+      nanoid,
+      (code) => prisma.class.findUnique({ where: { joinCode: code } }).then(Boolean)
+    )
 
     const usedSessionCodes = new Set<string>()
-    async function uniqueSessionCode(): Promise<string> {
-      let code: string
-      let att = 0
-      do {
-        code = nanoidDigits()
-        att++
-        if (att > 20) throw new AppError('Failed to generate unique session code', 500)
-      } while (usedSessionCodes.has(code) || await prisma.session.findUnique({ where: { accessCode: code } }))
-      usedSessionCodes.add(code)
-      return code
-    }
+    const uniqueSessionCode = () => generateUniqueCode(
+      nanoidDigits,
+      (code) => prisma.session.findUnique({ where: { accessCode: code } }).then(Boolean),
+      20,
+      usedSessionCodes
+    )
 
     const usedQuestionCodes = new Set<string>()
-    async function uniqueQuestionCode(): Promise<string> {
-      let code: string
-      let att = 0
-      do {
-        code = nanoidDigits()
-        att++
-        if (att > 20) throw new AppError('Failed to generate unique question code', 500)
-      } while (usedQuestionCodes.has(code) || await prisma.question.findUnique({ where: { accessCode: code } }))
-      usedQuestionCodes.add(code)
-      return code
-    }
+    const uniqueQuestionCode = () => generateUniqueCode(
+      nanoidDigits,
+      (code) => prisma.question.findUnique({ where: { accessCode: code } }).then(Boolean),
+      20,
+      usedQuestionCodes
+    )
 
     const newSessionCodes: string[] = []
     for (const _ of source.sessions) newSessionCodes.push(await uniqueSessionCode())
@@ -258,13 +242,10 @@ router.post('/:id/sections', async (req: Request, res: Response, next: NextFunct
     const cls = await prisma.class.findFirst({ where: { id: classId, professorId: professor.id } })
     if (!cls) throw new AppError('Class not found', 404)
 
-    let joinCode: string
-    let attempts = 0
-    do {
-      joinCode = nanoid()
-      attempts++
-      if (attempts > 10) throw new AppError('Failed to generate unique join code', 500)
-    } while (await prisma.section.findUnique({ where: { joinCode } }))
+    const joinCode = await generateUniqueCode(
+      nanoid,
+      (code) => prisma.section.findUnique({ where: { joinCode: code } }).then(Boolean)
+    )
 
     const section = await prisma.section.create({ data: { classId, name, joinCode } })
     res.status(201).json({ success: true, data: { section } })
@@ -454,21 +435,6 @@ router.post('/:id/students/:studentId/reset-password', async (req: Request, res:
   }
 })
 
-function calcScore(
-  qType: string,
-  correctAnswer: string | null,
-  response: { responseText: string; aiScore: number | null } | null
-): number {
-  if (!response) return 0
-  if (qType === 'MULTIPLE_CHOICE' || qType === 'YES_NO') {
-    if (!correctAnswer) return 1.0
-    return response.responseText === correctAnswer ? 1.0 : 0.5
-  }
-  if (qType === 'FREE_TEXT') {
-    return response.aiScore !== null && response.aiScore !== undefined ? response.aiScore : 1.0
-  }
-  return 1.0 // RATING
-}
 
 type GradeQuestion = {
   type: string

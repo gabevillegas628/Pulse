@@ -6,18 +6,14 @@ import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import { Check, ChevronLeft, Copy, Download, Flag, GraduationCap, PictureInPicture2, Plus, Sparkles, X } from 'lucide-react'
 import { io } from 'socket.io-client'
-import type { SessionDetail, QuestionWithResponses, ResponseWithStudent } from 'shared'
+import type { SessionDetail, QuestionWithResponses, ResponseWithStudent, SummaryCategory } from 'shared'
 import { SessionStatus } from 'shared'
 import ResultsSummary from '@/components/ResultsSummary'
 import PipDisplay from '@/components/PipDisplay'
+import { apiError } from '@/lib/errors'
 
 type PipWindow = Window & { documentPictureInPicture?: { requestWindow: (opts: { width: number; height: number }) => Promise<Window> } }
 
-interface SummaryCategory {
-  label: string
-  description: string
-  count: number
-}
 
 export default function SessionPage() {
   const { sessionId } = useParams<{ sessionId: string }>()
@@ -73,8 +69,7 @@ export default function SessionPage() {
       setAqText(''); setAqType('FREE_TEXT'); setAqOptions(''); setAqError('')
     },
     onError: (e: unknown) => {
-      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
-      setAqError(msg ?? 'Failed to add question')
+            setAqError(apiError(e, 'Failed to add question'))
     },
   })
 

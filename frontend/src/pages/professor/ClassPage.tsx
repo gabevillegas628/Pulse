@@ -7,31 +7,10 @@ import { z } from 'zod'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import { Plus, Trash2, X, ChevronLeft, ChevronDown, Download, KeyRound, Copy, Users, BookOpen, Settings } from 'lucide-react'
-import type { QuestionType } from 'shared'
+import type { QuestionType, StudentStats, ActivitySession } from 'shared'
 import TextbookPage from '@/pages/shared/TextbookPage'
+import { apiError } from '@/lib/errors'
 
-interface StudentStats {
-  totalResponses: number
-  sessionsParticipated: number
-  totalClosedSessions: number
-  averageWordCount: number
-}
-
-interface ActivityQuestion {
-  id: string
-  text: string
-  type: string
-  number: number
-  response: { responseText: string; wordCount: number; isFlagged: boolean; submittedAt: string } | null
-}
-
-interface ActivitySession {
-  id: string
-  title: string
-  status: string
-  createdAt: string
-  questions: ActivityQuestion[]
-}
 
 interface Assignment {
   id: string
@@ -181,8 +160,7 @@ export default function ClassPage() {
       reset()
     },
     onError: (e: unknown) => {
-      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
-      setCreateError(msg ?? 'Failed to create session')
+            setCreateError(apiError(e, 'Failed to create session'))
     },
   })
 
@@ -210,8 +188,7 @@ export default function ClassPage() {
       navigate(`/professor/classes/${classId}/assignments/${res.data.data.session.id}`)
     },
     onError: (e: unknown) => {
-      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
-      setAssignmentError(msg ?? 'Failed to create assignment')
+            setAssignmentError(apiError(e, 'Failed to create assignment'))
     },
   })
 
@@ -220,8 +197,7 @@ export default function ClassPage() {
       api.post(`/classes/${classId}/students/${studentId}/reset-password`, { newPassword }),
     onSuccess: () => setResetSuccess(true),
     onError: (e: unknown) => {
-      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
-      setResetError(msg ?? 'Reset failed — try again')
+            setResetError(apiError(e, 'Reset failed — try again'))
     },
   })
 
@@ -262,8 +238,7 @@ export default function ClassPage() {
       qc.invalidateQueries({ queryKey: ['classes'] })
       navigate(`/professor/classes/${newClassId}`)
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
-      setDupError(msg ?? 'Failed to duplicate class')
+            setDupError(apiError(err, 'Failed to duplicate class'))
     } finally {
       setDupLoading(false)
     }
@@ -283,8 +258,7 @@ export default function ClassPage() {
       qc.invalidateQueries({ queryKey: ['class', classId] })
       setShowTextbookSettings(false)
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
-      setTbError(msg ?? 'Failed to save')
+            setTbError(apiError(err, 'Failed to save'))
     } finally {
       setTbSaving(false)
     }

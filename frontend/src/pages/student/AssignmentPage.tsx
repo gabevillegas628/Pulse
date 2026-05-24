@@ -20,6 +20,7 @@ import { api } from '@/api/client'
 import StudentLayout from '@/components/layout/StudentLayout'
 import RichTextRenderer from '@/components/RichTextRenderer'
 import { ChevronLeft, Clock, Check, GripVertical } from 'lucide-react'
+import { apiError } from '@/lib/errors'
 
 const Jsme = lazy(() => import('@loschmidt/jsme-react').then(m => ({ default: m.Jsme })))
 
@@ -145,8 +146,7 @@ export default function AssignmentPage() {
       qc.invalidateQueries({ queryKey: ['student-assignments'] })
     },
     onError: (err: unknown, { questionId }) => {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
-      setErrors((prev) => ({ ...prev, [questionId]: msg ?? 'Submission failed — try again' }))
+      setErrors((prev) => ({ ...prev, [questionId]: apiError(err, 'Submission failed — try again') }))
     },
   })
 

@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useProfessorAuth } from '@/context/ProfessorAuthContext'
+import { apiError } from '@/lib/errors'
 
 const schema = z.object({
   name: z.string().min(1, 'Enter your name'),
@@ -28,8 +29,7 @@ export default function ProfessorRegisterPage() {
       await registerUser(data.name, data.email, data.password, data.inviteCode)
       navigate('/professor', { replace: true })
     } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
-      setError(msg ?? 'Registration failed')
+            setError(apiError(e, 'Registration failed'))
     }
   }
 

@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useProfessorAuth } from '@/context/ProfessorAuthContext'
 import { useStudentAuth } from '@/context/StudentAuthContext'
+import { apiError } from '@/lib/errors'
 
 type Role = 'student' | 'professor'
 
@@ -47,8 +48,7 @@ export default function RegisterPage() {
       await studentRegister(data.netId, data.email, data.password)
       navigate(next ?? '/student', { replace: true })
     } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
-      setError(msg ?? 'Registration failed')
+            setError(apiError(e, 'Registration failed'))
     }
   }
 
@@ -58,8 +58,7 @@ export default function RegisterPage() {
       await professorRegister(data.name, data.email, data.password, data.inviteCode)
       navigate('/professor', { replace: true })
     } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
-      setError(msg ?? 'Registration failed')
+            setError(apiError(e, 'Registration failed'))
     }
   }
 
