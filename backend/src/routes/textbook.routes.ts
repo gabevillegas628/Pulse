@@ -19,7 +19,7 @@ const processor = unified()
   .use(remarkGfm)
   .use(remarkRehype, { allowDangerousHtml: true })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  .use(rehypeMathjax, { tex: { packages: { '[+]': ['cancel'] } } } as any)
+  .use(rehypeMathjax, { tex: { packages: { '[+]': ['cancel', 'ams'] } } } as any)
   .use(rehypeRaw)
   .use(rehypeSlug)
   .use(rehypeStringify)
