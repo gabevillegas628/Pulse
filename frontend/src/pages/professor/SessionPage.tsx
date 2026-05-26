@@ -55,8 +55,11 @@ export default function SessionPage() {
 
   const [showAddQuestion, setShowAddQuestion] = useState(false)
   const [aqText, setAqText] = useState('')
-  const [aqType, setAqType] = useState<'FREE_TEXT' | 'MULTIPLE_CHOICE' | 'RATING' | 'YES_NO'>('FREE_TEXT')
+  const [aqType, setAqType] = useState<'FREE_TEXT' | 'MULTIPLE_CHOICE' | 'RATING' | 'YES_NO' | 'NUMERIC' | 'MULTI_SELECT' | 'ORDERING' | 'STRUCTURE'>('FREE_TEXT')
   const [aqOptions, setAqOptions] = useState('')
+  const [aqNumericAnswer, setAqNumericAnswer] = useState('')
+  const [aqTolerance, setAqTolerance] = useState('')
+  const [aqUnit, setAqUnit] = useState('')
   const [aqError, setAqError] = useState('')
 
   const deleteQuestionMutation = useMutation({
@@ -75,15 +78,20 @@ export default function SessionPage() {
     mutationFn: () => api.post(`/sessions/${sessionId}/questions`, {
       text: aqText,
       type: aqType,
-      options: aqType === 'MULTIPLE_CHOICE' ? aqOptions.split('\n').map(s => s.trim()).filter(Boolean) : undefined,
+      options: ['MULTIPLE_CHOICE', 'MULTI_SELECT', 'ORDERING'].includes(aqType)
+        ? aqOptions.split('\n').map(s => s.trim()).filter(Boolean) : undefined,
+      correctAnswer: aqType === 'NUMERIC' && aqNumericAnswer ? aqNumericAnswer : undefined,
+      tolerance: aqType === 'NUMERIC' && aqTolerance ? parseFloat(aqTolerance) : undefined,
+      unit: aqType === 'NUMERIC' && aqUnit ? aqUnit : undefined,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['session', sessionId] })
       setShowAddQuestion(false)
-      setAqText(''); setAqType('FREE_TEXT'); setAqOptions(''); setAqError('')
+      setAqText(''); setAqType('FREE_TEXT'); setAqOptions('')
+      setAqNumericAnswer(''); setAqTolerance(''); setAqUnit(''); setAqError('')
     },
     onError: (e: unknown) => {
-            setAqError(apiError(e, 'Failed to add question'))
+      setAqError(apiError(e, 'Failed to add question'))
     },
   })
 
@@ -696,10 +704,14 @@ export default function SessionPage() {
               >
                 <option value="FREE_TEXT">Free text</option>
                 <option value="MULTIPLE_CHOICE">Multiple choice</option>
+                <option value="MULTI_SELECT">Multi-select</option>
+                <option value="ORDERING">Ordering</option>
+                <option value="NUMERIC">Numeric</option>
+                <option value="STRUCTURE">Structure drawing</option>
                 <option value="RATING">Rating (1–5)</option>
                 <option value="YES_NO">Yes / No</option>
               </select>
-              {aqType === 'MULTIPLE_CHOICE' && (
+              {(aqType === 'MULTIPLE_CHOICE' || aqType === 'MULTI_SELECT') && (
                 <textarea
                   rows={3}
                   value={aqOptions}
@@ -707,6 +719,28 @@ export default function SessionPage() {
                   placeholder={"Option A\nOption B\nOption C"}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
                 />
+              )}
+              {aqType === 'ORDERING' && (
+                <textarea
+                  rows={3}
+                  value={aqOptions}
+                  onChange={(e) => setAqOptions(e.target.value)}
+                  placeholder={"Step 1\nStep 2\nStep 3"}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+                />
+              )}
+              {aqType === 'NUMERIC' && (
+                <div className="flex gap-2 flex-wrap">
+                  <input value={aqNumericAnswer} onChange={(e) => setAqNumericAnswer(e.target.value)}
+                    placeholder="Correct answer (optional)"
+                    className="flex-1 min-w-0 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                  <input value={aqTolerance} onChange={(e) => setAqTolerance(e.target.value)}
+                    placeholder="± tolerance"
+                    className="w-28 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                  <input value={aqUnit} onChange={(e) => setAqUnit(e.target.value)}
+                    placeholder="Unit (optional)"
+                    className="w-32 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                </div>
               )}
               {aqError && <p className="text-red-500 text-xs">{aqError}</p>}
               <div className="flex justify-end gap-3 pt-1">
