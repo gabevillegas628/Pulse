@@ -220,8 +220,8 @@ router.get('/student/classes/:classId/grades', requireStudent, async (req: Reque
     if (!enrollment) throw new AppError('Not enrolled in this class', 403)
 
     const sessions = await prisma.session.findMany({
-      where: { classId, status: { in: ['CLOSED', 'ARCHIVED'] }, type: 'IN_CLASS' } as object,
-      orderBy: { closedAt: 'desc' },
+      where: { classId, status: { in: ['CLOSED', 'ARCHIVED'] } },
+      orderBy: { createdAt: 'desc' },
       include: {
         questions: {
           orderBy: { order: 'asc' },
@@ -245,7 +245,10 @@ router.get('/student/classes/:classId/grades', requireStudent, async (req: Reque
       return {
         id: session.id,
         title: session.title,
-        closedAt: session.closedAt,
+        type: session.type as 'IN_CLASS' | 'HOMEWORK',
+        date: session.type === 'IN_CLASS'
+          ? session.closedAt?.toISOString() ?? null
+          : (session as unknown as { deadline: Date | null }).deadline?.toISOString() ?? null,
         earned: Math.round(earned * 10) / 10,
         max,
       }

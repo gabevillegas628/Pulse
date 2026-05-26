@@ -268,27 +268,51 @@ export default function StudentClassPage() {
             <div className="text-center py-16 text-gray-400">
               <p className="text-sm">No graded sessions yet.</p>
             </div>
-          ) : (
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-              {gradesData.sessions.map((s, i) => (
-                <div
-                  key={s.id}
-                  className={`flex items-center justify-between px-5 py-3.5 ${
-                    i < gradesData.sessions.length - 1 ? 'border-b border-gray-100' : ''
-                  }`}
-                >
-                  <p className="text-sm text-gray-700">{s.title}</p>
-                  <p className="text-sm font-medium text-gray-900 shrink-0">{s.earned}/{s.max}</p>
-                </div>
-              ))}
-              {gradesData.sessions.length > 1 && (
-                <div className="flex items-center justify-between px-5 py-3.5 bg-gray-50 border-t border-gray-200">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total</p>
-                  <p className="text-sm font-semibold text-gray-900">{gradesData.totalEarned}/{gradesData.totalMax}</p>
-                </div>
-              )}
-            </div>
-          )
+          ) : (() => {
+            const liveSessions = gradesData.sessions.filter((s) => s.type === 'IN_CLASS')
+            const hwSessions = gradesData.sessions.filter((s) => s.type === 'HOMEWORK')
+            const renderGroup = (items: typeof gradesData.sessions) => (
+              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                {items.map((s, i) => (
+                  <div
+                    key={s.id}
+                    className={`flex items-center justify-between px-5 py-3.5 ${
+                      i < items.length - 1 ? 'border-b border-gray-100' : ''
+                    }`}
+                  >
+                    <p className="text-sm text-gray-700">{s.title}</p>
+                    <p className="text-sm font-medium text-gray-900 shrink-0">{s.earned}/{s.max}</p>
+                  </div>
+                ))}
+              </div>
+            )
+            return (
+              <div className="space-y-5">
+                {liveSessions.length > 0 && (
+                  <div>
+                    <p className="flex items-center gap-1.5 text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">
+                      <Radio size={12} /> Live Sessions
+                    </p>
+                    {renderGroup(liveSessions)}
+                  </div>
+                )}
+                {hwSessions.length > 0 && (
+                  <div>
+                    <p className="flex items-center gap-1.5 text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">
+                      <BookOpen size={12} /> Homework
+                    </p>
+                    {renderGroup(hwSessions)}
+                  </div>
+                )}
+                {gradesData.sessions.length > 1 && (
+                  <div className="flex items-center justify-between px-5 py-3.5 bg-gray-50 border border-gray-200 rounded-xl">
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total</p>
+                    <p className="text-sm font-semibold text-gray-900">{gradesData.totalEarned}/{gradesData.totalMax}</p>
+                  </div>
+                )}
+              </div>
+            )
+          })()
         )}
       </main>
 

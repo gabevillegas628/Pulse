@@ -452,6 +452,90 @@ type GradeEnrollment = {
   section: { name: string } | null
 }
 
+// Class-wide grades JSON — same data as CSV export but as structured JSON for in-app gradebook
+router.get('/:id/grades/json', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+    const classId = p(req.params.id)
+
+    const cls = await prisma.class.findFirst({
+      where: { id: classId, professorId: professor.id },
+      include: {
+        enrollments: {
+          include: {
+            student: { select: { id: true, netId: true } },
+            section: { select: { name: true } },
+          },
+        },
+        sessions: {
+          where: { status: { in: ['CLOSED' as const, 'ARCHIVED' as const] } },
+          orderBy: { createdAt: 'asc' },
+          include: {
+            questions: {
+              orderBy: { order: 'asc' },
+              include: {
+                responses: { select: { studentId: true, responseText: true, aiScore: true } },
+              },
+            },
+          },
+        },
+      },
+    })
+    if (!cls) throw new AppError('Class not found', 404)
+
+    const allSessions = cls.sessions as unknown as GradeSession[]
+    const enrollments = cls.enrollments as unknown as GradeEnrollment[]
+
+    const participationSessions = allSessions.filter((s) => s.type !== 'HOMEWORK')
+    const homeworkSessions = allSessions.filter((s) => s.type === 'HOMEWORK')
+
+    const participationMax = participationSessions.reduce((sum, s) => sum + s.questions.length, 0)
+    const hwMax = homeworkSessions.reduce((sum, s) => sum + s.questions.length, 0)
+
+    const sessions = allSessions.map((s) => ({
+      id: s.id,
+      title: s.title,
+      type: s.type as 'IN_CLASS' | 'HOMEWORK',
+      questionCount: s.questions.length,
+    }))
+
+    const students = enrollments.map((enrollment) => {
+      const student = enrollment.student
+      const scores = allSessions.map((session) => {
+        const earned = session.questions.reduce((sum: number, q: GradeQuestion) => {
+          const resp = q.responses.find((r) => r.studentId === student.id) ?? null
+          return sum + calcScore(q.type, q.correctAnswer, resp)
+        }, 0)
+        return { sessionId: session.id, earned: Math.round(earned * 10) / 10, max: session.questions.length }
+      })
+
+      const participationTotal = participationSessions.reduce((sum, s) => {
+        const score = scores.find((sc) => sc.sessionId === s.id)
+        return sum + (score?.earned ?? 0)
+      }, 0)
+      const hwTotal = homeworkSessions.reduce((sum, s) => {
+        const score = scores.find((sc) => sc.sessionId === s.id)
+        return sum + (score?.earned ?? 0)
+      }, 0)
+
+      return {
+        studentId: student.id,
+        netId: student.netId,
+        section: enrollment.section?.name ?? null,
+        scores,
+        participationTotal: Math.round(participationTotal * 10) / 10,
+        participationMax,
+        hwTotal: Math.round(hwTotal * 10) / 10,
+        hwMax,
+      }
+    })
+
+    res.json({ success: true, data: { sessions, students } })
+  } catch (err) {
+    next(err)
+  }
+})
+
 // Class-wide grades export — participation columns + homework columns, one row per student
 router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction) => {
   try {

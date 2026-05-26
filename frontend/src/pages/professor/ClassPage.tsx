@@ -7,8 +7,9 @@ import { z } from 'zod'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import { Plus, Trash2, X, ChevronLeft, ChevronDown, Download, KeyRound, Copy, Users, BookOpen, Settings } from 'lucide-react'
-import type { QuestionType, StudentStats, ActivitySession } from 'shared'
+import type { QuestionType, StudentStats, ActivitySession, GradebookSession, GradebookStudentRow } from 'shared'
 import TextbookPage from '@/pages/shared/TextbookPage'
+import GradebookTable from '@/components/GradebookTable'
 import { apiError } from '@/lib/errors'
 
 
@@ -66,7 +67,7 @@ export default function ClassPage() {
   const { classId } = useParams<{ classId: string }>()
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const [tab, setTab] = useState<'sessions' | 'assignments' | 'roster' | 'textbook'>('sessions')
+  const [tab, setTab] = useState<'sessions' | 'assignments' | 'roster' | 'textbook' | 'grades'>('sessions')
   const [showTextbookSettings, setShowTextbookSettings] = useState(false)
   const [tbRepo, setTbRepo] = useState('')
   const [tbPath, setTbPath] = useState('')
@@ -118,6 +119,12 @@ export default function ClassPage() {
     queryKey: ['assignments', classId],
     queryFn: () => api.get(`/classes/${classId}/sessions?type=HOMEWORK`).then((r) => r.data.data.sessions),
     enabled: tab === 'assignments',
+  })
+
+  const { data: gradebookData } = useQuery<{ sessions: GradebookSession[]; students: GradebookStudentRow[] }>({
+    queryKey: ['gradebook', classId],
+    queryFn: () => api.get(`/classes/${classId}/grades/json`).then((r) => r.data.data),
+    enabled: tab === 'grades',
   })
 
   const sections = sectionsData ?? []
@@ -368,6 +375,7 @@ export default function ClassPage() {
         {([
           { key: 'sessions', label: 'Sessions' },
           { key: 'assignments', label: 'Assignments' },
+          { key: 'grades', label: 'Grades' },
           { key: 'roster', label: 'Roster' },
           { key: 'textbook', label: 'Textbook' },
         ] as const).map(({ key, label }) => (
@@ -489,6 +497,15 @@ export default function ClassPage() {
               </div>
             ))}
           </div>
+        )
+      )}
+
+      {/* Grades tab */}
+      {tab === 'grades' && (
+        !gradebookData ? (
+          <p className="text-gray-400 text-center py-8">Loading…</p>
+        ) : (
+          <GradebookTable sessions={gradebookData.sessions} students={gradebookData.students} />
         )
       )}
 

@@ -267,6 +267,28 @@ export interface AssignmentRow {
 export interface GradeSession {
   id: string
   title: string
+  type: 'IN_CLASS' | 'HOMEWORK'
+  date: string | null
   earned: number
   max: number
+}
+
+/** A session column descriptor for the professor gradebook */
+export interface GradebookSession {
+  id: string
+  title: string
+  type: 'IN_CLASS' | 'HOMEWORK'
+  questionCount: number
+}
+
+/** A student row in the professor gradebook */
+export interface GradebookStudentRow {
+  studentId: string
+  netId: string
+  section: string | null
+  scores: Array<{ sessionId: string; earned: number; max: number }>
+  participationTotal: number
+  participationMax: number
+  hwTotal: number
+  hwMax: number
 }
