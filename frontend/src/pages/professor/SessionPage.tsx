@@ -51,6 +51,8 @@ export default function SessionPage() {
     })
   }
 
+  const [showSectionModal, setShowSectionModal] = useState(false)
+
   const [showAddQuestion, setShowAddQuestion] = useState(false)
   const [aqText, setAqText] = useState('')
   const [aqType, setAqType] = useState<'FREE_TEXT' | 'MULTIPLE_CHOICE' | 'RATING' | 'YES_NO'>('FREE_TEXT')
@@ -180,6 +182,16 @@ export default function SessionPage() {
   const statusMutation = useMutation({
     mutationFn: (status: SessionStatus) => api.patch(`/sessions/${sessionId}`, { status }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['session', sessionId] }),
+  })
+
+  // Opens the session and optionally sets the target section in one request
+  const openSessionMutation = useMutation({
+    mutationFn: (targetSectionId: string | null) =>
+      api.patch(`/sessions/${sessionId}`, { status: SessionStatus.OPEN, targetSectionId }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['session', sessionId] })
+      setShowSectionModal(false)
+    },
   })
 
   const sectionMutation = useMutation({
@@ -322,7 +334,13 @@ export default function SessionPage() {
             </a>
             {data.status === SessionStatus.DRAFT ? (
               <button
-                onClick={() => statusMutation.mutate(SessionStatus.OPEN)}
+                onClick={() => {
+                  if (sectionsData && sectionsData.length > 1) {
+                    setShowSectionModal(true)
+                  } else {
+                    statusMutation.mutate(SessionStatus.OPEN)
+                  }
+                }}
                 disabled={statusMutation.isPending}
                 className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
               >
@@ -712,6 +730,42 @@ export default function SessionPage() {
           pipContainer
         )
       }
+
+      {/* Section picker modal — shown when opening a session with multiple sections */}
+      {showSectionModal && sectionsData && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-base font-semibold text-gray-900">Open for which section?</h2>
+              <button onClick={() => setShowSectionModal(false)}>
+                <X size={18} className="text-gray-400" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-500 mb-5">
+              Only students in the selected section will be able to respond.
+            </p>
+            <div className="space-y-2">
+              {sectionsData.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => openSessionMutation.mutate(s.id)}
+                  disabled={openSessionMutation.isPending}
+                  className="w-full text-left px-4 py-3 rounded-xl border border-gray-200 hover:border-primary-400 hover:bg-primary-50 transition-colors text-sm font-medium text-gray-800 disabled:opacity-50"
+                >
+                  Section {s.name}
+                </button>
+              ))}
+              <button
+                onClick={() => openSessionMutation.mutate(null)}
+                disabled={openSessionMutation.isPending}
+                className="w-full text-left px-4 py-3 rounded-xl border border-gray-200 hover:border-gray-400 hover:bg-gray-50 transition-colors text-sm text-gray-500 disabled:opacity-50"
+              >
+                All sections
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* QR fullscreen overlay */}
       {expandedQr && activeQuestion && 'qrDataUrl' in activeQuestion && (
