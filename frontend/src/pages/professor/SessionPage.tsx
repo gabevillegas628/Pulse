@@ -357,8 +357,14 @@ export default function SessionPage() {
             ) : data.status === SessionStatus.CLOSED ? (
               <div className="flex gap-2">
                 <button
-                  onClick={() => statusMutation.mutate(SessionStatus.OPEN)}
-                  disabled={statusMutation.isPending}
+                  onClick={() => {
+                    if (sectionsData && sectionsData.length > 1) {
+                      setShowSectionModal(true)
+                    } else {
+                      statusMutation.mutate(SessionStatus.OPEN)
+                    }
+                  }}
+                  disabled={statusMutation.isPending || openSessionMutation.isPending}
                   className="bg-green-50 text-green-700 border border-green-200 px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-100 disabled:opacity-50"
                 >
                   Reopen
@@ -732,40 +738,56 @@ export default function SessionPage() {
       }
 
       {/* Section picker modal — shown when opening a session with multiple sections */}
-      {showSectionModal && sectionsData && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-base font-semibold text-gray-900">Open for which section?</h2>
-              <button onClick={() => setShowSectionModal(false)}>
-                <X size={18} className="text-gray-400" />
-              </button>
-            </div>
-            <p className="text-sm text-gray-500 mb-5">
-              Only students in the selected section will be able to respond.
-            </p>
-            <div className="space-y-2">
-              {sectionsData.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => openSessionMutation.mutate(s.id)}
-                  disabled={openSessionMutation.isPending}
-                  className="w-full text-left px-4 py-3 rounded-xl border border-gray-200 hover:border-primary-400 hover:bg-primary-50 transition-colors text-sm font-medium text-gray-800 disabled:opacity-50"
-                >
-                  Section {s.name}
+      {showSectionModal && sectionsData && (() => {
+        const currentSectionId = (data as unknown as { targetSection?: { id: string } }).targetSection?.id ?? null
+        return (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-base font-semibold text-gray-900">Open for which section?</h2>
+                <button onClick={() => setShowSectionModal(false)}>
+                  <X size={18} className="text-gray-400" />
                 </button>
-              ))}
-              <button
-                onClick={() => openSessionMutation.mutate(null)}
-                disabled={openSessionMutation.isPending}
-                className="w-full text-left px-4 py-3 rounded-xl border border-gray-200 hover:border-gray-400 hover:bg-gray-50 transition-colors text-sm text-gray-500 disabled:opacity-50"
-              >
-                All sections
-              </button>
+              </div>
+              <p className="text-sm text-gray-500 mb-5">
+                Only students in the selected section will be able to respond.
+              </p>
+              <div className="space-y-2">
+                {sectionsData.map((s) => {
+                  const isCurrent = s.id === currentSectionId
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => openSessionMutation.mutate(s.id)}
+                      disabled={openSessionMutation.isPending}
+                      className={`w-full text-left px-4 py-3 rounded-xl border transition-colors text-sm font-medium disabled:opacity-50 ${
+                        isCurrent
+                          ? 'border-primary-400 bg-primary-50 text-primary-800'
+                          : 'border-gray-200 hover:border-primary-400 hover:bg-primary-50 text-gray-800'
+                      }`}
+                    >
+                      Section {s.name}
+                      {isCurrent && <span className="ml-2 text-xs font-normal text-primary-500">current</span>}
+                    </button>
+                  )
+                })}
+                <button
+                  onClick={() => openSessionMutation.mutate(null)}
+                  disabled={openSessionMutation.isPending}
+                  className={`w-full text-left px-4 py-3 rounded-xl border transition-colors text-sm disabled:opacity-50 ${
+                    currentSectionId === null
+                      ? 'border-gray-400 bg-gray-50 text-gray-700'
+                      : 'border-gray-200 hover:border-gray-400 hover:bg-gray-50 text-gray-500'
+                  }`}
+                >
+                  All sections
+                  {currentSectionId === null && <span className="ml-2 text-xs font-normal text-gray-400">current</span>}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* QR fullscreen overlay */}
       {expandedQr && activeQuestion && 'qrDataUrl' in activeQuestion && (
