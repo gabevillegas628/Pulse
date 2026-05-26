@@ -192,6 +192,22 @@ export default function ClassPage() {
     },
   })
 
+  const deleteSessionMutation = useMutation({
+    mutationFn: (sessionId: string) => api.delete(`/sessions/${sessionId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sessions', classId] })
+      qc.invalidateQueries({ queryKey: ['class', classId] })
+    },
+  })
+
+  const deleteAssignmentMutation = useMutation({
+    mutationFn: (assignmentId: string) => api.delete(`/sessions/${assignmentId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['assignments', classId] })
+      qc.invalidateQueries({ queryKey: ['class', classId] })
+    },
+  })
+
   const resetMutation = useMutation({
     mutationFn: ({ studentId, newPassword }: { studentId: string; newPassword: string }) =>
       api.post(`/classes/${classId}/students/${studentId}/reset-password`, { newPassword }),
@@ -380,34 +396,47 @@ export default function ClassPage() {
         ) : (
           <div className="space-y-3">
             {sessionsData.map((s) => (
-              <Link
-                key={s.id}
-                to={`/professor/sessions/${s.id}`}
-                className="flex items-center justify-between bg-white border border-gray-200 rounded-xl p-5 hover:shadow-sm transition-shadow"
-              >
-                <div>
-                  <p className="font-medium text-gray-900">{s.title}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {s.questions?.length ?? 0} question{(s.questions?.length ?? 0) !== 1 ? 's' : ''} ·{' '}
-                    {new Date(s.createdAt).toLocaleDateString()}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {s.targetSection && (
-                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
-                      §{s.targetSection.name}
+              <div key={s.id} className="group relative flex items-center bg-white border border-gray-200 rounded-xl hover:shadow-sm transition-shadow">
+                <Link
+                  to={`/professor/sessions/${s.id}`}
+                  className="flex-1 flex items-center justify-between p-5"
+                >
+                  <div>
+                    <p className="font-medium text-gray-900">{s.title}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {s.questions?.length ?? 0} question{(s.questions?.length ?? 0) !== 1 ? 's' : ''} ·{' '}
+                      {new Date(s.createdAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {s.targetSection && (
+                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
+                        §{s.targetSection.name}
+                      </span>
+                    )}
+                    <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${
+                      s.status === 'DRAFT' ? 'bg-yellow-50 text-yellow-600' :
+                      s.status === 'OPEN' ? 'bg-green-100 text-green-700' :
+                      s.status === 'CLOSED' ? 'bg-gray-100 text-gray-500' :
+                      'bg-gray-50 text-gray-400'
+                    }`}>
+                      {s.status.charAt(0) + s.status.slice(1).toLowerCase()}
                     </span>
-                  )}
-                  <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${
-                    s.status === 'DRAFT' ? 'bg-yellow-50 text-yellow-600' :
-                    s.status === 'OPEN' ? 'bg-green-100 text-green-700' :
-                    s.status === 'CLOSED' ? 'bg-gray-100 text-gray-500' :
-                    'bg-gray-50 text-gray-400'
-                  }`}>
-                    {s.status.charAt(0) + s.status.slice(1).toLowerCase()}
-                  </span>
-                </div>
-              </Link>
+                  </div>
+                </Link>
+                <button
+                  onClick={(e) => {
+                    e.preventDefault()
+                    if (!confirm(`Delete "${s.title}"? This will remove all responses and cannot be undone.`)) return
+                    deleteSessionMutation.mutate(s.id)
+                  }}
+                  disabled={deleteSessionMutation.isPending}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 px-4 py-5 text-gray-300 hover:text-red-500 disabled:opacity-30"
+                  title="Delete session"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
             ))}
           </div>
         )
@@ -425,26 +454,39 @@ export default function ClassPage() {
         ) : (
           <div className="space-y-3">
             {assignmentsData.map((a) => (
-              <Link
-                key={a.id}
-                to={`/professor/classes/${classId}/assignments/${a.id}`}
-                className="flex items-center justify-between bg-white border border-gray-200 rounded-xl p-5 hover:shadow-sm transition-shadow"
-              >
-                <div>
-                  <p className="font-medium text-gray-900">{a.title}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {a._count.questions} question{a._count.questions !== 1 ? 's' : ''}{a.deadline ? ` · Due ${new Date(a.deadline).toLocaleDateString()}` : ''}
-                  </p>
-                </div>
-                <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${
-                  a.status === 'DRAFT' ? 'bg-yellow-50 text-yellow-600' :
-                  a.status === 'OPEN' ? 'bg-green-100 text-green-700' :
-                  a.status === 'CLOSED' ? 'bg-gray-100 text-gray-500' :
-                  'bg-gray-50 text-gray-400'
-                }`}>
-                  {a.status.charAt(0) + a.status.slice(1).toLowerCase()}
-                </span>
-              </Link>
+              <div key={a.id} className="group relative flex items-center bg-white border border-gray-200 rounded-xl hover:shadow-sm transition-shadow">
+                <Link
+                  to={`/professor/classes/${classId}/assignments/${a.id}`}
+                  className="flex-1 flex items-center justify-between p-5"
+                >
+                  <div>
+                    <p className="font-medium text-gray-900">{a.title}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {a._count.questions} question{a._count.questions !== 1 ? 's' : ''}{a.deadline ? ` · Due ${new Date(a.deadline).toLocaleDateString()}` : ''}
+                    </p>
+                  </div>
+                  <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${
+                    a.status === 'DRAFT' ? 'bg-yellow-50 text-yellow-600' :
+                    a.status === 'OPEN' ? 'bg-green-100 text-green-700' :
+                    a.status === 'CLOSED' ? 'bg-gray-100 text-gray-500' :
+                    'bg-gray-50 text-gray-400'
+                  }`}>
+                    {a.status.charAt(0) + a.status.slice(1).toLowerCase()}
+                  </span>
+                </Link>
+                <button
+                  onClick={(e) => {
+                    e.preventDefault()
+                    if (!confirm(`Delete "${a.title}"? This will remove all student responses and cannot be undone.`)) return
+                    deleteAssignmentMutation.mutate(a.id)
+                  }}
+                  disabled={deleteAssignmentMutation.isPending}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 px-4 py-5 text-gray-300 hover:text-red-500 disabled:opacity-30"
+                  title="Delete assignment"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
             ))}
           </div>
         )

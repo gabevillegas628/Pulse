@@ -57,6 +57,18 @@ export default function SessionPage() {
   const [aqOptions, setAqOptions] = useState('')
   const [aqError, setAqError] = useState('')
 
+  const deleteQuestionMutation = useMutation({
+    mutationFn: (questionId: string) => api.delete(`/sessions/${sessionId}/questions/${questionId}`),
+    onSuccess: (_data, questionId) => {
+      qc.setQueryData<SessionDetail>(['session', sessionId], (prev) => {
+        if (!prev) return prev
+        const remaining = prev.questions.filter((q) => q.id !== questionId)
+        return { ...prev, questions: remaining }
+      })
+      setActiveTab((t) => Math.max(0, t - 1))
+    },
+  })
+
   const addQuestionMutation = useMutation({
     mutationFn: () => api.post(`/sessions/${sessionId}/questions`, {
       text: aqText,
@@ -351,17 +363,31 @@ export default function SessionPage() {
       {/* Question tabs */}
       <div className="flex items-center gap-1 mb-6 border-b border-gray-200">
         {data.questions.map((q, i) => (
-          <button
-            key={q.id}
-            onClick={() => setActiveTab(i)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === i
-                ? 'border-primary-600 text-primary-700'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            Q{i + 1}
-          </button>
+          <div key={q.id} className="group relative flex items-center">
+            <button
+              onClick={() => setActiveTab(i)}
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === i
+                  ? 'border-primary-600 text-primary-700'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Q{i + 1}
+            </button>
+            {data.status === SessionStatus.DRAFT && (
+              <button
+                onClick={() => {
+                  if (!confirm(`Delete Q${i + 1}? This cannot be undone.`)) return
+                  deleteQuestionMutation.mutate(q.id)
+                }}
+                disabled={deleteQuestionMutation.isPending}
+                className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-1 -right-1 w-4 h-4 flex items-center justify-center bg-white border border-gray-200 rounded-full text-gray-300 hover:text-red-500 hover:border-red-300 disabled:opacity-30"
+                title="Delete question"
+              >
+                <X size={9} />
+              </button>
+            )}
+          </div>
         ))}
         <button
           onClick={() => setShowAddQuestion(true)}
