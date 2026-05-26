@@ -59,7 +59,7 @@ export default function QuestionPage() {
   const jsmeInitialSmiles = useRef('')
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
-  const { control, handleSubmit, register, formState: { isSubmitting } } = useForm<{ response: string }>()
+  const { control, handleSubmit, register, watch, formState: { isSubmitting } } = useForm<{ response: string }>()
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -158,6 +158,12 @@ export default function QuestionPage() {
   }
 
   const q = question!
+  const responseValue = watch('response')
+  const isAnswerEmpty =
+    q.type === 'ORDERING' ? false :
+    q.type === 'MULTI_SELECT' ? selectedOptions.length === 0 :
+    q.type === 'STRUCTURE' ? !structureSmiles :
+    !responseValue?.trim()
 
   return (
     <StudentLayout>
@@ -330,7 +336,7 @@ export default function QuestionPage() {
 
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || isAnswerEmpty}
             className="w-full bg-primary-600 text-white rounded-xl py-4 text-base font-semibold hover:bg-primary-700 disabled:opacity-50 transition-colors"
           >
             {isSubmitting ? 'Submitting…' : 'Submit'}
