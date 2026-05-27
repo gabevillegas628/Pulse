@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { prisma } from '../db/index.js'
 import { unified } from 'unified'
 import remarkParse from 'remark-parse'
 import remarkMath from 'remark-math'
@@ -40,6 +41,13 @@ router.get('/textbook/render', async (req, res, next) => {
     // Only allow GitHub raw URLs
     if (!url.startsWith('https://raw.githubusercontent.com/')) {
       return void res.status(400).json({ error: 'url must be a raw.githubusercontent.com URL' })
+    }
+
+    // Track view — fire-and-forget, never blocks the response
+    const classId = req.query.classId as string | undefined
+    if (classId) {
+      const chapterFilename = url.split('/').pop() ?? url
+      prisma.textbookView.create({ data: { classId, chapterFilename } }).catch(() => {})
     }
 
     // Serve from cache if fresh

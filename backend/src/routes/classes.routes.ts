@@ -628,4 +628,24 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
   }
 })
 
+// ─── Textbook view counts ─────────────────────────────────────────────────────
+
+router.get('/:id/textbook-views', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const classId = p(req.params.id)
+    const views = await prisma.textbookView.groupBy({
+      by: ['chapterFilename'],
+      where: { classId },
+      _count: { id: true },
+    })
+    res.json({
+      data: {
+        views: views.map((v) => ({ chapterFilename: v.chapterFilename, count: v._count.id })),
+      },
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
 export default router

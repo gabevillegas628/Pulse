@@ -30,20 +30,32 @@ model Student {
 }
 
 model Class {
-  id             String       @id @default(cuid())
+  id             String          @id @default(cuid())
   professorId    String
-  professor      Professor    @relation(fields: [professorId], references: [id], onDelete: Cascade)
+  professor      Professor       @relation(fields: [professorId], references: [id], onDelete: Cascade)
   name           String
   description    String?
-  joinCode       String       @unique
+  joinCode       String          @unique
   textbookRepo   String?
   textbookPath   String?
   textbookBranch String?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
   sessions       Session[]
   enrollments    Enrollment[]
   sections       Section[]
+  textbookViews  TextbookView[]
+}
+
+model TextbookView {
+  id              String   @id @default(cuid())
+  classId         String
+  class           Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  chapterFilename String
+  viewedAt        DateTime @default(now())
+
+  @@index([classId])
+  @@index([classId, chapterFilename])
 }
 
 model Section {

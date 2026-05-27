@@ -255,7 +255,7 @@ export default function StudentClassPage() {
               className="border border-gray-200 rounded-xl overflow-hidden flex"
               style={{ height: 'calc(100vh - 340px)', minHeight: '480px' }}
             >
-              <TextbookPage repo={cls.textbookRepo} path={cls.textbookPath ?? ''} />
+              <TextbookPage repo={cls.textbookRepo} path={cls.textbookPath ?? ''} classId={classId} />
             </div>
           )
         )}

@@ -127,6 +127,15 @@ export default function ClassPage() {
     enabled: tab === 'grades',
   })
 
+  const { data: textbookViewsData } = useQuery<{ views: { chapterFilename: string; count: number }[] }>({
+    queryKey: ['textbook-views', classId],
+    queryFn: () => api.get(`/classes/${classId}/textbook-views`).then((r) => r.data.data),
+    enabled: tab === 'textbook',
+  })
+  const viewCounts: Record<string, number> = Object.fromEntries(
+    (textbookViewsData?.views ?? []).map((v) => [v.chapterFilename, v.count])
+  )
+
   const sections = sectionsData ?? []
 
   async function addSection(e: React.FormEvent) {
@@ -739,7 +748,7 @@ export default function ClassPage() {
               className="border border-gray-200 rounded-xl overflow-hidden flex"
               style={{ height: 'calc(100vh - 400px)', minHeight: '480px' }}
             >
-              <TextbookPage repo={repo} path={path} />
+              <TextbookPage repo={repo} path={path} classId={classId} viewCounts={viewCounts} />
             </div>
           </div>
         )

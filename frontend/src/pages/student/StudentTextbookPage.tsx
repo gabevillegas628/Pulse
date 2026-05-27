@@ -65,6 +65,7 @@ export default function StudentTextbookPage() {
       <TextbookPage
         repo={data.textbookRepo}
         path={data.textbookPath ?? ''}
+        classId={classId}
       />
     </TextbookLayout>
   )

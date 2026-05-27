@@ -36,6 +36,7 @@ function ChapterSidebar({
   onWidthChange,
   fontSize,
   onFontSizeChange,
+  viewCounts,
 }: {
   chapters: Chapter[]
   selectedName: string | null
@@ -46,6 +47,7 @@ function ChapterSidebar({
   onWidthChange: (w: number) => void
   fontSize: FontSize
   onFontSizeChange: (s: FontSize) => void
+  viewCounts?: Record<string, number>
 }) {
   return (
     <aside className="w-64 shrink-0 bg-white border-r border-gray-200 flex flex-col">
@@ -66,14 +68,21 @@ function ChapterSidebar({
             <button
               key={ch.name}
               onClick={() => onSelect(ch)}
-              className={`w-full text-left px-4 py-2.5 flex items-center justify-between transition-colors ${
+              className={`w-full text-left px-4 py-2.5 flex items-center justify-between gap-2 transition-colors ${
                 isActive
                   ? 'bg-primary-50 text-primary-700'
                   : 'text-gray-700 hover:bg-gray-50'
               }`}
             >
-              <span className="text-sm leading-snug">{filenameToTitle(ch.name)}</span>
-              {isActive && <ChevronRight size={13} className="shrink-0 text-primary-400" />}
+              <span className="text-sm leading-snug flex-1">{filenameToTitle(ch.name)}</span>
+              <span className="shrink-0 flex items-center gap-1">
+                {viewCounts && (
+                  <span className="text-[10px] font-medium text-gray-400 tabular-nums">
+                    {viewCounts[ch.name] ?? 0}
+                  </span>
+                )}
+                {isActive && <ChevronRight size={13} className="text-primary-400" />}
+              </span>
             </button>
           )
         })}
@@ -127,6 +136,7 @@ function ChapterContent({
   fontSize,
   expanded,
   onToggleExpand,
+  classId,
 }: {
   name: string
   downloadUrl: string
@@ -134,11 +144,13 @@ function ChapterContent({
   fontSize: FontSize
   expanded: boolean
   onToggleExpand: () => void
+  classId?: string
 }) {
+  const classParam = classId ? `&classId=${encodeURIComponent(classId)}` : ''
   const { data: html, isLoading, isError } = useQuery<string>({
     queryKey: ['textbook-chapter', downloadUrl],
     queryFn: () =>
-      fetch(`/api/textbook/render?url=${encodeURIComponent(downloadUrl)}`).then(async (r) => {
+      fetch(`/api/textbook/render?url=${encodeURIComponent(downloadUrl)}${classParam}`).then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         const { html } = await r.json()
         return html as string
@@ -214,6 +226,8 @@ function Reader({
   onWidthChange,
   fontSize,
   onFontSizeChange,
+  classId,
+  viewCounts,
 }: {
   chapters: Chapter[]
   selectedName: string | null
@@ -224,6 +238,8 @@ function Reader({
   onWidthChange: (w: number) => void
   fontSize: FontSize
   onFontSizeChange: (s: FontSize) => void
+  classId?: string
+  viewCounts?: Record<string, number>
 }) {
   const selectedChapter = chapters.find((c) => c.name === selectedName) ?? null
   return (
@@ -238,9 +254,10 @@ function Reader({
         onWidthChange={onWidthChange}
         fontSize={fontSize}
         onFontSizeChange={onFontSizeChange}
+        viewCounts={viewCounts}
       />
       {selectedChapter ? (
-        <ChapterContent name={selectedChapter.name} downloadUrl={selectedChapter.downloadUrl} contentWidth={contentWidth} fontSize={fontSize} expanded={expanded} onToggleExpand={onToggleExpand} />
+        <ChapterContent name={selectedChapter.name} downloadUrl={selectedChapter.downloadUrl} contentWidth={contentWidth} fontSize={fontSize} expanded={expanded} onToggleExpand={onToggleExpand} classId={classId} />
       ) : (
         <EmptyState />
       )}
@@ -254,9 +271,11 @@ interface TextbookPageProps {
   repo: string
   path: string      // '' for root, 'chapters' for subfolder
   branch?: string   // unused — branch comes from GitHub's download_url
+  classId?: string
+  viewCounts?: Record<string, number>
 }
 
-export default function TextbookPage({ repo, path }: TextbookPageProps) {
+export default function TextbookPage({ repo, path, classId, viewCounts }: TextbookPageProps) {
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedName = searchParams.get('chapter')
   const [expanded, setExpanded] = useState(false)
@@ -319,6 +338,8 @@ export default function TextbookPage({ repo, path }: TextbookPageProps) {
         onWidthChange={setContentWidth}
         fontSize={fontSize}
         onFontSizeChange={setFontSize}
+        classId={classId}
+        viewCounts={viewCounts}
       />
 
       {/* Fullscreen overlay */}
@@ -351,6 +372,8 @@ export default function TextbookPage({ repo, path }: TextbookPageProps) {
               onWidthChange={setContentWidth}
               fontSize={fontSize}
               onFontSizeChange={setFontSize}
+              classId={classId}
+              viewCounts={viewCounts}
             />
           </div>
         </div>
