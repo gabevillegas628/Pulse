@@ -1,5 +1,6 @@
-import { Router } from 'express'
+import { Router, Request, Response, NextFunction } from 'express'
 import { prisma } from '../db/index.js'
+import { requireProfessor } from '../middleware/auth.middleware.js'
 import { unified } from 'unified'
 import remarkParse from 'remark-parse'
 import remarkMath from 'remark-math'
@@ -80,6 +81,18 @@ router.get('/textbook/render', async (req, res, next) => {
 
     cache.set(url, { html, cachedAt: Date.now() })
     res.json({ html })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ─── Cache clear (professor only) ────────────────────────────────────────────
+
+router.delete('/textbook/cache', requireProfessor, (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const size = cache.size
+    cache.clear()
+    res.json({ data: { cleared: size } })
   } catch (err) {
     next(err)
   }

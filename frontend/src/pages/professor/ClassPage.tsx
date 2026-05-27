@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
-import { Plus, Trash2, X, ChevronLeft, ChevronDown, Download, KeyRound, Copy, Users, BookOpen, Settings } from 'lucide-react'
+import { Plus, Trash2, X, ChevronLeft, ChevronDown, Download, KeyRound, Copy, Users, BookOpen, Settings, RefreshCw } from 'lucide-react'
 import type { QuestionType, StudentStats, ActivitySession, GradebookSession, GradebookStudentRow } from 'shared'
 import TextbookPage from '@/pages/shared/TextbookPage'
 import GradebookTable from '@/components/GradebookTable'
@@ -156,6 +156,11 @@ export default function ClassPage() {
     await api.patch(`/classes/${classId}/enrollments/${studentId}/section`, { sectionId })
     qc.invalidateQueries({ queryKey: ['roster', classId] })
   }
+
+  const refreshTextbookMutation = useMutation({
+    mutationFn: () => api.delete('/textbook/cache'),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['textbook-chapter'] }),
+  })
 
   const { register, control, handleSubmit, reset, watch, setValue, formState: { errors, isSubmitting } } = useForm<SessionFormData>({
     resolver: zodResolver(sessionSchema),
@@ -737,12 +742,23 @@ export default function ClassPage() {
                 <span className="font-mono text-gray-700">{repo}</span>
                 {path && <span className="text-gray-400">/{path}</span>}
               </div>
-              <button
-                onClick={() => { setTbRepo(repo); setTbPath(path); setShowTextbookSettings(true) }}
-                className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-700"
-              >
-                <Settings size={13} /> Edit
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => refreshTextbookMutation.mutate()}
+                  disabled={refreshTextbookMutation.isPending}
+                  className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-700 disabled:opacity-50"
+                  title="Clears the server cache so students see the latest version from GitHub"
+                >
+                  <RefreshCw size={13} className={refreshTextbookMutation.isPending ? 'animate-spin' : ''} />
+                  {refreshTextbookMutation.isPending ? 'Refreshing…' : refreshTextbookMutation.isSuccess ? 'Refreshed!' : 'Reload from GitHub'}
+                </button>
+                <button
+                  onClick={() => { setTbRepo(repo); setTbPath(path); setShowTextbookSettings(true) }}
+                  className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-700"
+                >
+                  <Settings size={13} /> Edit
+                </button>
+              </div>
             </div>
             <div
               className="border border-gray-200 rounded-xl overflow-hidden flex"
