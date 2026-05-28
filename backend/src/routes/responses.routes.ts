@@ -5,7 +5,7 @@ import { AppError } from '../middleware/error.middleware.js'
 import { requireStudent, StudentRequest } from '../middleware/auth.middleware.js'
 import { getIo } from '../socket.js'
 
-import { calcScore } from '../utils/scoring.js'
+import { calcScore, calcSessionMax } from '../utils/scoring.js'
 import { upsertEnrollment } from '../utils/enrollment.js'
 import { p } from '../utils/params.js'
 
@@ -230,6 +230,7 @@ router.get('/student/classes/:classId/grades', requireStudent, async (req: Reque
               where: { studentId: student.id },
               select: { responseText: true, aiScore: true },
             },
+            _count: { select: { responses: true } },
           },
         },
       },
@@ -237,7 +238,8 @@ router.get('/student/classes/:classId/grades', requireStudent, async (req: Reque
 
     const result = sessions.map((session) => {
       let earned = 0
-      const max = session.questions.length
+      const qs = session.questions as Array<typeof session.questions[number] & { _count: { responses: number } }>
+      const max = calcSessionMax(session.type as string, qs.map((q) => q._count.responses))
       for (const q of session.questions) {
         const resp = q.responses[0] ?? null
         earned += calcScore(q.type, q.correctAnswer, resp, q.tolerance)
@@ -258,6 +260,75 @@ router.get('/student/classes/:classId/grades', requireStudent, async (req: Reque
     const totalMax = result.reduce((a, b) => a + b.max, 0)
 
     res.json({ success: true, data: { sessions: result, totalEarned, totalMax } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Student: question-level grades for a single closed session (IN_CLASS or HOMEWORK)
+router.get('/student/sessions/:sessionId/grades', requireStudent, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const student = (req as StudentRequest).student
+
+    const session = await prisma.session.findFirst({
+      where: { id: p(req.params.sessionId), status: { in: ['CLOSED', 'ARCHIVED'] } },
+      include: {
+        questions: {
+          orderBy: { order: 'asc' },
+          include: {
+            responses: {
+              where: { studentId: student.id },
+              select: { responseText: true, aiScore: true, submittedAt: true },
+            },
+            _count: { select: { responses: true } },
+          },
+        },
+      },
+    })
+    if (!session) throw new AppError('Session not found or not yet closed', 404)
+
+    const enrollment = await prisma.enrollment.findUnique({
+      where: { studentId_classId: { studentId: student.id, classId: session.classId } },
+    })
+    if (!enrollment) throw new AppError('Not enrolled in this class', 403)
+
+    let earned = 0
+    const qs = session.questions as Array<typeof session.questions[number] & { _count: { responses: number } }>
+    const max = calcSessionMax(session.type as string, qs.map((q) => q._count.responses))
+
+    const presentedQs = session.type === 'IN_CLASS'
+      ? qs.filter((q) => q._count.responses > 0)
+      : qs
+
+    const questions = presentedQs.map((q) => {
+      const resp = q.responses[0] ?? null
+      const score = calcScore(q.type, q.correctAnswer, resp, q.tolerance)
+      earned += score
+      return {
+        id: q.id,
+        text: q.text,
+        type: q.type,
+        options: q.options,
+        order: q.order,
+        correctAnswer: q.correctAnswer,
+        response: resp ? { responseText: resp.responseText, aiScore: resp.aiScore, submittedAt: resp.submittedAt } : null,
+        score,
+      }
+    })
+
+    res.json({
+      success: true,
+      data: {
+        session: {
+          id: session.id,
+          title: session.title,
+          type: session.type as 'IN_CLASS' | 'HOMEWORK',
+          questions,
+          earned: Math.round(earned * 10) / 10,
+          max,
+        },
+      },
+    })
   } catch (err) {
     next(err)
   }
@@ -540,7 +611,7 @@ router.get('/student/assignments/:id/grades', requireStudent, async (req: Reques
           groups,
           questions,
           earned: Math.round(earned * 10) / 10,
-          max: assignment.questions.length,
+          max: calcSessionMax('HOMEWORK', new Array(assignment.questions.length).fill(1)),
         },
       },
     })

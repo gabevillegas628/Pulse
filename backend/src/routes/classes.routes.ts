@@ -5,7 +5,7 @@ import { customAlphabet } from 'nanoid'
 import { prisma } from '../db/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
-import { calcScore } from '../utils/scoring.js'
+import { calcScore, calcSessionMax } from '../utils/scoring.js'
 import { generateUniqueCode } from '../utils/codes.js'
 import { p } from '../utils/params.js'
 
@@ -381,7 +381,7 @@ router.get('/:id/students/:studentId/activity', async (req: Request, res: Respon
           include: {
             responses: {
               where: { studentId },
-              select: { responseText: true, wordCount: true, isFlagged: true, submittedAt: true },
+              select: { responseText: true, wordCount: true, isFlagged: true, submittedAt: true, aiScore: true },
             },
           },
         },
@@ -391,6 +391,7 @@ router.get('/:id/students/:studentId/activity', async (req: Request, res: Respon
     const result = sessions.map((session) => ({
       id: session.id,
       title: session.title,
+      type: session.type as 'IN_CLASS' | 'HOMEWORK',
       status: session.status,
       createdAt: session.createdAt,
       questions: session.questions.map((q, i) => ({
@@ -398,6 +399,7 @@ router.get('/:id/students/:studentId/activity', async (req: Request, res: Respon
         text: q.text,
         type: q.type,
         number: i + 1,
+        correctAnswer: q.correctAnswer,
         response: q.responses[0] ?? null,
       })),
     }))
@@ -489,8 +491,12 @@ router.get('/:id/grades/json', async (req: Request, res: Response, next: NextFun
     const participationSessions = allSessions.filter((s) => s.type !== 'HOMEWORK')
     const homeworkSessions = allSessions.filter((s) => s.type === 'HOMEWORK')
 
-    const participationMax = participationSessions.reduce((sum, s) => sum + s.questions.length, 0)
-    const hwMax = homeworkSessions.reduce((sum, s) => sum + s.questions.length, 0)
+    const participationMax = participationSessions.reduce(
+      (sum, s) => sum + calcSessionMax('IN_CLASS', s.questions.map((q) => q.responses.length)), 0
+    )
+    const hwMax = homeworkSessions.reduce(
+      (sum, s) => sum + calcSessionMax('HOMEWORK', s.questions.map((q) => q.responses.length)), 0
+    )
 
     const sessions = allSessions.map((s) => ({
       id: s.id,
@@ -506,7 +512,8 @@ router.get('/:id/grades/json', async (req: Request, res: Response, next: NextFun
           const resp = q.responses.find((r) => r.studentId === student.id) ?? null
           return sum + calcScore(q.type, q.correctAnswer, resp)
         }, 0)
-        return { sessionId: session.id, earned: Math.round(earned * 10) / 10, max: session.questions.length }
+        const max = calcSessionMax(session.type, session.questions.map((q) => q.responses.length))
+        return { sessionId: session.id, earned: Math.round(earned * 10) / 10, max }
       })
 
       const participationTotal = participationSessions.reduce((sum, s) => {
@@ -573,8 +580,12 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
     const participationSessions = allSessions.filter((s) => s.type !== 'HOMEWORK')
     const homeworkSessions = allSessions.filter((s) => s.type === 'HOMEWORK')
 
-    const participationMax = participationSessions.reduce((sum, s) => sum + s.questions.length, 0)
-    const homeworkMax = homeworkSessions.reduce((sum, s) => sum + s.questions.length, 0)
+    const participationMax = participationSessions.reduce(
+      (sum, s) => sum + calcSessionMax('IN_CLASS', s.questions.map((q) => q.responses.length)), 0
+    )
+    const homeworkMax = homeworkSessions.reduce(
+      (sum, s) => sum + calcSessionMax('HOMEWORK', s.questions.map((q) => q.responses.length)), 0
+    )
 
     const participationHeaders = participationSessions.map((s) => s.title.replace(/,/g, ' '))
     const homeworkHeaders = homeworkSessions.map((s) => `HW: ${s.title.replace(/,/g, ' ')}`)

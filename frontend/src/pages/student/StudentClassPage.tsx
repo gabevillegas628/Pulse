@@ -7,6 +7,7 @@ import TextbookPage from '@/pages/shared/TextbookPage'
 import { BookOpen, ChevronLeft, Clock, KeyRound, LogOut, Radio } from 'lucide-react'
 import type { AssignmentRow, GradeSession } from 'shared'
 import PasswordChangeModal from '@/components/PasswordChangeModal'
+import SessionGradeSheet from '@/components/SessionGradeSheet'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -71,6 +72,7 @@ export default function StudentClassPage() {
   const { student, logout } = useStudentAuth()
   const [tab, setTab] = useState<Tab>('sessions')
   const [showPwModal, setShowPwModal] = useState(false)
+  const [selectedSession, setSelectedSession] = useState<GradeSession | null>(null)
 
   // Block copy/paste for academic integrity (matches StudentLayout)
   useEffect(() => {
@@ -274,15 +276,16 @@ export default function StudentClassPage() {
             const renderGroup = (items: typeof gradesData.sessions) => (
               <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                 {items.map((s, i) => (
-                  <div
+                  <button
                     key={s.id}
-                    className={`flex items-center justify-between px-5 py-3.5 ${
+                    onClick={() => setSelectedSession(s)}
+                    className={`w-full flex items-center justify-between px-5 py-3.5 text-left hover:bg-gray-50 transition-colors ${
                       i < items.length - 1 ? 'border-b border-gray-100' : ''
                     }`}
                   >
                     <p className="text-sm text-gray-700">{s.title}</p>
                     <p className="text-sm font-medium text-gray-900 shrink-0">{s.earned}/{s.max}</p>
-                  </div>
+                  </button>
                 ))}
               </div>
             )
@@ -315,6 +318,10 @@ export default function StudentClassPage() {
           })()
         )}
       </main>
+
+      {selectedSession && (
+        <SessionGradeSheet session={selectedSession} onClose={() => setSelectedSession(null)} />
+      )}
 
       <PasswordChangeModal
         endpoint="/student/me/password"

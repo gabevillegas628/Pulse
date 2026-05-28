@@ -10,6 +10,8 @@ import { Plus, Trash2, X, ChevronLeft, ChevronDown, Download, KeyRound, Copy, Us
 import type { QuestionType, StudentStats, ActivitySession, GradebookSession, GradebookStudentRow } from 'shared'
 import TextbookPage from '@/pages/shared/TextbookPage'
 import GradebookTable from '@/components/GradebookTable'
+import StudentSessionModal from '@/components/StudentSessionModal'
+import StudentReportPanel from '@/components/StudentReportPanel'
 import { apiError } from '@/lib/errors'
 
 
@@ -92,6 +94,8 @@ export default function ClassPage() {
   const [showAddSection, setShowAddSection] = useState(false)
   const [newSectionName, setNewSectionName] = useState('')
   const [sectionLoading, setSectionLoading] = useState(false)
+  const [selectedCell, setSelectedCell] = useState<{ studentId: string; sessionId: string } | null>(null)
+  const [selectedStudent, setSelectedStudent] = useState<{ studentId: string; netId: string } | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['class', classId],
@@ -519,7 +523,36 @@ export default function ClassPage() {
         !gradebookData ? (
           <p className="text-gray-400 text-center py-8">Loading…</p>
         ) : (
-          <GradebookTable sessions={gradebookData.sessions} students={gradebookData.students} />
+          <>
+            <GradebookTable
+              sessions={gradebookData.sessions}
+              students={gradebookData.students}
+              onCellClick={(studentId, sessionId) => setSelectedCell({ studentId, sessionId })}
+              onStudentClick={(studentId, netId) => setSelectedStudent({ studentId, netId })}
+            />
+            {selectedCell && (() => {
+              const session = gradebookData.sessions.find((s) => s.id === selectedCell.sessionId)
+              const student = gradebookData.students.find((s) => s.studentId === selectedCell.studentId)
+              if (!session || !student) return null
+              return (
+                <StudentSessionModal
+                  classId={classId!}
+                  studentId={selectedCell.studentId}
+                  netId={student.netId}
+                  session={session}
+                  onClose={() => setSelectedCell(null)}
+                />
+              )
+            })()}
+            {selectedStudent && (
+              <StudentReportPanel
+                classId={classId!}
+                studentId={selectedStudent.studentId}
+                netId={selectedStudent.netId}
+                onClose={() => setSelectedStudent(null)}
+              />
+            )}
+          </>
         )
       )}
 

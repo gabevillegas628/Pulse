@@ -3,6 +3,8 @@ import type { GradebookSession, GradebookStudentRow } from 'shared'
 interface Props {
   sessions: GradebookSession[]
   students: GradebookStudentRow[]
+  onCellClick?: (studentId: string, sessionId: string) => void
+  onStudentClick?: (studentId: string, netId: string) => void
 }
 
 function scoreCell(earned: number, max: number) {
@@ -12,7 +14,7 @@ function scoreCell(earned: number, max: number) {
   return { label: `${earned.toFixed(1)}/${max}`, className: 'text-gray-700' }
 }
 
-export default function GradebookTable({ sessions, students }: Props) {
+export default function GradebookTable({ sessions, students, onCellClick, onStudentClick }: Props) {
   const hasSections = students.some((s) => s.section !== null)
   const sorted = [...students].sort((a, b) => a.netId.localeCompare(b.netId))
 
@@ -70,7 +72,10 @@ export default function GradebookTable({ sessions, students }: Props) {
               className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}
             >
               {/* Sticky NetID */}
-              <td className={`sticky left-0 z-10 px-4 py-2.5 font-mono font-medium text-gray-800 whitespace-nowrap border-r border-gray-100 ${rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+              <td
+                className={`sticky left-0 z-10 px-4 py-2.5 font-mono font-medium whitespace-nowrap border-r border-gray-100 ${rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} ${onStudentClick ? 'cursor-pointer text-primary-700 hover:underline' : 'text-gray-800'}`}
+                onClick={() => onStudentClick?.(student.studentId, student.netId)}
+              >
                 {student.netId}
               </td>
               {hasSections && (
@@ -81,8 +86,13 @@ export default function GradebookTable({ sessions, students }: Props) {
               {sessions.map((s) => {
                 const sc = student.scores.find((r) => r.sessionId === s.id)
                 const { label, className } = scoreCell(sc?.earned ?? 0, sc?.max ?? 0)
+                const clickable = onCellClick && (sc?.max ?? 0) > 0
                 return (
-                  <td key={s.id} className={`px-3 py-2.5 text-center text-xs font-medium ${className}`}>
+                  <td
+                    key={s.id}
+                    className={`px-3 py-2.5 text-center text-xs font-medium ${className} ${clickable ? 'cursor-pointer hover:opacity-70' : ''}`}
+                    onClick={clickable ? () => onCellClick(student.studentId, s.id) : undefined}
+                  >
                     {label}
                   </td>
                 )

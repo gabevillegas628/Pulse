@@ -239,13 +239,15 @@ export interface ActivityQuestion {
   text: string
   type: string
   number: number
-  response: { responseText: string; wordCount: number; isFlagged: boolean; submittedAt: string } | null
+  correctAnswer: string | null
+  response: { responseText: string; wordCount: number; isFlagged: boolean; submittedAt: string; aiScore: number | null } | null
 }
 
 /** A session with its questions, as returned by the student activity endpoint */
 export interface ActivitySession {
   id: string
   title: string
+  type: 'IN_CLASS' | 'HOMEWORK'
   status: string
   createdAt: string
   questions: ActivityQuestion[]
@@ -269,6 +271,28 @@ export interface GradeSession {
   title: string
   type: 'IN_CLASS' | 'HOMEWORK'
   date: string | null
+  earned: number
+  max: number
+}
+
+/** A single question entry in a student's session grade detail */
+export interface GradeQuestion {
+  id: string
+  text: string
+  type: string
+  options: string[] | null
+  order: number
+  correctAnswer: string | null
+  response: { responseText: string; aiScore: number | null; submittedAt: string } | null
+  score: number
+}
+
+/** Full question-level breakdown for one closed session */
+export interface GradeSessionDetail {
+  id: string
+  title: string
+  type: 'IN_CLASS' | 'HOMEWORK'
+  questions: GradeQuestion[]
   earned: number
   max: number
 }

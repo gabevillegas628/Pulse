@@ -66,3 +66,17 @@ export function calcScore(
 
   return 1.0 // RATING — participation credit regardless of value
 }
+
+/**
+ * Max score for a session.
+ * IN_CLASS: only questions that received at least one response count —
+ *   questions with zero responses were never presented.
+ * All other types (HOMEWORK etc.): every question counts.
+ */
+export function calcSessionMax(
+  sessionType: string,
+  totalResponseCounts: number[]
+): number {
+  if (sessionType !== 'IN_CLASS') return totalResponseCounts.length
+  return totalResponseCounts.filter((n) => n > 0).length
+}
