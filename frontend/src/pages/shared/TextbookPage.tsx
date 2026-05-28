@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { BookOpen, ChevronRight, Maximize2, Minimize2, X } from 'lucide-react'
 import { contentsApiUrl, filenameToTitle, chapterSortKey } from '@/lib/textbook'
+import { api } from '@/api/client'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -146,15 +147,11 @@ function ChapterContent({
   onToggleExpand: () => void
   classId?: string
 }) {
-  const classParam = classId ? `&classId=${encodeURIComponent(classId)}` : ''
   const { data: html, isLoading, isError } = useQuery<string>({
     queryKey: ['textbook-chapter', downloadUrl],
     queryFn: () =>
-      fetch(`/api/textbook/render?url=${encodeURIComponent(downloadUrl)}${classParam}`).then(async (r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        const { html } = await r.json()
-        return html as string
-      }),
+      api.get('/textbook/render', { params: { url: downloadUrl, ...(classId ? { classId } : {}) } })
+        .then((r) => r.data.html as string),
     staleTime: 5 * 60 * 1000,
   })
 

@@ -46,7 +46,8 @@ router.get('/textbook/render', async (req, res, next) => {
       return void res.status(400).json({ error: 'url must be a raw.githubusercontent.com URL' })
     }
 
-    // Track view — fire-and-forget, skip professor requests
+    // Track view — fire-and-forget, skip professor requests.
+    // The frontend uses the api client so the Authorization header is always present.
     const classId = req.query.classId as string | undefined
     if (classId) {
       const authHeader = req.headers.authorization
@@ -55,7 +56,7 @@ router.get('/textbook/render', async (req, res, next) => {
         try {
           const payload = jwt.verify(authHeader.slice(7), config.jwtSecret) as { role?: string }
           isProfessor = payload.role === 'professor'
-        } catch { /* malformed token — treat as student */ }
+        } catch { /* invalid token — treat as student */ }
       }
       if (!isProfessor) {
         const chapterFilename = url.split('/').pop() ?? url
