@@ -1,7 +1,19 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { BookOpen, ChevronRight, Maximize2, Minimize2, X } from 'lucide-react'
+import { BookOpen, ChevronRight, Maximize2, Menu, Minimize2, RotateCcw, X } from 'lucide-react'
+
+const NARROW_BREAKPOINT = 768
+
+function useIsNarrow() {
+  const [narrow, setNarrow] = useState(() => window.innerWidth < NARROW_BREAKPOINT)
+  useEffect(() => {
+    const handler = () => setNarrow(window.innerWidth < NARROW_BREAKPOINT)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
+  return narrow
+}
 import { contentsApiUrl, filenameToTitle, chapterSortKey } from '@/lib/textbook'
 import { api } from '@/api/client'
 
@@ -33,6 +45,8 @@ function ChapterSidebar({
   onSelect,
   expanded,
   onToggleExpand,
+  collapsed,
+  onToggleCollapse,
   contentWidth,
   onWidthChange,
   fontSize,
@@ -44,6 +58,8 @@ function ChapterSidebar({
   onSelect: (ch: Chapter) => void
   expanded: boolean
   onToggleExpand: () => void
+  collapsed: boolean
+  onToggleCollapse: () => void
   contentWidth: number
   onWidthChange: (w: number) => void
   fontSize: FontSize
@@ -51,80 +67,113 @@ function ChapterSidebar({
   viewCounts?: Record<string, number>
 }) {
   return (
-    <aside className="w-64 shrink-0 bg-white border-r border-gray-200 flex flex-col">
-      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between shrink-0">
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Chapters</p>
+    <>
+      {/* Permanent w-10 strip — always in flow so content width never shifts */}
+      <aside className="w-10 shrink-0 bg-white border-r border-gray-200 flex flex-col items-center py-3 gap-3">
         <button
-          onClick={onToggleExpand}
+          onClick={onToggleCollapse}
           className="text-gray-400 hover:text-gray-700 transition-colors"
-          title={expanded ? 'Exit fullscreen' : 'Fullscreen'}
+          title={collapsed ? 'Show chapters' : 'Hide chapters'}
         >
-          {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+          <Menu size={16} />
         </button>
-      </div>
-      <nav className="py-2 overflow-y-auto flex-1">
-        {chapters.map((ch) => {
-          const isActive = ch.name === selectedName
-          return (
-            <button
-              key={ch.name}
-              onClick={() => onSelect(ch)}
-              className={`w-full text-left px-4 py-2.5 flex items-center justify-between gap-2 transition-colors ${
-                isActive
-                  ? 'bg-primary-50 text-primary-700'
-                  : 'text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              <span className="text-sm leading-snug flex-1">{filenameToTitle(ch.name)}</span>
-              <span className="shrink-0 flex items-center gap-1">
-                {viewCounts && (
-                  <span className="text-[10px] font-medium text-gray-400 tabular-nums">
-                    {viewCounts[ch.name] ?? 0}
-                  </span>
-                )}
-                {isActive && <ChevronRight size={13} className="text-primary-400" />}
-              </span>
-            </button>
-          )
-        })}
-      </nav>
-      {/* Width + font size controls */}
-      <div className="px-4 py-3 border-t border-gray-100 shrink-0 space-y-3">
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <p className="text-xs text-gray-400">Text width</p>
-            <span className="text-xs font-medium text-gray-500 tabular-nums">{contentWidth}px</span>
-          </div>
-          <input
-            type="range"
-            min={400}
-            max={1100}
-            step={20}
-            value={contentWidth}
-            onChange={(e) => onWidthChange(Number(e.target.value))}
-            className="w-full accent-primary-600"
+        {chapters.map((ch) => (
+          <button
+            key={ch.name}
+            onClick={() => { onSelect(ch); onToggleCollapse() }}
+            className={`w-2 h-2 rounded-full shrink-0 transition-colors ${
+              ch.name === selectedName ? 'bg-primary-500' : 'bg-gray-200 hover:bg-gray-400'
+            }`}
+            title={filenameToTitle(ch.name)}
           />
-        </div>
-        <div>
-          <p className="text-xs text-gray-400 mb-1.5">Text size</p>
-          <div className="flex rounded-lg border border-gray-200 overflow-hidden">
-            {FONT_SIZES.map((s) => (
+        ))}
+      </aside>
+
+      {/* Expanded overlay panel — left-0 so -translate-x-full clears the strip completely */}
+      <aside className={`absolute left-0 top-0 bottom-0 w-64 z-10 bg-white border-r border-gray-200 shadow-lg flex flex-col transition-transform duration-200 ease-in-out ${collapsed ? '-translate-x-full pointer-events-none' : 'translate-x-0'}`}>
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-2">
               <button
-                key={s.value}
-                onClick={() => onFontSizeChange(s.value)}
-                className={`flex-1 text-xs py-1.5 transition-colors ${
-                  fontSize === s.value
-                    ? 'bg-primary-600 text-white font-medium'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
+                onClick={onToggleCollapse}
+                className="text-gray-400 hover:text-gray-700 transition-colors"
+                title="Collapse sidebar"
               >
-                {s.label}
+                <Menu size={14} />
               </button>
-            ))}
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Chapters</p>
+            </div>
+            <button
+              onClick={onToggleExpand}
+              className="text-gray-400 hover:text-gray-700 transition-colors"
+              title={expanded ? 'Exit fullscreen' : 'Fullscreen'}
+            >
+              {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            </button>
           </div>
-        </div>
-      </div>
-    </aside>
+          <nav className="py-2 overflow-y-auto flex-1">
+            {chapters.map((ch) => {
+              const isActive = ch.name === selectedName
+              return (
+                <button
+                  key={ch.name}
+                  onClick={() => onSelect(ch)}
+                  className={`w-full text-left px-4 py-2.5 flex items-center justify-between gap-2 transition-colors ${
+                    isActive
+                      ? 'bg-primary-50 text-primary-700'
+                      : 'text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <span className="text-sm leading-snug flex-1">{filenameToTitle(ch.name)}</span>
+                  <span className="shrink-0 flex items-center gap-1">
+                    {viewCounts && (
+                      <span className="text-[10px] font-medium text-gray-400 tabular-nums">
+                        {viewCounts[ch.name] ?? 0}
+                      </span>
+                    )}
+                    {isActive && <ChevronRight size={13} className="text-primary-400" />}
+                  </span>
+                </button>
+              )
+            })}
+          </nav>
+          {/* Width + font size controls */}
+          <div className="px-4 py-3 border-t border-gray-100 shrink-0 space-y-3">
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-xs text-gray-400">Text width</p>
+                <span className="text-xs font-medium text-gray-500 tabular-nums">{contentWidth}px</span>
+              </div>
+              <input
+                type="range"
+                min={400}
+                max={1100}
+                step={20}
+                value={contentWidth}
+                onChange={(e) => onWidthChange(Number(e.target.value))}
+                className="w-full accent-primary-600"
+              />
+            </div>
+            <div>
+              <p className="text-xs text-gray-400 mb-1.5">Text size</p>
+              <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+                {FONT_SIZES.map((s) => (
+                  <button
+                    key={s.value}
+                    onClick={() => onFontSizeChange(s.value)}
+                    className={`flex-1 text-xs py-1.5 transition-colors ${
+                      fontSize === s.value
+                        ? 'bg-primary-600 text-white font-medium'
+                        : 'text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </aside>
+    </>
   )
 }
 
@@ -219,6 +268,8 @@ function Reader({
   onSelect,
   expanded,
   onToggleExpand,
+  collapsed,
+  onToggleCollapse,
   contentWidth,
   onWidthChange,
   fontSize,
@@ -231,6 +282,8 @@ function Reader({
   onSelect: (ch: Chapter) => void
   expanded: boolean
   onToggleExpand: () => void
+  collapsed: boolean
+  onToggleCollapse: () => void
   contentWidth: number
   onWidthChange: (w: number) => void
   fontSize: FontSize
@@ -240,25 +293,30 @@ function Reader({
 }) {
   const selectedChapter = chapters.find((c) => c.name === selectedName) ?? null
   return (
-    <>
+    <div className="relative flex flex-1 overflow-hidden">
       <ChapterSidebar
         chapters={chapters}
         selectedName={selectedName}
         onSelect={onSelect}
         expanded={expanded}
         onToggleExpand={onToggleExpand}
+        collapsed={collapsed}
+        onToggleCollapse={onToggleCollapse}
         contentWidth={contentWidth}
         onWidthChange={onWidthChange}
         fontSize={fontSize}
         onFontSizeChange={onFontSizeChange}
         viewCounts={viewCounts}
       />
+      {!collapsed && (
+        <div className="absolute inset-0 left-64 z-[9]" onClick={onToggleCollapse} />
+      )}
       {selectedChapter ? (
         <ChapterContent name={selectedChapter.name} downloadUrl={selectedChapter.downloadUrl} contentWidth={contentWidth} fontSize={fontSize} expanded={expanded} onToggleExpand={onToggleExpand} classId={classId} />
       ) : (
         <EmptyState />
       )}
-    </>
+    </div>
   )
 }
 
@@ -276,8 +334,10 @@ export default function TextbookPage({ repo, path, classId, viewCounts }: Textbo
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedName = searchParams.get('chapter')
   const [expanded, setExpanded] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [contentWidth, setContentWidth] = useState(672)
   const [fontSize, setFontSize] = useState<FontSize>('1rem')
+  const isNarrow = useIsNarrow()
 
   // Close on Escape
   useEffect(() => {
@@ -322,6 +382,18 @@ export default function TextbookPage({ repo, path, classId, viewCounts }: Textbo
     )
   }
 
+  if (isNarrow) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center px-8 text-center bg-gray-900">
+        <RotateCcw size={40} className="text-white/60 mb-5" />
+        <p className="text-white text-lg font-semibold mb-2">Rotate your device</p>
+        <p className="text-white/60 text-sm leading-relaxed">
+          The textbook needs a wider screen. Try landscape mode or open it on a tablet or computer.
+        </p>
+      </div>
+    )
+  }
+
   return (
     <>
       {/* Normal (inline) view */}
@@ -331,6 +403,8 @@ export default function TextbookPage({ repo, path, classId, viewCounts }: Textbo
         onSelect={selectChapter}
         expanded={expanded}
         onToggleExpand={() => setExpanded(true)}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(c => !c)}
         contentWidth={contentWidth}
         onWidthChange={setContentWidth}
         fontSize={fontSize}
@@ -365,6 +439,8 @@ export default function TextbookPage({ repo, path, classId, viewCounts }: Textbo
               onSelect={selectChapter}
               expanded={expanded}
               onToggleExpand={() => setExpanded(false)}
+              collapsed={sidebarCollapsed}
+              onToggleCollapse={() => setSidebarCollapsed(c => !c)}
               contentWidth={contentWidth}
               onWidthChange={setContentWidth}
               fontSize={fontSize}
