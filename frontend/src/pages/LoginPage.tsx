@@ -22,7 +22,10 @@ type StudentForm = z.infer<typeof studentSchema>
 type ProfessorForm = z.infer<typeof professorSchema>
 
 export default function LoginPage() {
-  const [role, setRole] = useState<Role>('student')
+  const [role, setRole] = useState<Role>(() => {
+    const saved = localStorage.getItem('login-role')
+    return saved === 'professor' ? 'professor' : 'student'
+  })
   const [error, setError] = useState('')
   const { login: professorLogin } = useProfessorAuth()
   const { login: studentLogin } = useStudentAuth()
@@ -35,6 +38,7 @@ export default function LoginPage() {
 
   function switchRole(r: Role) {
     setRole(r)
+    localStorage.setItem('login-role', r)
     setError('')
     studentForm.clearErrors()
     professorForm.clearErrors()
