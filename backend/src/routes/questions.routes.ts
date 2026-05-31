@@ -152,6 +152,8 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
       groupId: z.string().nullable().optional(),
       tolerance: z.number().nullable().optional(),
       unit: z.string().nullable().optional(),
+      text: z.string().min(1).optional(),
+      options: z.array(z.string().min(1)).optional(),
     }).parse(req.body)
 
     const question = await prisma.question.findFirst({
@@ -214,6 +216,38 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
         if (!group) throw new AppError('Group not found in this session', 404)
       }
       updateData.groupId = body.groupId
+    }
+
+    if (body.text !== undefined || body.options !== undefined) {
+      if (!['DRAFT', 'OPEN'].includes(question.session.status))
+        throw new AppError('Can only edit question text/options in DRAFT or OPEN sessions', 400)
+    }
+
+    if (body.text !== undefined) {
+      updateData.text = body.text
+    }
+
+    if (body.options !== undefined) {
+      const optionTypes = ['MULTIPLE_CHOICE', 'MULTI_SELECT', 'ORDERING']
+      if (!optionTypes.includes(question.type as string))
+        throw new AppError('This question type does not support options', 400)
+      if (body.options.length < 2)
+        throw new AppError('Must have at least 2 options', 400)
+      updateData.options = body.options
+
+      // Clear correctAnswer if it references an option no longer in the list
+      if (question.correctAnswer !== null) {
+        const newOpts = new Set(body.options)
+        if (question.type === 'MULTIPLE_CHOICE' && !newOpts.has(question.correctAnswer)) {
+          updateData.correctAnswer = null
+        }
+        if (question.type === 'MULTI_SELECT' || (question.type as string) === 'ORDERING') {
+          try {
+            const arr = JSON.parse(question.correctAnswer) as string[]
+            if (!arr.every(v => newOpts.has(v))) updateData.correctAnswer = null
+          } catch { /* malformed stored value — leave as-is */ }
+        }
+      }
     }
 
     const updated = await prisma.question.update({

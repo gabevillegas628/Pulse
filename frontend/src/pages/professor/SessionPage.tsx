@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
-import { Check, ChevronLeft, Copy, Download, Flag, GraduationCap, PictureInPicture2, Plus, Sparkles, X } from 'lucide-react'
+import { Check, ChevronLeft, Copy, Download, Flag, GraduationCap, Pencil, PictureInPicture2, Plus, Sparkles, X } from 'lucide-react'
 import { io } from 'socket.io-client'
 import type { SessionDetail, QuestionWithResponses, ResponseWithStudent, SummaryCategory } from 'shared'
 import { SessionStatus } from 'shared'
@@ -62,6 +62,20 @@ export default function SessionPage() {
   const [aqUnit, setAqUnit] = useState('')
   const [aqError, setAqError] = useState('')
 
+  const [showEditQuestion, setShowEditQuestion] = useState(false)
+  const [eqId, setEqId] = useState<string | null>(null)
+  const [eqText, setEqText] = useState('')
+  const [eqOptions, setEqOptions] = useState<string[]>([])
+  const [eqError, setEqError] = useState('')
+
+  function openEditQuestion(q: QuestionWithResponses) {
+    setEqId(q.id)
+    setEqText(q.text)
+    setEqOptions((q.options as string[] | null) ?? [])
+    setEqError('')
+    setShowEditQuestion(true)
+  }
+
   const deleteQuestionMutation = useMutation({
     mutationFn: (questionId: string) => api.delete(`/sessions/${sessionId}/questions/${questionId}`),
     onSuccess: (_data, questionId) => {
@@ -93,6 +107,32 @@ export default function SessionPage() {
     onError: (e: unknown) => {
       setAqError(apiError(e, 'Failed to add question'))
     },
+  })
+
+  const editQuestionMutation = useMutation({
+    mutationFn: () => {
+      if (!eqId) throw new Error('No question selected')
+      const question = data?.questions.find(q => q.id === eqId)
+      if (!question) throw new Error('Question not found')
+
+      const payload: Record<string, unknown> = {}
+      if (eqText.trim() !== question.text) payload.text = eqText.trim()
+
+      const hasOptions = ['MULTIPLE_CHOICE', 'MULTI_SELECT', 'ORDERING'].includes(question.type)
+      if (hasOptions) {
+        const originalOpts = (question.options as string[] | null) ?? []
+        const changed = eqOptions.length !== originalOpts.length || eqOptions.some((o, i) => o !== originalOpts[i])
+        if (changed) payload.options = eqOptions.filter(o => o.trim()).map(o => o.trim())
+      }
+
+      return api.patch(`/sessions/${sessionId}/questions/${eqId}`, payload)
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['session', sessionId] })
+      setShowEditQuestion(false)
+      setEqId(null); setEqText(''); setEqOptions([]); setEqError('')
+    },
+    onError: (e: unknown) => setEqError(apiError(e, 'Failed to save question')),
   })
 
   const [pipActiveTab, setPipActiveTab] = useState<number | null>(null)
@@ -171,6 +211,14 @@ export default function SessionPage() {
       })
     },
   })
+
+  function questionTypeLabel(type: string): string {
+    const labels: Record<string, string> = {
+      FREE_TEXT: 'Free text', MULTIPLE_CHOICE: 'Multiple choice', MULTI_SELECT: 'Multi-select',
+      ORDERING: 'Ordering', NUMERIC: 'Numeric', RATING: 'Rating', YES_NO: 'Yes / No', STRUCTURE: 'Structure',
+    }
+    return labels[type] ?? type
+  }
 
   function cycleScore(current: number | null): number {
     if (current === null || current === 1.0) return 0
@@ -436,8 +484,22 @@ export default function SessionPage() {
           <div className="bg-primary-50 border border-primary-100 rounded-xl p-4 mb-5">
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1">
-                <p className="text-xs text-primary-500 font-medium mb-1 uppercase tracking-wide">Question</p>
+                <div className="flex items-center gap-2 mb-1">
+                  <p className="text-xs text-primary-500 font-medium uppercase tracking-wide">Question</p>
+                  <span className="text-xs bg-primary-100 text-primary-600 font-medium px-1.5 py-0.5 rounded">
+                    {questionTypeLabel(activeQuestion.type)}
+                  </span>
+                </div>
                 <p className="text-gray-800 font-medium">{activeQuestion.text}</p>
+                {(data.status === SessionStatus.DRAFT || data.status === SessionStatus.OPEN) && (
+                  <button
+                    onClick={() => openEditQuestion(activeQuestion)}
+                    className="mt-1.5 flex items-center gap-1 text-xs text-primary-400 hover:text-primary-600 transition-colors"
+                    title="Edit question"
+                  >
+                    <Pencil size={11} /> Edit
+                  </button>
+                )}
               </div>
               <div className="flex items-center gap-3 shrink-0">
                 {/* Access code */}
@@ -757,6 +819,70 @@ export default function SessionPage() {
           </div>
         </div>
       )}
+
+      {/* Edit question modal */}
+      {showEditQuestion && eqId && (() => {
+        const question = data.questions.find(q => q.id === eqId)
+        if (!question) return null
+        const hasOptions = ['MULTIPLE_CHOICE', 'MULTI_SELECT', 'ORDERING'].includes(question.type)
+        return (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="text-base font-semibold">Edit question</h2>
+                <button onClick={() => setShowEditQuestion(false)}><X size={18} className="text-gray-400" /></button>
+              </div>
+              <div className="space-y-4">
+                <input
+                  autoFocus
+                  value={eqText}
+                  onChange={(e) => setEqText(e.target.value)}
+                  placeholder="Question text…"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+                {hasOptions && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-gray-500 font-medium">Options</p>
+                    {eqOptions.map((opt, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <input
+                          value={opt}
+                          onChange={(e) => { const next = [...eqOptions]; next[i] = e.target.value; setEqOptions(next) }}
+                          className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                          placeholder={`Option ${i + 1}`}
+                        />
+                        <button
+                          onClick={() => setEqOptions(eqOptions.filter((_, j) => j !== i))}
+                          className="text-gray-300 hover:text-red-400 transition-colors"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => setEqOptions([...eqOptions, ''])}
+                      className="flex items-center gap-1 text-xs text-primary-500 hover:text-primary-700 mt-1"
+                    >
+                      <Plus size={12} /> Add option
+                    </button>
+                  </div>
+                )}
+                {eqError && <p className="text-red-500 text-xs">{eqError}</p>}
+                <div className="flex justify-end gap-3 pt-1">
+                  <button onClick={() => setShowEditQuestion(false)} className="px-4 py-2 text-sm text-gray-600">Cancel</button>
+                  <button
+                    onClick={() => editQuestionMutation.mutate()}
+                    disabled={!eqText.trim() || (hasOptions && eqOptions.filter(o => o.trim()).length < 2) || editQuestionMutation.isPending}
+                    className="px-5 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
+                  >
+                    {editQuestionMutation.isPending ? 'Saving…' : 'Save changes'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* PiP portal — renders live results into the floating window */}
       {pipContainer && data && pipActiveTab !== null &&
