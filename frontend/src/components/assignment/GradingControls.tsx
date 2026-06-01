@@ -89,6 +89,7 @@ export default function GradingControls({
                 <Jsme
                   height="420px"
                   width="600px"
+                  src="/jsme/jsme.nocache.js"
                   smiles={jsmeInitialSmiles.current}
                   onChange={(smiles: string) => setStructureDraft(smiles)}
                 />
