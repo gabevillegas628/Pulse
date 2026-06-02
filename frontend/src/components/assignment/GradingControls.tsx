@@ -1,11 +1,14 @@
-import { useState, useRef, lazy, Suspense } from 'react'
+import { useState, useRef } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Sparkles } from 'lucide-react'
 import type { SummaryCategory } from 'shared'
 import SmilesRenderer from '@/components/SmilesRenderer'
 import type { QWithGroup } from './types'
+import { Editor } from 'ketcher-react'
+import { RemoteStructServiceProvider } from 'ketcher-core'
+import type { Ketcher } from 'ketcher-core'
 
-const Jsme = lazy(() => import('@loschmidt/jsme-react').then(m => ({ default: m.Jsme })))
+const structServiceProvider = new RemoteStructServiceProvider('/api/indigo')
 
 interface Props {
   q: QWithGroup
@@ -25,8 +28,8 @@ export default function GradingControls({
   summarizeMutation, summary, summaryQuestionId, setSummary, setSummaryQuestionId,
 }: Props) {
   const [editingStructure, setEditingStructure] = useState(false)
-  const [structureDraft, setStructureDraft] = useState('')
-  const jsmeInitialSmiles = useRef('')
+  const ketcherRef = useRef<Ketcher | null>(null)
+  const initialSmiles = useRef('')
 
   return (
     <div className="flex items-center gap-3 flex-wrap py-2 border-t border-gray-100">
@@ -85,18 +88,26 @@ export default function GradingControls({
         <div className="w-full pt-1">
           {editingStructure ? (
             <div className="space-y-2">
-              <Suspense fallback={<p className="text-xs text-gray-400">Loading editor…</p>}>
-                <Jsme
-                  height="420px"
-                  width="600px"
-                  src="/jsme/jsme.nocache.js"
-                  smiles={jsmeInitialSmiles.current}
-                  onChange={(smiles: string) => setStructureDraft(smiles)}
+              <div className="h-[500px] border border-gray-200 rounded-xl overflow-hidden">
+                <Editor
+                  staticResourcesUrl=""
+                  structServiceProvider={structServiceProvider}
+                  errorHandler={(err) => console.error('Ketcher error:', err)}
+                  onInit={async (ketcher) => {
+                    ketcherRef.current = ketcher
+                    if (initialSmiles.current) {
+                      await ketcher.setMolecule(initialSmiles.current)
+                    }
+                  }}
                 />
-              </Suspense>
+              </div>
               <div className="flex gap-2">
                 <button
-                  onClick={() => { setCorrectAnswerMutation.mutate({ questionId: q.id, correctAnswer: structureDraft || null }); setEditingStructure(false) }}
+                  onClick={async () => {
+                    const smiles = ketcherRef.current ? await ketcherRef.current.getSmiles() : ''
+                    setCorrectAnswerMutation.mutate({ questionId: q.id, correctAnswer: smiles || null })
+                    setEditingStructure(false)
+                  }}
                   disabled={setCorrectAnswerMutation.isPending}
                   className="text-xs text-white bg-primary-600 hover:bg-primary-700 px-3 py-1.5 rounded-lg disabled:opacity-50"
                 >Save</button>
@@ -110,7 +121,7 @@ export default function GradingControls({
                   <SmilesRenderer smiles={q.correctAnswer} width={180} height={120} />
                   <div className="flex flex-col gap-1.5">
                     <button
-                      onClick={() => { jsmeInitialSmiles.current = q.correctAnswer ?? ''; setStructureDraft(q.correctAnswer ?? ''); setEditingStructure(true) }}
+                      onClick={() => { initialSmiles.current = q.correctAnswer ?? ''; setEditingStructure(true) }}
                       className="text-xs text-primary-600 hover:text-primary-800 border border-primary-200 px-2.5 py-1 rounded"
                     >Change</button>
                     <button
@@ -122,7 +133,7 @@ export default function GradingControls({
                 </>
               ) : (
                 <button
-                  onClick={() => { jsmeInitialSmiles.current = ''; setStructureDraft(''); setEditingStructure(true) }}
+                  onClick={() => { initialSmiles.current = ''; setEditingStructure(true) }}
                   className="text-xs text-primary-600 hover:text-primary-800 border border-primary-200 px-2.5 py-1.5 rounded"
                 >Set correct structure…</button>
               )}

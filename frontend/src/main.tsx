@@ -6,6 +6,7 @@ import { ProfessorAuthProvider } from '@/context/ProfessorAuthContext'
 import { StudentAuthProvider } from '@/context/StudentAuthContext'
 import App from './App'
 import './styles/globals.css'
+import 'ketcher-react/dist/index.css'
 
 const queryClient = new QueryClient({
   defaultOptions: {

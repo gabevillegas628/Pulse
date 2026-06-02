@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, lazy, Suspense } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useForm, Controller } from 'react-hook-form'
 import { api } from '@/api/client'
@@ -23,8 +23,11 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { GripVertical } from 'lucide-react'
+import { Editor } from 'ketcher-react'
+import { RemoteStructServiceProvider } from 'ketcher-core'
+import type { Ketcher } from 'ketcher-core'
 
-const Jsme = lazy(() => import('@loschmidt/jsme-react').then(m => ({ default: m.Jsme })))
+const structServiceProvider = new RemoteStructServiceProvider('/api/indigo')
 
 function SortableOrderItem({ id, label }: { id: string; label: string }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
@@ -55,8 +58,7 @@ export default function QuestionPage() {
   const [sessionClosed, setSessionClosed] = useState(false)
   const [orderedItems, setOrderedItems] = useState<string[]>([])
   const [selectedOptions, setSelectedOptions] = useState<string[]>([])
-  const [structureSmiles, setStructureSmiles] = useState('')
-  const jsmeInitialSmiles = useRef('')
+  const ketcherRef = useRef<Ketcher | null>(null)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   const { control, handleSubmit, register, watch, formState: { isSubmitting } } = useForm<{ response: string }>()
@@ -77,8 +79,7 @@ export default function QuestionPage() {
         if (q.type === 'ORDERING' && q.options) {
           setOrderedItems([...q.options].sort(() => Math.random() - 0.5))
         }
-        jsmeInitialSmiles.current = ''
-        setStructureSmiles('')
+        ketcherRef.current = null
         setSelectedOptions([])
       })
       .catch((e) => {
@@ -112,7 +113,7 @@ export default function QuestionPage() {
     let responseText = data.response ?? ''
     if (question.type === 'ORDERING') responseText = JSON.stringify(orderedItems)
     if (question.type === 'MULTI_SELECT') responseText = JSON.stringify(selectedOptions)
-    if (question.type === 'STRUCTURE') responseText = structureSmiles
+    if (question.type === 'STRUCTURE') responseText = ketcherRef.current ? await ketcherRef.current.getSmiles() : ''
     try {
       await api.post('/responses', { questionId: question.id, responseText })
       navigate(`/q/${question.id}/confirmation`)
@@ -162,7 +163,7 @@ export default function QuestionPage() {
   const isAnswerEmpty =
     q.type === 'ORDERING' ? false :
     q.type === 'MULTI_SELECT' ? selectedOptions.length === 0 :
-    q.type === 'STRUCTURE' ? !structureSmiles :
+    q.type === 'STRUCTURE' ? false :
     !responseValue?.trim()
 
   return (
@@ -318,15 +319,14 @@ export default function QuestionPage() {
             )}
 
             {q.type === 'STRUCTURE' && (
-              <Suspense fallback={<div className="h-40 bg-gray-50 rounded-xl animate-pulse" />}>
-                <Jsme
-                  height="420px"
-                  width="600px"
-                  smiles={jsmeInitialSmiles.current}
-                  onChange={(s) => setStructureSmiles(s)}
-                  options="oldlook"
+              <div className="h-[500px] border border-gray-200 rounded-xl overflow-hidden">
+                <Editor
+                  staticResourcesUrl=""
+                  structServiceProvider={structServiceProvider}
+                  errorHandler={(err) => console.error('Ketcher error:', err)}
+                  onInit={(ketcher) => { ketcherRef.current = ketcher }}
                 />
-              </Suspense>
+              </div>
             )}
           </div>
 

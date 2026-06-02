@@ -5,6 +5,7 @@ import compression from 'compression'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
+import { createProxyMiddleware } from 'http-proxy-middleware'
 import { config } from './config/index.js'
 import { errorMiddleware } from './middleware/error.middleware.js'
 import authRoutes from './routes/auth.routes.js'
@@ -36,6 +37,16 @@ app.use(helmet({
   },
 }))
 app.use(compression())
+
+const indigoTarget = process.env.INDIGO_SERVICE_URL ?? 'http://indigoservice.railway.internal'
+app.use(createProxyMiddleware({
+  pathFilter: '/api/indigo',
+  target: indigoTarget,
+  changeOrigin: true,
+  pathRewrite: { '^/api/indigo': '/v2' },
+  on: { error: (_err, _req, res) => { const r = res as express.Response; if (!r.headersSent) r.status(502).json({ error: 'Indigo service unavailable' }) } },
+}))
+
 app.use(express.json())
 
 if (config.isDev) {
