@@ -9,10 +9,8 @@ export default defineConfig({
     alias: { '@': path.resolve(__dirname, './src') },
   },
   build: {
-    rollupOptions: {
-      output: {
-        banner: 'var require=globalThis.require||(function(id){return{};});',
-      },
+    commonjsOptions: {
+      transformMixedEsModules: true,
     },
   },
   server: {
