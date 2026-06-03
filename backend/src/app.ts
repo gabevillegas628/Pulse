@@ -8,7 +8,6 @@ import { fileURLToPath } from 'url'
 import { createProxyMiddleware } from 'http-proxy-middleware'
 import { config } from './config/index.js'
 import { errorMiddleware } from './middleware/error.middleware.js'
-import { requireAnyAuth } from './middleware/auth.middleware.js'
 import rateLimit from 'express-rate-limit'
 import authRoutes from './routes/auth.routes.js'
 import classRoutes from './routes/classes.routes.js'
@@ -56,7 +55,7 @@ const indigoLimiter = rateLimit({
   legacyHeaders: false,
 })
 
-app.use('/api/indigo', requireAnyAuth, indigoLimiter)
+app.use('/api/indigo', indigoLimiter)
 app.use(createProxyMiddleware({
   pathFilter: '/api/indigo',
   target: indigoTarget,
