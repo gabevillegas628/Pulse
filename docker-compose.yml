@@ -1,0 +1,5 @@
+services:
+  indigo:
+    image: epam/indigo-service:latest
+    ports:
+      - "8080:8080"
