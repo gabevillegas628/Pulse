@@ -45,6 +45,17 @@ export async function requireProfessor(
   }
 }
 
+export function requireAnyAuth(req: Request, _res: Response, next: NextFunction): void {
+  try {
+    const auth = req.headers.authorization
+    if (!auth?.startsWith('Bearer ')) throw new AppError('Unauthorized', 401)
+    jwt.verify(auth.slice(7), config.jwtSecret)
+    next()
+  } catch {
+    next(new AppError('Unauthorized', 401))
+  }
+}
+
 export async function requireStudent(
   req: Request,
   _res: Response,

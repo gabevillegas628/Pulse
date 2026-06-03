@@ -8,6 +8,7 @@ import { generateUniqueCode } from '../utils/codes.js'
 import { generateQr } from '../utils/qr.js'
 import { p } from '../utils/params.js'
 import { config } from '../config/index.js'
+import { canonicalizeSmiles } from '../utils/indigo.js'
 
 const nanoidDigits = customAlphabet('0123456789', 4)
 
@@ -202,7 +203,9 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
             throw new AppError('ORDERING correctAnswer must contain exactly the question options', 400)
         }
       }
-      updateData.correctAnswer = ca
+      updateData.correctAnswer = (question.type as string) === 'STRUCTURE' && ca !== null
+        ? await canonicalizeSmiles(ca)
+        : ca
     }
 
     if (body.tolerance !== undefined) updateData.tolerance = body.tolerance

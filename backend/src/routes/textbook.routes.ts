@@ -10,6 +10,8 @@ import remarkGfm from 'remark-gfm'
 import remarkRehype from 'remark-rehype'
 import rehypeMathjax from 'rehype-mathjax'
 import rehypeRaw from 'rehype-raw'
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
+import type { Schema } from 'hast-util-sanitize'
 import rehypeSlug from 'rehype-slug'
 import rehypeStringify from 'rehype-stringify'
 
@@ -17,14 +19,27 @@ const router = Router()
 
 // ─── Markdown → HTML processor ────────────────────────────────────────────────
 
+// Sanitize before rehypeMathjax: at this point math is still simple
+// <code class="math-inline/math-display"> nodes, not yet SVG. After sanitization,
+// rehypeMathjax converts those trusted nodes to SVG — no SVG schema needed.
+const sanitizeSchema: Schema = {
+  ...defaultSchema,
+  clobber: [],  // don't prefix heading IDs with user-content- (breaks TOC anchors)
+  attributes: {
+    ...(defaultSchema.attributes ?? {}),
+    code: [['className', /^language-./, 'math-inline', 'math-display'] as [string, ...(string | RegExp)[]]],
+  },
+}
+
 const processor = unified()
   .use(remarkParse)
   .use(remarkMath)
   .use(remarkGfm)
   .use(remarkRehype, { allowDangerousHtml: true })
+  .use(rehypeRaw)
+  .use(rehypeSanitize, sanitizeSchema)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   .use(rehypeMathjax, { tex: { packages: { '[+]': ['cancel', 'ams'] } } } as any)
-  .use(rehypeRaw)
   .use(rehypeSlug)
   .use(rehypeStringify)
 

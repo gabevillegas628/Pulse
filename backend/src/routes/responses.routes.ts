@@ -8,6 +8,7 @@ import { getIo } from '../socket.js'
 import { calcScore, calcSessionMax } from '../utils/scoring.js'
 import { upsertEnrollment } from '../utils/enrollment.js'
 import { p } from '../utils/params.js'
+import { canonicalizeSmiles } from '../utils/indigo.js'
 
 const router = Router()
 
@@ -91,7 +92,7 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
   try {
     const { questionId, responseText } = z.object({
       questionId: z.string().min(1),
-      responseText: z.string(),
+      responseText: z.string().max(10_000),
     }).parse(req.body)
 
     const student = (req as StudentRequest).student
@@ -124,6 +125,10 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
       if (existing) throw new AppError('Already answered', 409)
     }
 
+    const storedText = (question.type as string) === 'STRUCTURE'
+      ? await canonicalizeSmiles(responseText)
+      : responseText
+
     const wordCount = question.type === 'FREE_TEXT'
       ? responseText.trim().split(/\s+/).filter(Boolean).length
       : 0
@@ -133,13 +138,13 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
       create: {
         questionId,
         studentId: student.id,
-        responseText,
+        responseText: storedText,
         wordCount,
         isFlagged: question.type === 'FREE_TEXT' && wordCount < 10,
         isDraft: sess.type === 'HOMEWORK',
       },
       update: {
-        responseText,
+        responseText: storedText,
         wordCount,
         isFlagged: question.type === 'FREE_TEXT' && wordCount < 10,
         submittedAt: new Date(),

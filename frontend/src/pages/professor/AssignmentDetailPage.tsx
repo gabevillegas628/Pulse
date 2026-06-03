@@ -401,7 +401,7 @@ export default function AssignmentDetailPage() {
                 <div className="flex items-center gap-1.5">
                   <input type="datetime-local" value={deadlineDraft} onChange={(e) => setDeadlineDraft(e.target.value)}
                     className="text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500" />
-                  <button onClick={() => updateDeadlineMutation.mutate(deadlineDraft || null)} disabled={updateDeadlineMutation.isPending}
+                  <button onClick={() => updateDeadlineMutation.mutate(deadlineDraft ? new Date(deadlineDraft).toISOString() : null)} disabled={updateDeadlineMutation.isPending}
                     className="text-xs text-white bg-primary-600 hover:bg-primary-700 px-2.5 py-1 rounded disabled:opacity-50">Save</button>
                   <button onClick={() => setEditingDeadline(false)} className="text-xs text-gray-400 hover:text-gray-600 px-1.5 py-1">Cancel</button>
                 </div>

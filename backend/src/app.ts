@@ -8,6 +8,8 @@ import { fileURLToPath } from 'url'
 import { createProxyMiddleware } from 'http-proxy-middleware'
 import { config } from './config/index.js'
 import { errorMiddleware } from './middleware/error.middleware.js'
+import { requireAnyAuth } from './middleware/auth.middleware.js'
+import rateLimit from 'express-rate-limit'
 import authRoutes from './routes/auth.routes.js'
 import classRoutes from './routes/classes.routes.js'
 import sessionRoutes from './routes/sessions.routes.js'
@@ -24,7 +26,7 @@ app.use(helmet({
   contentSecurityPolicy: config.isDev ? false : {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      scriptSrc: ["'self'", "'unsafe-eval'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", 'data:', 'blob:'],
       fontSrc: ["'self'", 'data:'],
@@ -38,7 +40,23 @@ app.use(helmet({
 }))
 app.use(compression())
 
-const indigoTarget = process.env.INDIGO_SERVICE_URL ?? 'http://indigoservice.railway.internal'
+const rawIndigoUrl = process.env.INDIGO_SERVICE_URL ?? 'http://indigoservice.railway.internal'
+try {
+  const parsed = new URL(rawIndigoUrl)
+  if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error()
+} catch {
+  throw new Error(`Invalid INDIGO_SERVICE_URL: "${rawIndigoUrl}" — must be a valid http/https URL`)
+}
+const indigoTarget = rawIndigoUrl
+
+const indigoLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
+app.use('/api/indigo', requireAnyAuth, indigoLimiter)
 app.use(createProxyMiddleware({
   pathFilter: '/api/indigo',
   target: indigoTarget,
