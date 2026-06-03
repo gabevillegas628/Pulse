@@ -113,7 +113,7 @@ export default function QuestionPage() {
     let responseText = data.response ?? ''
     if (question.type === 'ORDERING') responseText = JSON.stringify(orderedItems)
     if (question.type === 'MULTI_SELECT') responseText = JSON.stringify(selectedOptions)
-    if (question.type === 'STRUCTURE') responseText = ketcherRef.current ? await ketcherRef.current.getSmiles() : ''
+    if (question.type === 'STRUCTURE') responseText = ketcherRef.current ? await ketcherRef.current.getMolfile() : ''
     try {
       await api.post('/responses', { questionId: question.id, responseText })
       navigate(`/q/${question.id}/confirmation`)

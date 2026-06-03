@@ -1,7 +1,7 @@
 import { useMutation } from '@tanstack/react-query'
 import { Check } from 'lucide-react'
 import type { ResponseWithStudent } from 'shared'
-import SmilesRenderer from '@/components/SmilesRenderer'
+import StructureRenderer from '@/components/StructureRenderer'
 import { calcResponseScore, cycleScore } from '@/lib/scoring'
 import type { QWithGroup } from './types'
 
@@ -28,7 +28,7 @@ export default function ResponseList({ q, isGradable, gradeReasons, overrideScor
                   <span className="font-mono">{(resp as ResponseWithStudent).student?.netId}</span>
                 </p>
                 {(q.type as string) === 'STRUCTURE'
-                  ? <SmilesRenderer smiles={resp.responseText} />
+                  ? <StructureRenderer inchi={resp.responseText} />
                   : <p className="text-sm text-gray-800 break-words">
                       {q.type === 'FREE_TEXT' ? resp.responseText : <span className="font-medium">{resp.responseText}</span>}
                     </p>

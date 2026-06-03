@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Sparkles } from 'lucide-react'
 import type { SummaryCategory } from 'shared'
-import SmilesRenderer from '@/components/SmilesRenderer'
+import StructureRenderer from '@/components/StructureRenderer'
 import type { QWithGroup } from './types'
 import { Editor } from 'ketcher-react'
 import { RemoteStructServiceProvider } from 'ketcher-core'
@@ -29,7 +29,7 @@ export default function GradingControls({
 }: Props) {
   const [editingStructure, setEditingStructure] = useState(false)
   const ketcherRef = useRef<Ketcher | null>(null)
-  const initialSmiles = useRef('')
+  const initialStruct = useRef('')
 
   return (
     <div className="flex items-center gap-3 flex-wrap py-2 border-t border-gray-100">
@@ -95,8 +95,8 @@ export default function GradingControls({
                   errorHandler={(err) => console.error('Ketcher error:', err)}
                   onInit={async (ketcher) => {
                     ketcherRef.current = ketcher
-                    if (initialSmiles.current) {
-                      await ketcher.setMolecule(initialSmiles.current)
+                    if (initialStruct.current) {
+                      await ketcher.setMolecule(initialStruct.current)
                     }
                   }}
                 />
@@ -104,8 +104,8 @@ export default function GradingControls({
               <div className="flex gap-2">
                 <button
                   onClick={async () => {
-                    const smiles = ketcherRef.current ? await ketcherRef.current.getSmiles() : ''
-                    setCorrectAnswerMutation.mutate({ questionId: q.id, correctAnswer: smiles || null })
+                    const molfile = ketcherRef.current ? await ketcherRef.current.getMolfile() : ''
+                    setCorrectAnswerMutation.mutate({ questionId: q.id, correctAnswer: molfile || null })
                     setEditingStructure(false)
                   }}
                   disabled={setCorrectAnswerMutation.isPending}
@@ -118,10 +118,10 @@ export default function GradingControls({
             <div className="flex items-center gap-3">
               {q.correctAnswer ? (
                 <>
-                  <SmilesRenderer smiles={q.correctAnswer} width={180} height={120} />
+                  <StructureRenderer inchi={q.correctAnswer ?? ''} width={180} height={120} />
                   <div className="flex flex-col gap-1.5">
                     <button
-                      onClick={() => { initialSmiles.current = q.correctAnswer ?? ''; setEditingStructure(true) }}
+                      onClick={() => { initialStruct.current = q.correctAnswer ?? ''; setEditingStructure(true) }}
                       className="text-xs text-primary-600 hover:text-primary-800 border border-primary-200 px-2.5 py-1 rounded"
                     >Change</button>
                     <button
@@ -133,7 +133,7 @@ export default function GradingControls({
                 </>
               ) : (
                 <button
-                  onClick={() => { initialSmiles.current = ''; setEditingStructure(true) }}
+                  onClick={() => { initialStruct.current = ''; setEditingStructure(true) }}
                   className="text-xs text-primary-600 hover:text-primary-800 border border-primary-200 px-2.5 py-1.5 rounded"
                 >Set correct structure…</button>
               )}

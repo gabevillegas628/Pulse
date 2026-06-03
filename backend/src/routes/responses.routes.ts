@@ -8,7 +8,7 @@ import { getIo } from '../socket.js'
 import { calcScore, calcSessionMax } from '../utils/scoring.js'
 import { upsertEnrollment } from '../utils/enrollment.js'
 import { p } from '../utils/params.js'
-import { canonicalizeSmiles } from '../utils/indigo.js'
+import { toInchi } from '../utils/indigo.js'
 
 const router = Router()
 
@@ -126,7 +126,7 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
     }
 
     const storedText = (question.type as string) === 'STRUCTURE'
-      ? await canonicalizeSmiles(responseText)
+      ? await toInchi(responseText)
       : responseText
 
     const wordCount = question.type === 'FREE_TEXT'

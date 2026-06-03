@@ -8,7 +8,7 @@ import { generateUniqueCode } from '../utils/codes.js'
 import { generateQr } from '../utils/qr.js'
 import { p } from '../utils/params.js'
 import { config } from '../config/index.js'
-import { canonicalizeSmiles } from '../utils/indigo.js'
+import { toInchi } from '../utils/indigo.js'
 
 const nanoidDigits = customAlphabet('0123456789', 4)
 
@@ -204,7 +204,7 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
         }
       }
       updateData.correctAnswer = (question.type as string) === 'STRUCTURE' && ca !== null
-        ? await canonicalizeSmiles(ca)
+        ? await toInchi(ca)
         : ca
     }
 
