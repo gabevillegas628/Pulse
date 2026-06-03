@@ -28,8 +28,6 @@ export default function StructureRenderer({ inchi, width = 260, height = 160 }: 
       .catch(() => setError(true))
   }, [inchi])
 
-  const box = `w-[${width}px] h-[${height}px]`
-
   if (error) {
     return (
       <div style={{ width, height }} className="flex items-center justify-center border border-gray-100 rounded-lg bg-gray-50 text-xs text-gray-400">
