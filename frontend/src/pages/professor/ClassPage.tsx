@@ -163,7 +163,7 @@ export default function ClassPage() {
 
   const refreshTextbookMutation = useMutation({
     mutationFn: () => api.delete('/textbook/cache'),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['textbook-chapter'] }),
+    onSuccess: () => qc.removeQueries({ queryKey: ['textbook-chapter'] }),
   })
 
   const { register, control, handleSubmit, reset, watch, setValue, formState: { errors, isSubmitting } } = useForm<SessionFormData>({
