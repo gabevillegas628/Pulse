@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useProfessorAuth } from '@/context/ProfessorAuthContext'
 import { useStudentAuth } from '@/context/StudentAuthContext'
+import PulseMark from '@/components/ui/PulseMark'
 import { apiError } from '@/lib/errors'
 
 type Role = 'student' | 'professor'
@@ -48,7 +49,7 @@ export default function RegisterPage() {
       await studentRegister(data.netId, data.email, data.password)
       navigate(next ?? '/student', { replace: true })
     } catch (e: unknown) {
-            setError(apiError(e, 'Registration failed'))
+      setError(apiError(e, 'Registration failed'))
     }
   }
 
@@ -58,27 +59,28 @@ export default function RegisterPage() {
       await professorRegister(data.name, data.email, data.password, data.inviteCode)
       navigate('/professor', { replace: true })
     } catch (e: unknown) {
-            setError(apiError(e, 'Registration failed'))
+      setError(apiError(e, 'Registration failed'))
     }
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+    <div className="min-h-screen bg-canvas flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-primary-700">Pulse</h1>
+        <div className="flex flex-col items-center gap-2 mb-8">
+          <PulseMark size={32} />
+          <h1 className="text-2xl font-extrabold text-ink" style={{ letterSpacing: '-0.02em' }}>Pulse</h1>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="flex border-b border-gray-200">
+        <div className="bg-surface rounded-[14px] shadow-card border border-hairline overflow-hidden">
+          <div className="flex border-b border-hairline">
             {(['student', 'professor'] as Role[]).map((r) => (
               <button
                 key={r}
                 onClick={() => switchRole(r)}
                 className={`flex-1 py-3 text-sm font-medium transition-colors ${
                   role === r
-                    ? 'bg-white text-primary-700 border-b-2 border-primary-600'
-                    : 'bg-gray-50 text-gray-400 hover:text-gray-600'
+                    ? 'bg-surface text-ink border-b-2 border-signal'
+                    : 'bg-surface-2 text-muted hover:text-ink'
                 }`}
               >
                 {r.charAt(0).toUpperCase() + r.slice(1)}
@@ -90,115 +92,115 @@ export default function RegisterPage() {
             {role === 'student' ? (
               <form onSubmit={studentForm.handleSubmit(onStudentSubmit)} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">NetID</label>
+                  <label className="block text-sm font-medium text-ink-2 mb-1">NetID</label>
                   <input
                     {...studentForm.register('netId')}
                     placeholder="abc123"
                     autoCapitalize="none"
                     autoCorrect="off"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-full border border-hairline rounded-sm px-3 py-3 text-base bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
                   />
                   {studentForm.formState.errors.netId && (
                     <p className="text-red-500 text-xs mt-1">{studentForm.formState.errors.netId.message}</p>
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <label className="block text-sm font-medium text-ink-2 mb-1">Email</label>
                   <input
                     {...studentForm.register('email')}
                     type="email"
                     placeholder="abc123@rutgers.edu"
                     autoCapitalize="none"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-full border border-hairline rounded-sm px-3 py-3 text-base bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
                   />
                   {studentForm.formState.errors.email && (
                     <p className="text-red-500 text-xs mt-1">{studentForm.formState.errors.email.message}</p>
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                  <label className="block text-sm font-medium text-ink-2 mb-1">Password</label>
                   <input
                     {...studentForm.register('password')}
                     type="password"
                     placeholder="8+ characters"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-full border border-hairline rounded-sm px-3 py-3 text-base bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
                   />
                   {studentForm.formState.errors.password && (
                     <p className="text-red-500 text-xs mt-1">{studentForm.formState.errors.password.message}</p>
                   )}
                 </div>
-                {error && <p className="text-red-500 text-sm bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+                {error && <p className="text-red-500 text-sm bg-red-50 rounded-sm px-3 py-2">{error}</p>}
                 <button
                   type="submit"
                   disabled={studentForm.formState.isSubmitting}
-                  className="w-full bg-primary-600 text-white rounded-lg py-3 text-base font-medium hover:bg-primary-700 disabled:opacity-50 transition-colors"
+                  className="w-full bg-signal text-white rounded-sm py-3 text-base font-bold hover:bg-[var(--signal-bright)] disabled:opacity-50 transition-colors"
                 >
                   {studentForm.formState.isSubmitting ? 'Creating account…' : 'Create account'}
                 </button>
-                <p className="text-center text-sm text-gray-500">
+                <p className="text-center text-sm text-muted">
                   Already have an account?{' '}
-                  <Link to={`/login${next ? `?next=${next}` : ''}`} className="text-primary-600 font-medium">Sign in</Link>
+                  <Link to={`/login${next ? `?next=${next}` : ''}`} className="text-signal font-medium">Sign in</Link>
                 </p>
               </form>
             ) : (
               <form onSubmit={professorForm.handleSubmit(onProfessorSubmit)} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                  <label className="block text-sm font-medium text-ink-2 mb-1">Name</label>
                   <input
                     {...professorForm.register('name')}
                     placeholder="Dr. Jane Smith"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-full border border-hairline rounded-sm px-3 py-3 text-base bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
                   />
                   {professorForm.formState.errors.name && (
                     <p className="text-red-500 text-xs mt-1">{professorForm.formState.errors.name.message}</p>
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <label className="block text-sm font-medium text-ink-2 mb-1">Email</label>
                   <input
                     {...professorForm.register('email')}
                     type="email"
                     autoCapitalize="none"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-full border border-hairline rounded-sm px-3 py-3 text-base bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
                   />
                   {professorForm.formState.errors.email && (
                     <p className="text-red-500 text-xs mt-1">{professorForm.formState.errors.email.message}</p>
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                  <label className="block text-sm font-medium text-ink-2 mb-1">Password</label>
                   <input
                     {...professorForm.register('password')}
                     type="password"
                     placeholder="8+ characters"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-full border border-hairline rounded-sm px-3 py-3 text-base bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
                   />
                   {professorForm.formState.errors.password && (
                     <p className="text-red-500 text-xs mt-1">{professorForm.formState.errors.password.message}</p>
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Invite code</label>
+                  <label className="block text-sm font-medium text-ink-2 mb-1">Invite code</label>
                   <input
                     {...professorForm.register('inviteCode')}
                     type="password"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-full border border-hairline rounded-sm px-3 py-3 text-base bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
                   />
                   {professorForm.formState.errors.inviteCode && (
                     <p className="text-red-500 text-xs mt-1">{professorForm.formState.errors.inviteCode.message}</p>
                   )}
                 </div>
-                {error && <p className="text-red-500 text-sm bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+                {error && <p className="text-red-500 text-sm bg-red-50 rounded-sm px-3 py-2">{error}</p>}
                 <button
                   type="submit"
                   disabled={professorForm.formState.isSubmitting}
-                  className="w-full bg-primary-600 text-white rounded-lg py-3 text-base font-medium hover:bg-primary-700 disabled:opacity-50 transition-colors"
+                  className="w-full bg-signal text-white rounded-sm py-3 text-base font-bold hover:bg-[var(--signal-bright)] disabled:opacity-50 transition-colors"
                 >
                   {professorForm.formState.isSubmitting ? 'Creating account…' : 'Create account'}
                 </button>
-                <p className="text-center text-sm text-gray-500">
+                <p className="text-center text-sm text-muted">
                   Already have an account?{' '}
-                  <Link to="/login?role=professor" className="text-primary-600 font-medium">Sign in</Link>
+                  <Link to="/login?role=professor" className="text-signal font-medium">Sign in</Link>
                 </p>
               </form>
             )}

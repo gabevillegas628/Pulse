@@ -49,23 +49,23 @@ function PartCard({
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }}
-      className="bg-white border border-gray-200 rounded-xl p-5"
+      className="bg-surface border border-hairline rounded-[14px] p-5"
     >
       <div className="flex items-start gap-2 mb-3">
         {isDraft && (
           <span
             {...attributes}
             {...listeners}
-            className="mt-0.5 text-gray-300 hover:text-gray-400 cursor-grab active:cursor-grabbing shrink-0"
+            className="mt-0.5 text-hairline-strong hover:text-muted cursor-grab active:cursor-grabbing shrink-0"
           >
             <GripVertical size={14} />
           </span>
         )}
-        <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">
+        <p className="text-xs font-medium text-muted uppercase tracking-wide">
           Part {partIdx + 1} · {q.type.replace('_', ' ').toLowerCase()}
         </p>
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-xs text-gray-400">{q.responses.length} resp</span>
+          <span className="text-xs text-muted font-mono">{q.responses.length} resp</span>
           {isDraft && (
             <button
               onClick={async () => {
@@ -73,7 +73,7 @@ function PartCard({
                 await api.delete(`/sessions/${assignmentId}/questions/${q.id}`)
                 onDeleted()
               }}
-              className="text-gray-300 hover:text-red-500 transition-colors"
+              className="text-hairline-strong hover:text-red-500 transition-colors"
             >
               <Trash2 size={13} />
             </button>
@@ -87,12 +87,12 @@ function PartCard({
       {(q.type === 'MULTIPLE_CHOICE' || (q.type as string) === 'MULTI_SELECT') && Array.isArray(q.options) && (
         <div className="flex flex-wrap gap-2 mb-3">
           {(q.options as string[]).map((opt) => (
-            <span key={opt} className="text-xs bg-gray-100 px-2.5 py-1 rounded-full text-gray-600">{opt}</span>
+            <span key={opt} className="text-xs bg-surface-2 px-2.5 py-1 rounded-full text-ink-2">{opt}</span>
           ))}
         </div>
       )}
       {(q.type as string) === 'ORDERING' && Array.isArray(q.options) && (
-        <ol className="text-xs text-gray-500 list-decimal list-inside space-y-0.5 mb-3">
+        <ol className="text-xs text-muted list-decimal list-inside space-y-0.5 mb-3">
           {(q.options as string[]).map((opt, i) => <li key={i}>{opt}</li>)}
         </ol>
       )}
@@ -226,9 +226,9 @@ export default function GroupPanel({
   return (
     <div className="space-y-5">
       {/* Group header card */}
-      <div className="bg-white border border-gray-200 rounded-xl p-5">
+      <div className="bg-surface border border-hairline rounded-[14px] p-5">
         <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Multi-part question</p>
+          <p className="text-xs font-medium text-muted uppercase tracking-wide">Multi-part question</p>
           {isDraft && (
             showDeleteConfirm ? (
               <div className="flex items-center gap-2">
@@ -240,7 +240,7 @@ export default function GroupPanel({
                 >
                   {deleteMutation.isPending ? 'Removing…' : 'Yes'}
                 </button>
-                <button onClick={() => setShowDeleteConfirm(false)} className="text-xs text-gray-500">Cancel</button>
+                <button onClick={() => setShowDeleteConfirm(false)} className="text-xs text-muted">Cancel</button>
               </div>
             ) : (
               <button onClick={() => setShowDeleteConfirm(true)} className="flex items-center gap-1 text-xs text-red-400 hover:text-red-600">
@@ -257,7 +257,7 @@ export default function GroupPanel({
             if (titleDraft.trim() && titleDraft !== group.title)
               updateMutation.mutate({ title: titleDraft.trim() })
           }}
-          className="w-full text-base font-semibold text-gray-900 border-b border-transparent hover:border-gray-200 focus:border-primary-400 focus:outline-none pb-1 mb-4 bg-transparent"
+          className="w-full text-base font-semibold text-ink border-b border-transparent hover:border-hairline focus:border-signal focus:outline-none pb-1 mb-4 bg-transparent"
           placeholder="Question title / shared context"
         />
 
@@ -265,7 +265,7 @@ export default function GroupPanel({
           <>
             {isDraft ? (
               <>
-                <p className="text-xs text-gray-400 mb-1.5">Shared context (optional — shown above all parts)</p>
+                <p className="text-xs text-muted mb-1.5">Shared context (optional — shown above all parts)</p>
                 <RichTextEditor
                   key={group.id}
                   content={textDraft}
@@ -275,7 +275,7 @@ export default function GroupPanel({
                   <button
                     onClick={() => { updateMutation.mutate({ text: textDraft }); setTextDirty(false) }}
                     disabled={updateMutation.isPending}
-                    className="mt-2 px-3 py-1.5 bg-primary-600 text-white rounded-lg text-xs font-medium hover:bg-primary-700 disabled:opacity-50"
+                    className="mt-2 px-3 py-1.5 bg-signal text-white rounded-sm text-xs font-medium hover:bg-[var(--signal-bright)] disabled:opacity-50"
                   >
                     {updateMutation.isPending ? 'Saving…' : 'Save context'}
                   </button>
@@ -308,25 +308,25 @@ export default function GroupPanel({
 
       {/* Add part */}
       {isDraft && !showAddPart && (
-        <button onClick={() => setShowAddPart(true)} className="flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-800">
+        <button onClick={() => setShowAddPart(true)} className="flex items-center gap-1.5 text-sm text-signal hover:text-signal">
           <Plus size={14} /> Add part
         </button>
       )}
       {showAddPart && (
-        <div className="border border-gray-200 rounded-xl p-4 bg-gray-50 space-y-3">
-          <h4 className="text-sm font-medium text-gray-700">New part</h4>
+        <div className="border border-hairline rounded-[14px] p-4 bg-surface-2 space-y-3">
+          <h4 className="text-sm font-medium text-ink-2">New part</h4>
           <textarea
             value={partText}
             onChange={(e) => setPartText(e.target.value)}
             placeholder="Part question text…"
             rows={2}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+            className="w-full border border-hairline rounded-[14px] px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal resize-none"
           />
           <div className="flex items-center gap-3">
             <select
               value={partType}
               onChange={(e) => setPartType(e.target.value as typeof partType)}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none"
+              className="border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none"
             >
               <option value="FREE_TEXT">Free text</option>
               <option value="MULTIPLE_CHOICE">Multiple choice</option>
@@ -338,35 +338,35 @@ export default function GroupPanel({
               <option value="YES_NO">Yes / No</option>
             </select>
             <div className="ml-auto flex gap-2">
-              <button onClick={() => { setShowAddPart(false); setPartError('') }} className="text-sm text-gray-500 px-3 py-1.5">Cancel</button>
+              <button onClick={() => { setShowAddPart(false); setPartError('') }} className="text-sm text-muted px-3 py-1.5">Cancel</button>
               <button
                 onClick={() => { setPartError(''); addPartMutation.mutate() }}
                 disabled={!partText.trim() || addPartMutation.isPending}
-                className="text-sm bg-primary-600 text-white px-4 py-1.5 rounded-lg hover:bg-primary-700 disabled:opacity-50"
+                className="text-sm bg-signal text-white px-4 py-1.5 rounded-sm hover:bg-[var(--signal-bright)] disabled:opacity-50"
               >Add</button>
             </div>
           </div>
           {(partType === 'MULTIPLE_CHOICE' || partType === 'MULTI_SELECT') && (
             <textarea value={partOptions} onChange={(e) => setPartOptions(e.target.value)}
               placeholder={"Option A\nOption B\nOption C"} rows={3}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
+              className="w-full border border-hairline rounded-[14px] px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal resize-none" />
           )}
           {partType === 'ORDERING' && (
             <textarea value={partOptions} onChange={(e) => setPartOptions(e.target.value)}
               placeholder={"Step 1\nStep 2\nStep 3"} rows={3}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
+              className="w-full border border-hairline rounded-[14px] px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal resize-none" />
           )}
           {partType === 'NUMERIC' && (
             <div className="flex gap-2 flex-wrap">
               <input value={partNumericAnswer} onChange={(e) => setPartNumericAnswer(e.target.value)}
                 placeholder="Correct answer (e.g. 6.02e23)"
-                className="flex-1 min-w-0 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                className="flex-1 min-w-0 border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal" />
               <input value={partTolerance} onChange={(e) => setPartTolerance(e.target.value)}
                 placeholder="± tolerance"
-                className="w-32 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                className="w-32 border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal" />
               <input value={partUnit} onChange={(e) => setPartUnit(e.target.value)}
                 placeholder="Unit (optional)"
-                className="w-36 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                className="w-36 border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal" />
             </div>
           )}
           {partError && <p className="text-red-500 text-xs">{partError}</p>}

@@ -17,26 +17,26 @@ export default function ResultsSummary({ question }: Props) {
     const max = Math.max(...Object.values(counts), 1)
 
     return (
-      <div className="bg-white border border-gray-200 rounded-xl p-5 mb-5 space-y-3">
+      <div className="bg-surface border border-hairline rounded-[14px] p-5 mb-5 space-y-3">
         {options.map((opt) => {
           const count = counts[opt]
           const pct = total > 0 ? Math.round((count / total) * 100) : 0
           return (
             <div key={opt}>
               <div className="flex items-center justify-between text-sm mb-1">
-                <span className="text-gray-700 truncate max-w-[70%]">{opt}</span>
-                <span className="text-gray-500 shrink-0 ml-2">{count} <span className="text-gray-400">({pct}%)</span></span>
+                <span className="text-ink-2 truncate max-w-[70%]">{opt}</span>
+                <span className="text-muted shrink-0 ml-2 font-mono">{count} <span className="text-muted">({pct}%)</span></span>
               </div>
-              <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-3 bg-surface-2 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-primary-500 rounded-full transition-all duration-500"
+                  className="h-full bg-signal rounded-full transition-all duration-500"
                   style={{ width: `${(count / max) * 100}%` }}
                 />
               </div>
             </div>
           )
         })}
-        <p className="text-xs text-gray-400 pt-1">{total} response{total !== 1 ? 's' : ''}</p>
+        <p className="text-xs text-muted pt-1 font-mono">{total} response{total !== 1 ? 's' : ''}</p>
       </div>
     )
   }
@@ -52,28 +52,28 @@ export default function ResultsSummary({ question }: Props) {
     const max = Math.max(...Object.values(counts), 1)
 
     return (
-      <div className="bg-white border border-gray-200 rounded-xl p-5 mb-5">
+      <div className="bg-surface border border-hairline rounded-[14px] p-5 mb-5">
         <div className="flex items-end gap-2 h-24 mb-2">
           {[1, 2, 3, 4, 5].map((n) => {
             const count = counts[n]
             const heightPct = (count / max) * 100
             return (
               <div key={n} className="flex-1 flex flex-col items-center gap-1">
-                <span className="text-xs text-gray-500">{count > 0 ? count : ''}</span>
-                <div className="w-full bg-gray-100 rounded-t-md overflow-hidden" style={{ height: '64px' }}>
+                <span className="text-xs text-muted font-mono">{count > 0 ? count : ''}</span>
+                <div className="w-full bg-surface-2 rounded-t-md overflow-hidden" style={{ height: '64px' }}>
                   <div
-                    className="w-full bg-primary-500 rounded-t-md transition-all duration-500 absolute bottom-0"
+                    className="w-full bg-signal rounded-t-md transition-all duration-500 absolute bottom-0"
                     style={{ height: `${heightPct}%`, position: 'relative', marginTop: `${100 - heightPct}%` }}
                   />
                 </div>
-                <span className="text-xs font-medium text-gray-600">{n}</span>
+                <span className="text-xs font-medium text-ink-2 font-mono">{n}</span>
               </div>
             )
           })}
         </div>
-        <div className="flex items-center justify-between text-xs text-gray-400 mt-2">
-          <span>{total} response{total !== 1 ? 's' : ''}</span>
-          <span className="text-gray-700 font-semibold text-sm">avg {avg}</span>
+        <div className="flex items-center justify-between text-xs text-muted mt-2">
+          <span className="font-mono">{total} response{total !== 1 ? 's' : ''}</span>
+          <span className="text-ink font-semibold text-sm font-mono">avg {avg}</span>
         </div>
       </div>
     )
@@ -86,26 +86,26 @@ export default function ResultsSummary({ question }: Props) {
     const noPct = total > 0 ? Math.round((no / total) * 100) : 0
 
     return (
-      <div className="bg-white border border-gray-200 rounded-xl p-5 mb-5">
+      <div className="bg-surface border border-hairline rounded-[14px] p-5 mb-5">
         <div className="flex gap-3 mb-3">
           <div className="flex-1 text-center">
-            <p className="text-3xl font-bold text-green-600">{yesPct}%</p>
-            <p className="text-sm text-gray-500 mt-0.5">Yes · {yes}</p>
+            <p className="text-3xl font-bold text-good font-mono">{yesPct}%</p>
+            <p className="text-sm text-muted mt-0.5">Yes · {yes}</p>
           </div>
           <div className="flex-1 text-center">
-            <p className="text-3xl font-bold text-gray-400">{noPct}%</p>
-            <p className="text-sm text-gray-500 mt-0.5">No · {no}</p>
+            <p className="text-3xl font-bold text-muted font-mono">{noPct}%</p>
+            <p className="text-sm text-muted mt-0.5">No · {no}</p>
           </div>
         </div>
-        <div className="flex h-3 rounded-full overflow-hidden bg-gray-100">
+        <div className="flex h-3 rounded-full overflow-hidden bg-surface-2">
           {yesPct > 0 && (
-            <div className="bg-green-500 transition-all duration-500" style={{ width: `${yesPct}%` }} />
+            <div className="bg-good transition-all duration-500" style={{ width: `${yesPct}%` }} />
           )}
           {noPct > 0 && (
-            <div className="bg-gray-300 transition-all duration-500" style={{ width: `${noPct}%` }} />
+            <div className="bg-hairline-strong transition-all duration-500" style={{ width: `${noPct}%` }} />
           )}
         </div>
-        <p className="text-xs text-gray-400 mt-2">{total} response{total !== 1 ? 's' : ''}</p>
+        <p className="text-xs text-muted mt-2 font-mono">{total} response{total !== 1 ? 's' : ''}</p>
       </div>
     )
   }
@@ -113,23 +113,23 @@ export default function ResultsSummary({ question }: Props) {
   if (type === 'FREE_TEXT') {
     const flagged = responses.filter((r) => r.isFlagged).length
     return (
-      <div className="flex items-center gap-6 bg-white border border-gray-200 rounded-xl px-5 py-3 mb-5">
+      <div className="flex items-center gap-6 bg-surface border border-hairline rounded-[14px] px-5 py-3 mb-5">
         <div>
-          <p className="text-2xl font-bold text-gray-900">{total}</p>
-          <p className="text-xs text-gray-400">responses</p>
+          <p className="text-2xl font-bold text-ink font-mono">{total}</p>
+          <p className="text-xs text-muted">responses</p>
         </div>
         {flagged > 0 && (
           <div>
-            <p className="text-2xl font-bold text-yellow-500">{flagged}</p>
-            <p className="text-xs text-gray-400">short (&lt;10 words)</p>
+            <p className="text-2xl font-bold text-warn font-mono">{flagged}</p>
+            <p className="text-xs text-muted">short (&lt;10 words)</p>
           </div>
         )}
         {total > 0 && (
           <div>
-            <p className="text-2xl font-bold text-gray-700">
+            <p className="text-2xl font-bold text-ink-2 font-mono">
               {Math.round(responses.reduce((s, r) => s + r.wordCount, 0) / total)}
             </p>
-            <p className="text-xs text-gray-400">avg words</p>
+            <p className="text-xs text-muted">avg words</p>
           </div>
         )}
       </div>

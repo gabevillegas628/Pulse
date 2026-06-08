@@ -20,7 +20,6 @@ import QuestionPanel from '@/components/assignment/QuestionPanel'
 import { questionPreview } from '@/components/assignment/helpers'
 import type { QWithGroup } from '@/components/assignment/types'
 
-// Active selection: a group (multi-part), a standalone question, or submission list
 type ActiveItem =
   | { kind: 'group'; groupId: string }
   | { kind: 'question'; questionId: string }
@@ -44,15 +43,15 @@ function SortableSidebarItem({
     <div ref={setNodeRef} style={style}>
       <button
         onClick={onClick}
-        className={`group w-full text-left px-3 py-3 border-b border-gray-100 last:border-b-0 flex items-start gap-2 transition-colors ${
-          isActive ? 'bg-primary-50' : 'hover:bg-gray-50'
+        className={`group w-full text-left px-3 py-3 border-b border-hairline last:border-b-0 flex items-start gap-2 transition-colors ${
+          isActive ? 'bg-signal-soft' : 'hover:bg-surface-2'
         }`}
       >
         {isDraft && (
           <span
             {...attributes}
             {...listeners}
-            className="mt-0.5 shrink-0 text-gray-300 group-hover:text-gray-400 cursor-grab active:cursor-grabbing"
+            className="mt-0.5 shrink-0 text-hairline-strong group-hover:text-muted cursor-grab active:cursor-grabbing"
             onClick={(e) => e.stopPropagation()}
           >
             <GripVertical size={14} />
@@ -71,14 +70,14 @@ function SortableSidebarItem({
 function PreviewInput({ q }: { q: QWithGroup }) {
   const opts = q.options as string[] | null
   if (q.type === 'FREE_TEXT') return (
-    <textarea disabled rows={3} placeholder="Student answer…" className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-400 bg-gray-50 resize-none" />
+    <textarea disabled rows={3} placeholder="Student answer…" className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm text-muted bg-surface-2 resize-none" />
   )
   if (q.type === 'MULTIPLE_CHOICE' && opts) return (
     <div className="space-y-2">
       {opts.map((o) => (
-        <div key={o} className="flex items-center gap-3 p-3 border border-gray-200 rounded-xl opacity-60">
-          <div className="w-4 h-4 rounded-full border-2 border-gray-300 shrink-0" />
-          <span className="text-sm text-gray-700">{o}</span>
+        <div key={o} className="flex items-center gap-3 p-3 border border-hairline rounded-[14px] opacity-60">
+          <div className="w-4 h-4 rounded-full border-2 border-hairline-strong shrink-0" />
+          <span className="text-sm text-ink-2">{o}</span>
         </div>
       ))}
     </div>
@@ -86,9 +85,9 @@ function PreviewInput({ q }: { q: QWithGroup }) {
   if (q.type === 'MULTI_SELECT' && opts) return (
     <div className="space-y-2">
       {opts.map((o) => (
-        <div key={o} className="flex items-center gap-3 p-3 border border-gray-200 rounded-xl opacity-60">
-          <div className="w-4 h-4 rounded border-2 border-gray-300 shrink-0" />
-          <span className="text-sm text-gray-700">{o}</span>
+        <div key={o} className="flex items-center gap-3 p-3 border border-hairline rounded-[14px] opacity-60">
+          <div className="w-4 h-4 rounded border-2 border-hairline-strong shrink-0" />
+          <span className="text-sm text-ink-2">{o}</span>
         </div>
       ))}
     </div>
@@ -96,34 +95,34 @@ function PreviewInput({ q }: { q: QWithGroup }) {
   if (q.type === 'YES_NO') return (
     <div className="flex gap-3">
       {['Yes', 'No'].map((o) => (
-        <div key={o} className="flex-1 py-2.5 border-2 border-gray-200 rounded-xl text-center text-sm text-gray-400 opacity-60">{o}</div>
+        <div key={o} className="flex-1 py-2.5 border-2 border-hairline rounded-[14px] text-center text-sm text-muted opacity-60">{o}</div>
       ))}
     </div>
   )
   if (q.type === 'RATING') return (
     <div className="flex gap-2">
       {[1,2,3,4,5].map((n) => (
-        <div key={n} className="w-10 h-10 border-2 border-gray-200 rounded-xl flex items-center justify-center text-sm text-gray-400 opacity-60">{n}</div>
+        <div key={n} className="w-10 h-10 border-2 border-hairline rounded-[14px] flex items-center justify-center text-sm text-muted opacity-60">{n}</div>
       ))}
     </div>
   )
   if (q.type === 'NUMERIC') return (
     <div className="flex items-center gap-2">
-      <div className="w-36 h-9 border border-gray-200 rounded-lg bg-gray-50 opacity-60" />
-      {(q as { unit?: string | null }).unit && <span className="text-sm text-gray-400">{(q as { unit?: string | null }).unit}</span>}
+      <div className="w-36 h-9 border border-hairline rounded-sm bg-surface-2 opacity-60" />
+      {(q as { unit?: string | null }).unit && <span className="text-sm text-muted">{(q as { unit?: string | null }).unit}</span>}
     </div>
   )
   if (q.type === 'ORDERING' && opts) return (
     <div className="space-y-2">
       {opts.map((o, i) => (
-        <div key={o} className="flex items-center gap-2 px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-500 opacity-60">
-          <span className="text-gray-300">{i + 1}.</span> {o}
+        <div key={o} className="flex items-center gap-2 px-3 py-2.5 border border-hairline rounded-[14px] text-sm text-muted opacity-60">
+          <span className="text-hairline-strong">{i + 1}.</span> {o}
         </div>
       ))}
     </div>
   )
   if (q.type === 'STRUCTURE') return (
-    <div className="h-20 border border-gray-200 rounded-xl bg-gray-50 flex items-center justify-center text-xs text-gray-400 opacity-60">Structure drawing (JSME editor)</div>
+    <div className="h-20 border border-hairline rounded-[14px] bg-surface-2 flex items-center justify-center text-xs text-muted opacity-60">Structure drawing (JSME editor)</div>
   )
   return null
 }
@@ -333,7 +332,7 @@ export default function AssignmentDetailPage() {
 
   // ── Derived data ───────────────────────────────────────────────────────────
 
-  if (isLoading || !data) return <ProfessorLayout><p className="text-gray-400">Loading…</p></ProfessorLayout>
+  if (isLoading || !data) return <ProfessorLayout><p className="text-muted text-sm">Loading…</p></ProfessorLayout>
 
   const deadline = (data as unknown as { deadline: string | null }).deadline
   const isDraft = data.status === SessionStatus.DRAFT
@@ -387,53 +386,53 @@ export default function AssignmentDetailPage() {
     <ProfessorLayout>
       {/* Header */}
       <div className="mb-6">
-        <Link to={`/professor/classes/${data.class.id}`} className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 mb-3">
+        <Link to={`/professor/classes/${data.class.id}`} className="flex items-center gap-1 text-sm text-muted hover:text-ink mb-3 transition-colors">
           <ChevronLeft size={16} /> {data.class.name}
         </Link>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{data.title}</h1>
+            <h1 className="text-2xl font-bold text-ink">{data.title}</h1>
             <div className="flex items-center gap-3 mt-1 flex-wrap">
-              <span className="text-sm text-gray-500">{totalResponses} submission{totalResponses !== 1 ? 's' : ''}</span>
+              <span className="text-sm text-muted font-mono">{totalResponses} submission{totalResponses !== 1 ? 's' : ''}</span>
 
               {/* Inline deadline edit */}
               {editingDeadline ? (
                 <div className="flex items-center gap-1.5">
                   <input type="datetime-local" value={deadlineDraft} onChange={(e) => setDeadlineDraft(e.target.value)}
-                    className="text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500" />
+                    className="text-xs border border-hairline rounded px-2 py-1 bg-surface focus:outline-none focus:ring-1 focus:ring-signal" />
                   <button onClick={() => updateDeadlineMutation.mutate(deadlineDraft ? new Date(deadlineDraft).toISOString() : null)} disabled={updateDeadlineMutation.isPending}
-                    className="text-xs text-white bg-primary-600 hover:bg-primary-700 px-2.5 py-1 rounded disabled:opacity-50">Save</button>
-                  <button onClick={() => setEditingDeadline(false)} className="text-xs text-gray-400 hover:text-gray-600 px-1.5 py-1">Cancel</button>
+                    className="text-xs text-white bg-signal hover:bg-[var(--signal-bright)] px-2.5 py-1 rounded disabled:opacity-50 transition-colors">Save</button>
+                  <button onClick={() => setEditingDeadline(false)} className="text-xs text-muted hover:text-ink px-1.5 py-1 transition-colors">Cancel</button>
                 </div>
               ) : (
                 <button onClick={() => { setDeadlineDraft(deadline ? toDatetimeLocal(deadline) : ''); setEditingDeadline(true) }}
                   className="flex items-center gap-1 text-sm group">
-                  <span className={deadline && new Date(deadline) < new Date() ? 'text-red-500' : 'text-gray-400'}>
+                  <span className={deadline && new Date(deadline) < new Date() ? 'text-red-500' : 'text-muted'}>
                     {deadline ? `Due ${new Date(deadline).toLocaleString()}` : 'No deadline'}
                   </span>
-                  <Pencil size={11} className="text-gray-300 group-hover:text-gray-500 transition-colors" />
+                  <Pencil size={11} className="text-hairline-strong group-hover:text-ink-2 transition-colors" />
                 </button>
               )}
             </div>
 
             {/* Extensions toggle */}
             <button onClick={() => setShowExtensions((v) => !v)}
-              className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 mt-1.5">
+              className="flex items-center gap-1 text-xs text-muted hover:text-ink mt-1.5 transition-colors">
               {showExtensions ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
               Extensions{extensions.length > 0 ? ` (${extensions.length})` : ''}
             </button>
 
             {showExtensions && (
-              <div className="mt-2 bg-gray-50 border border-gray-200 rounded-xl p-4 w-full max-w-lg">
+              <div className="mt-2 bg-surface-2 border border-hairline rounded-[14px] p-4 w-full max-w-lg">
                 {extensions.length > 0 && (
                   <div className="space-y-2 mb-3">
                     {extensions.map((ext) => (
                       <div key={ext.studentId} className="flex items-center justify-between gap-3 text-sm">
-                        <span className="text-gray-700 font-medium font-mono">{ext.student.netId}</span>
-                        <span className="text-gray-500 text-xs shrink-0">{new Date(ext.deadline).toLocaleString()}</span>
+                        <span className="text-ink-2 font-medium font-mono">{ext.student.netId}</span>
+                        <span className="text-muted text-xs shrink-0">{new Date(ext.deadline).toLocaleString()}</span>
                         <button onClick={() => removeExtensionMutation.mutate(ext.studentId)}
                           disabled={removeExtensionMutation.isPending}
-                          className="text-gray-300 hover:text-red-500 transition-colors shrink-0">
+                          className="text-hairline-strong hover:text-red-500 transition-colors shrink-0">
                           <X size={14} />
                         </button>
                       </div>
@@ -441,22 +440,22 @@ export default function AssignmentDetailPage() {
                   </div>
                 )}
                 {extensions.length === 0 && !rosterQuery.isLoading && (
-                  <p className="text-xs text-gray-400 mb-3">No extensions granted yet.</p>
+                  <p className="text-xs text-muted mb-3">No extensions granted yet.</p>
                 )}
                 <div className="flex items-center gap-2 flex-wrap">
                   <select value={extStudentId} onChange={(e) => setExtStudentId(e.target.value)}
-                    className="text-xs border border-gray-200 rounded px-2 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-primary-500">
+                    className="text-xs border border-hairline rounded px-2 py-1.5 bg-surface text-ink-2 focus:outline-none focus:ring-1 focus:ring-signal">
                     <option value="">Select student…</option>
                     {availableForExtension.map((e) => (
                       <option key={e.student.id} value={e.student.id}>{e.student.netId}</option>
                     ))}
                   </select>
                   <input type="datetime-local" value={extDeadline} onChange={(e) => setExtDeadline(e.target.value)}
-                    className="text-xs border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500" />
+                    className="text-xs border border-hairline rounded px-2 py-1.5 bg-surface focus:outline-none focus:ring-1 focus:ring-signal" />
                   <button
                     onClick={() => { if (extStudentId && extDeadline) addExtensionMutation.mutate({ studentId: extStudentId, deadline: new Date(extDeadline).toISOString() }) }}
                     disabled={!extStudentId || !extDeadline || addExtensionMutation.isPending}
-                    className="flex items-center gap-1 text-xs text-white bg-primary-600 hover:bg-primary-700 px-2.5 py-1.5 rounded disabled:opacity-50">
+                    className="flex items-center gap-1 text-xs text-white bg-signal hover:bg-[var(--signal-bright)] px-2.5 py-1.5 rounded disabled:opacity-50 transition-colors">
                     <UserPlus size={12} /> Grant
                   </button>
                 </div>
@@ -465,32 +464,43 @@ export default function AssignmentDetailPage() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <a href={`/api/sessions/${assignmentId}/export`} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2 rounded-lg text-sm hover:bg-gray-50">
+            <a href={`/api/sessions/${assignmentId}/export`}
+              className="inline-flex items-center gap-1.5 bg-surface border border-hairline-strong text-ink-2 rounded-sm px-3 py-2 text-sm font-bold hover:bg-surface-2 transition-colors">
               <Download size={14} /> Export CSV
             </a>
             <button onClick={() => setShowPreview(true)}
-              className="flex items-center gap-1.5 text-sm text-gray-500 border border-gray-200 px-3 py-2 rounded-lg hover:bg-gray-50">
+              className="inline-flex items-center gap-1.5 text-sm text-ink-2 bg-surface border border-hairline-strong rounded-sm px-3 py-2 font-bold hover:bg-surface-2 transition-colors">
               Preview
             </button>
             {data.status === SessionStatus.DRAFT ? (
               <button onClick={() => statusMutation.mutate(SessionStatus.OPEN)} disabled={statusMutation.isPending}
-                className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50">Publish</button>
+                className="bg-signal text-white px-4 py-2 rounded-sm text-sm font-bold hover:bg-[var(--signal-bright)] disabled:opacity-50 transition-colors">
+                Publish
+              </button>
             ) : data.status === SessionStatus.OPEN ? (
               <div className="flex gap-2">
                 <button onClick={() => statusMutation.mutate(SessionStatus.DRAFT)} disabled={statusMutation.isPending}
-                  className="text-gray-500 border border-gray-200 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50">Back to Draft</button>
+                  className="text-muted border border-hairline px-4 py-2 rounded-sm text-sm hover:bg-surface-2 disabled:opacity-50 transition-colors">
+                  Back to Draft
+                </button>
                 <button onClick={() => statusMutation.mutate(SessionStatus.CLOSED)} disabled={statusMutation.isPending}
-                  className="bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-100 disabled:opacity-50">Close</button>
+                  className="bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-sm text-sm font-bold hover:bg-red-100 disabled:opacity-50 transition-colors">
+                  Close
+                </button>
               </div>
             ) : data.status === SessionStatus.CLOSED ? (
               <div className="flex gap-2">
                 <button onClick={() => statusMutation.mutate(SessionStatus.OPEN)} disabled={statusMutation.isPending}
-                  className="bg-green-50 text-green-700 border border-green-200 px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-100 disabled:opacity-50">Reopen</button>
+                  className="bg-good-soft text-good border border-good/20 px-4 py-2 rounded-sm text-sm font-bold hover:opacity-80 disabled:opacity-50 transition-colors">
+                  Reopen
+                </button>
                 <button onClick={() => statusMutation.mutate(SessionStatus.ARCHIVED)} disabled={statusMutation.isPending}
-                  className="text-gray-400 border border-gray-200 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50">Archive</button>
+                  className="text-muted border border-hairline px-4 py-2 rounded-sm text-sm hover:bg-surface-2 disabled:opacity-50 transition-colors">
+                  Archive
+                </button>
               </div>
             ) : (
-              <span className="text-xs text-gray-400 border border-gray-200 px-3 py-2 rounded-lg">Archived</span>
+              <span className="text-xs text-muted border border-hairline px-3 py-2 rounded-sm">Archived</span>
             )}
           </div>
         </div>
@@ -501,7 +511,7 @@ export default function AssignmentDetailPage() {
 
         {/* Sidebar */}
         <div className="w-56 shrink-0 sticky top-6">
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="bg-surface border border-hairline rounded-[14px] overflow-hidden">
 
             {/* Groups (sorted, draggable) */}
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleGroupDragEnd}>
@@ -515,12 +525,12 @@ export default function AssignmentDetailPage() {
                       {() => (
                         <>
                           <div className="flex items-center gap-1.5 mb-0.5">
-                            <span className={`text-xs font-semibold ${isActive ? 'text-primary-700' : 'text-gray-700'}`}>{topIdx + 1}</span>
+                            <span className={`text-xs font-semibold ${isActive ? 'text-signal' : 'text-ink-2'}`}>{topIdx + 1}</span>
                             <span className="flex items-center gap-0.5 text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full font-medium">
                               <Layers size={10} /> {groupQuestions.length} parts
                             </span>
                           </div>
-                          <p className="text-xs text-gray-500 leading-snug line-clamp-2">
+                          <p className="text-xs text-muted leading-snug line-clamp-2">
                             {group.title || questionPreview(groupQuestions[0]?.text ?? '')}
                           </p>
                         </>
@@ -543,10 +553,10 @@ export default function AssignmentDetailPage() {
                       {() => (
                         <>
                           <div className="flex items-center justify-between mb-0.5">
-                            <span className={`text-xs font-semibold ${isActive ? 'text-primary-700' : 'text-gray-700'}`}>{topIdx + 1}</span>
-                            <span className="text-xs text-gray-400">{q.responses.length} resp</span>
+                            <span className={`text-xs font-semibold ${isActive ? 'text-signal' : 'text-ink-2'}`}>{topIdx + 1}</span>
+                            <span className="text-xs text-muted font-mono">{q.responses.length} resp</span>
                           </div>
-                          <p className="text-xs text-gray-500 leading-snug line-clamp-2">{questionPreview(q.text)}</p>
+                          <p className="text-xs text-muted leading-snug line-clamp-2">{questionPreview(q.text)}</p>
                         </>
                       )}
                     </SortableSidebarItem>
@@ -558,15 +568,15 @@ export default function AssignmentDetailPage() {
             {/* Sidebar footer */}
             {isDraft && (
               <button onClick={openAddQuestion}
-                className="w-full flex items-center justify-center gap-1.5 text-xs text-primary-600 hover:text-primary-800 hover:bg-primary-50 py-2.5 border-t border-gray-100 transition-colors">
+                className="w-full flex items-center justify-center gap-1.5 text-xs text-signal hover:text-[var(--signal-bright)] hover:bg-signal-soft py-2.5 border-t border-hairline transition-colors">
                 <Plus size={13} /> Add question
               </button>
             )}
             <button onClick={() => setActiveItem({ kind: 'submissions' })}
-              className={`w-full flex items-center justify-center gap-1.5 text-xs py-2.5 border-t border-gray-100 transition-colors ${
+              className={`w-full flex items-center justify-center gap-1.5 text-xs py-2.5 border-t border-hairline transition-colors ${
                 resolvedActive?.kind === 'submissions'
-                  ? 'text-primary-700 bg-primary-50'
-                  : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+                  ? 'text-signal bg-signal-soft'
+                  : 'text-muted hover:text-ink hover:bg-surface-2'
               }`}>
               Submissions
             </button>
@@ -576,17 +586,17 @@ export default function AssignmentDetailPage() {
         {/* Main content */}
         <div className="flex-1 min-w-0 space-y-5">
 
-          {/* Add question panel */}
+          {/* Add question inline panel */}
           {showAddQuestion && (
-            <div className="border border-gray-200 rounded-xl p-5 bg-gray-50 space-y-3">
-              <h3 className="text-sm font-medium text-gray-700">New question</h3>
+            <div className="border border-hairline rounded-[14px] p-5 bg-surface-2 space-y-3">
+              <h3 className="text-sm font-medium text-ink-2">New question</h3>
               <textarea value={aqText} onChange={(e) => setAqText(e.target.value)} placeholder="Question text…" rows={2}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
+                className="w-full border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal resize-none" />
               <div className="flex items-center gap-3 flex-wrap">
-                <label className="flex items-center gap-1.5 text-sm text-gray-600">
+                <label className="flex items-center gap-1.5 text-sm text-muted">
                   Type:
                   <select value={aqType} onChange={(e) => setAqType(e.target.value as typeof aqType)}
-                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none">
+                    className="border border-hairline rounded-sm px-3 py-2 text-sm bg-surface text-ink-2 focus:outline-none focus:ring-1 focus:ring-signal">
                     <option value="FREE_TEXT">Free text</option>
                     <option value="MULTIPLE_CHOICE">Multiple choice</option>
                     <option value="MULTI_SELECT">Multi-select</option>
@@ -597,40 +607,43 @@ export default function AssignmentDetailPage() {
                     <option value="YES_NO">Yes / No</option>
                   </select>
                 </label>
-                <label className="flex items-center gap-1.5 text-sm text-gray-600">
+                <label className="flex items-center gap-1.5 text-sm text-muted">
                   Add to group:
                   <select value={aqGroupId} onChange={(e) => setAqGroupId(e.target.value)}
-                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none">
+                    className="border border-hairline rounded-sm px-3 py-2 text-sm bg-surface text-ink-2 focus:outline-none focus:ring-1 focus:ring-signal">
                     <option value="">None (standalone)</option>
                     {data.groups.map(g => <option key={g.id} value={g.id}>{g.title || 'Untitled group'}</option>)}
                   </select>
                 </label>
                 <div className="ml-auto flex gap-2">
-                  <button onClick={() => { setShowAddQuestion(false); setAqError('') }} className="text-sm text-gray-500 px-3 py-2">Cancel</button>
+                  <button onClick={() => { setShowAddQuestion(false); setAqError('') }}
+                    className="text-sm text-muted hover:text-ink px-3 py-2 transition-colors">Cancel</button>
                   <button onClick={() => { setAqError(''); addQuestionMutation.mutate() }}
                     disabled={!aqText.trim() || addQuestionMutation.isPending}
-                    className="text-sm bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 disabled:opacity-50">Add</button>
+                    className="text-sm bg-signal text-white px-4 py-2 rounded-sm hover:bg-[var(--signal-bright)] disabled:opacity-50 font-bold transition-colors">
+                    Add
+                  </button>
                 </div>
               </div>
               {(aqType === 'MULTIPLE_CHOICE' || aqType === 'MULTI_SELECT') && (
                 <textarea value={aqOptions} onChange={(e) => setAqOptions(e.target.value)}
                   placeholder={"Option A\nOption B\nOption C"} rows={3}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
+                  className="w-full border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal resize-none" />
               )}
               {aqType === 'ORDERING' && (
                 <textarea value={aqOptions} onChange={(e) => setAqOptions(e.target.value)}
                   placeholder={"Step 1\nStep 2\nStep 3"} rows={3}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
+                  className="w-full border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal resize-none" />
               )}
               {aqType === 'NUMERIC' && (
                 <div className="flex gap-2 flex-wrap">
                   <input value={aqNumericAnswer} onChange={(e) => setAqNumericAnswer(e.target.value)}
                     placeholder="Correct answer (e.g. 6.02e23)"
-                    className="flex-1 min-w-0 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                    className="flex-1 min-w-0 border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal" />
                   <input value={aqTolerance} onChange={(e) => setAqTolerance(e.target.value)} placeholder="± tolerance"
-                    className="w-32 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                    className="w-32 border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal" />
                   <input value={aqUnit} onChange={(e) => setAqUnit(e.target.value)} placeholder="Unit (optional)"
-                    className="w-36 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                    className="w-36 border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal" />
                 </div>
               )}
               {aqError && <p className="text-red-500 text-xs">{aqError}</p>}
@@ -665,23 +678,23 @@ export default function AssignmentDetailPage() {
 
           {/* Submission status panel */}
           {resolvedActive?.kind === 'submissions' && (
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-gray-800">Submission Status</h2>
+            <div className="bg-surface border border-hairline rounded-[14px] overflow-hidden">
+              <div className="px-5 py-4 border-b border-hairline flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-ink">Submission Status</h2>
                 {submissionStatusQuery.data && (
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs text-muted font-mono">
                     {submissionStatusQuery.data.students.filter(s => s.isComplete).length} / {submissionStatusQuery.data.students.length} complete
                   </span>
                 )}
               </div>
               {submissionStatusQuery.isLoading ? (
-                <p className="text-gray-400 text-sm text-center py-8">Loading…</p>
+                <p className="text-muted text-sm text-center py-8">Loading…</p>
               ) : submissionStatusQuery.data?.students.length === 0 ? (
-                <p className="text-gray-400 text-sm text-center py-8">No enrolled students.</p>
+                <p className="text-muted text-sm text-center py-8">No enrolled students.</p>
               ) : (
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-gray-100 text-xs text-gray-400 uppercase tracking-wide">
+                    <tr className="border-b border-hairline text-xs text-muted uppercase tracking-wide">
                       <th className="text-left px-5 py-2.5 font-medium">Student</th>
                       <th className="text-left px-3 py-2.5 font-medium">Section</th>
                       <th className="text-right px-5 py-2.5 font-medium">Submitted</th>
@@ -689,12 +702,12 @@ export default function AssignmentDetailPage() {
                   </thead>
                   <tbody>
                     {submissionStatusQuery.data?.students.map((s) => (
-                      <tr key={s.student.id} className="border-b border-gray-50 last:border-0">
-                        <td className="px-5 py-2.5"><p className="font-medium text-gray-800 font-mono">{s.student.netId}</p></td>
-                        <td className="px-3 py-2.5 text-xs text-gray-400">{s.section?.name ?? '—'}</td>
+                      <tr key={s.student.id} className="border-b border-hairline last:border-0">
+                        <td className="px-5 py-2.5"><p className="font-medium text-ink font-mono">{s.student.netId}</p></td>
+                        <td className="px-3 py-2.5 text-xs text-muted">{s.section?.name ?? '—'}</td>
                         <td className="px-5 py-2.5 text-right">
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                            s.isComplete ? 'bg-green-100 text-green-700' : s.submittedCount > 0 ? 'bg-yellow-50 text-yellow-700' : 'bg-red-50 text-red-600'
+                          <span className={`text-xs font-medium font-mono px-2 py-0.5 rounded-full ${
+                            s.isComplete ? 'bg-good-soft text-good' : s.submittedCount > 0 ? 'bg-warn-soft text-warn' : 'bg-red-50 text-red-600'
                           }`}>{s.submittedCount}/{s.totalQuestions}</span>
                         </td>
                       </tr>
@@ -707,7 +720,7 @@ export default function AssignmentDetailPage() {
 
           {/* Empty state */}
           {!showAddQuestion && !resolvedActive && (
-            <p className="text-sm text-gray-400 text-center py-12">
+            <p className="text-sm text-muted text-center py-12">
               {isDraft ? 'Click "+ Add question" to get started.' : 'No questions.'}
             </p>
           )}
@@ -717,13 +730,13 @@ export default function AssignmentDetailPage() {
       {/* Student preview modal */}
       {showPreview && (
         <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 px-4 py-8 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl my-auto overflow-hidden">
-            <div className="bg-primary-600 px-6 py-4 flex items-start justify-between gap-4">
+          <div className="bg-surface rounded-[14px] shadow-pop w-full max-w-2xl my-auto overflow-hidden border border-hairline">
+            <div className="bg-signal px-6 py-4 flex items-start justify-between gap-4">
               <div>
-                <p className="text-primary-100 text-xs font-medium uppercase tracking-wide">{data.class.name}</p>
+                <p className="text-white/70 text-xs font-medium uppercase tracking-wide">{data.class.name}</p>
                 <h2 className="text-white text-lg font-semibold mt-0.5">{data.title}</h2>
               </div>
-              <button onClick={() => setShowPreview(false)} className="text-primary-200 hover:text-white mt-0.5 shrink-0">
+              <button onClick={() => setShowPreview(false)} className="text-white/60 hover:text-white mt-0.5 shrink-0 transition-colors">
                 <X size={20} />
               </button>
             </div>
@@ -738,14 +751,14 @@ export default function AssignmentDetailPage() {
                   if (parts.length === 0) return
                   parts.forEach((q) => usedIds.add(q.id))
                   items.push(
-                    <div key={group.id} className="border border-amber-200 bg-amber-50 rounded-2xl p-5 space-y-4">
+                    <div key={group.id} className="border border-amber-200 bg-amber-50 rounded-[14px] p-5 space-y-4">
                       <div>
                         <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1">{group.title}</p>
                         {group.text && <RichTextRenderer content={group.text} />}
                       </div>
                       {parts.map((q, pi) => (
-                        <div key={q.id} className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-                          <p className="text-xs font-medium text-gray-400">Part {String.fromCharCode(65 + pi)}</p>
+                        <div key={q.id} className="bg-surface border border-hairline rounded-[14px] p-4 space-y-3">
+                          <p className="text-xs font-medium text-muted">Part {String.fromCharCode(65 + pi)}</p>
                           <RichTextRenderer content={q.text} />
                           <PreviewInput q={q} />
                         </div>
@@ -755,8 +768,8 @@ export default function AssignmentDetailPage() {
                 })
                 questions.filter((q) => !usedIds.has(q.id)).forEach((q, qi) => {
                   items.push(
-                    <div key={q.id} className="border border-gray-200 rounded-2xl p-5 space-y-3">
-                      <p className="text-xs font-medium text-gray-400">Question {qi + 1}</p>
+                    <div key={q.id} className="border border-hairline rounded-[14px] p-5 space-y-3">
+                      <p className="text-xs font-medium text-muted">Question {qi + 1}</p>
                       <RichTextRenderer content={q.text} />
                       <PreviewInput q={q} />
                     </div>
@@ -764,7 +777,7 @@ export default function AssignmentDetailPage() {
                 })
                 return items
               })()}
-              <p className="text-center text-xs text-gray-400 pt-2">— Preview only — students submit individually —</p>
+              <p className="text-center text-xs text-muted pt-2">— Preview only — students submit individually —</p>
             </div>
           </div>
         </div>

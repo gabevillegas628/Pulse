@@ -4,6 +4,9 @@ import { Link, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
+import Button from '@/components/ui/Button'
+import Card from '@/components/ui/Card'
+import Empty from '@/components/ui/Empty'
 import { Check, ChevronLeft, Copy, Download, Flag, GraduationCap, Pencil, PictureInPicture2, Plus, Sparkles, X } from 'lucide-react'
 import { io } from 'socket.io-client'
 import type { SessionDetail, QuestionWithResponses, ResponseWithStudent, SummaryCategory } from 'shared'
@@ -41,7 +44,7 @@ export default function SessionPage() {
     img.src = qrDataUrl
     await new Promise((resolve) => { img.onload = resolve })
     ctx.drawImage(img, padding, padding, qrSize, qrSize)
-    ctx.fillStyle = '#1d4ed8'
+    ctx.fillStyle = '#ee4d2e'
     ctx.font = 'bold 52px monospace'
     ctx.textAlign = 'center'
     ctx.fillText(accessCode, canvas.width / 2, qrSize + padding + 60)
@@ -160,7 +163,6 @@ export default function SessionPage() {
     },
   })
 
-  // gradeReasons maps responseId → AI reason string for tooltip
   const [gradeReasons, setGradeReasons] = useState<Record<string, string>>({})
 
   const gradeMutation = useMutation({
@@ -232,7 +234,7 @@ export default function SessionPage() {
       return r.responseText === q.correctAnswer ? 1.0 : 0.5
     }
     if (q.type === 'FREE_TEXT') return r.aiScore
-    return null // RATING — no per-response score shown
+    return null
   }
 
   const statusMutation = useMutation({
@@ -240,7 +242,6 @@ export default function SessionPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['session', sessionId] }),
   })
 
-  // Opens the session and optionally sets the target section in one request
   const openSessionMutation = useMutation({
     mutationFn: (targetSectionId: string | null) =>
       api.patch(`/sessions/${sessionId}`, { status: SessionStatus.OPEN, targetSectionId }),
@@ -256,7 +257,6 @@ export default function SessionPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['session', sessionId] }),
   })
 
-  // Seed seen questions from existing responses when data first loads (e.g. page refresh mid-session)
   useEffect(() => {
     if (!data || pipInitializedRef.current) return
     pipInitializedRef.current = true
@@ -276,7 +276,6 @@ export default function SessionPage() {
     socket.emit('join_session', sessionId)
 
     socket.on('new_response', (payload: { student: ResponseWithStudent['student']; response: ResponseWithStudent; questionId: string; sessionId: string }) => {
-      // Auto-advance PiP on first response for each new question; never go back
       if (!seenQuestionIdsRef.current.has(payload.questionId)) {
         seenQuestionIdsRef.current.add(payload.questionId)
         const current = qc.getQueryData<SessionDetail>(['session', sessionId])
@@ -316,7 +315,6 @@ export default function SessionPage() {
     }
     try {
       const pip = await pipApi.requestWindow({ width: 420, height: 520 })
-      // Copy all stylesheets into the PiP window so Tailwind classes render correctly
       ;[...document.styleSheets].forEach((sheet) => {
         try {
           const rules = [...sheet.cssRules].map((r) => r.cssText).join('')
@@ -342,7 +340,7 @@ export default function SessionPage() {
     }
   }
 
-  if (isLoading || !data) return <ProfessorLayout><p className="text-gray-400">Loading…</p></ProfessorLayout>
+  if (isLoading || !data) return <ProfessorLayout><Empty message="Loading session…" /></ProfessorLayout>
 
   const totalResponses = data.questions.reduce((sum, q) => sum + q.responses.length, 0)
   const activeQuestion = data.questions[activeTab] as QuestionWithResponses | undefined
@@ -351,21 +349,21 @@ export default function SessionPage() {
     <ProfessorLayout>
       {/* Header */}
       <div className="mb-6">
-        <Link to={`/professor/classes/${data.class.id}`} className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 mb-3">
+        <Link to={`/professor/classes/${data.class.id}`} className="flex items-center gap-1 text-sm text-muted hover:text-ink mb-3 transition-colors">
           <ChevronLeft size={16} /> {data.class.name}
         </Link>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{data.title}</h1>
-            <p className="text-sm text-gray-500 mt-1">{totalResponses} response{totalResponses !== 1 ? 's' : ''}</p>
+            <h1 className="text-2xl font-bold text-ink">{data.title}</h1>
+            <p className="text-sm text-muted mt-1 font-mono">{totalResponses} response{totalResponses !== 1 ? 's' : ''}</p>
             {sectionsData && sectionsData.length > 0 && (data.status === SessionStatus.DRAFT || data.status === SessionStatus.CLOSED) && (
               <div className="flex items-center gap-2 mt-2">
-                <span className="text-xs text-gray-400">Section:</span>
+                <span className="text-xs text-muted">Section:</span>
                 <select
                   value={(data as unknown as { targetSection?: { id: string } }).targetSection?.id ?? ''}
                   onChange={(e) => sectionMutation.mutate(e.target.value || null)}
                   disabled={sectionMutation.isPending}
-                  className="text-xs border border-gray-200 rounded px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                  className="text-xs border border-hairline rounded px-2 py-1 bg-surface text-ink-2 focus:outline-none focus:ring-1 focus:ring-signal"
                 >
                   <option value="">All sections</option>
                   {sectionsData.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -373,23 +371,25 @@ export default function SessionPage() {
               </div>
             )}
           </div>
+
           <div className="flex items-center gap-2 shrink-0">
-            <button
+            <Button
+              variant="ghost"
               onClick={openPip}
               disabled={!!pipContainer}
-              className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-40"
               title={pipContainer ? 'Results window is open' : 'Pop out live results'}
             >
               <PictureInPicture2 size={14} /> {pipContainer ? 'Live' : 'Pop out'}
-            </button>
+            </Button>
             <a
               href={`/api/sessions/${sessionId}/export`}
-              className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2 rounded-lg text-sm hover:bg-gray-50"
+              className="inline-flex items-center gap-1.5 bg-surface border border-hairline-strong text-ink-2 rounded-sm px-4 py-2 text-sm font-bold hover:bg-surface-2 transition-colors"
             >
               <Download size={14} /> Export CSV
             </a>
             {data.status === SessionStatus.DRAFT ? (
-              <button
+              <Button
+                variant="primary"
                 onClick={() => {
                   if (sectionsData && sectionsData.length > 1) {
                     setShowSectionModal(true)
@@ -398,15 +398,14 @@ export default function SessionPage() {
                   }
                 }}
                 disabled={statusMutation.isPending}
-                className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
               >
                 Open session
-              </button>
+              </Button>
             ) : data.status === SessionStatus.OPEN ? (
               <button
                 onClick={() => statusMutation.mutate(SessionStatus.CLOSED)}
                 disabled={statusMutation.isPending}
-                className="bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-100 disabled:opacity-50"
+                className="bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-sm text-sm font-bold hover:bg-red-100 disabled:opacity-50 transition-colors"
               >
                 Close session
               </button>
@@ -421,35 +420,35 @@ export default function SessionPage() {
                     }
                   }}
                   disabled={statusMutation.isPending || openSessionMutation.isPending}
-                  className="bg-green-50 text-green-700 border border-green-200 px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-100 disabled:opacity-50"
+                  className="bg-good-soft text-good border border-good/20 px-4 py-2 rounded-sm text-sm font-bold hover:opacity-80 disabled:opacity-50 transition-colors"
                 >
                   Reopen
                 </button>
                 <button
                   onClick={() => statusMutation.mutate(SessionStatus.ARCHIVED)}
                   disabled={statusMutation.isPending}
-                  className="text-gray-400 border border-gray-200 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50"
+                  className="text-muted border border-hairline px-4 py-2 rounded-sm text-sm hover:bg-surface-2 disabled:opacity-50 transition-colors"
                 >
                   Archive
                 </button>
               </div>
             ) : (
-              <span className="text-xs text-gray-400 border border-gray-200 px-3 py-2 rounded-lg">Archived</span>
+              <span className="text-xs text-muted border border-hairline px-3 py-2 rounded-sm">Archived</span>
             )}
           </div>
         </div>
       </div>
 
       {/* Question tabs */}
-      <div className="flex items-center gap-1 mb-6 border-b border-gray-200">
+      <div className="flex items-center gap-1 mb-6 border-b border-hairline">
         {data.questions.map((q, i) => (
           <div key={q.id} className="group relative flex items-center">
             <button
               onClick={() => setActiveTab(i)}
               className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === i
-                  ? 'border-primary-600 text-primary-700'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  ? 'border-signal text-ink'
+                  : 'border-transparent text-muted hover:text-ink'
               }`}
             >
               Q{i + 1}
@@ -461,7 +460,7 @@ export default function SessionPage() {
                   deleteQuestionMutation.mutate(q.id)
                 }}
                 disabled={deleteQuestionMutation.isPending}
-                className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-1 -right-1 w-4 h-4 flex items-center justify-center bg-white border border-gray-200 rounded-full text-gray-300 hover:text-red-500 hover:border-red-300 disabled:opacity-30"
+                className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-1 -right-1 w-4 h-4 flex items-center justify-center bg-surface border border-hairline rounded-full text-hairline-strong hover:text-red-500 hover:border-red-300 disabled:opacity-30"
                 title="Delete question"
               >
                 <X size={9} />
@@ -471,7 +470,7 @@ export default function SessionPage() {
         ))}
         <button
           onClick={() => setShowAddQuestion(true)}
-          className="ml-1 mb-px flex items-center gap-1 text-xs text-gray-400 hover:text-primary-600 px-2 py-1.5"
+          className="ml-1 mb-px flex items-center gap-1 text-xs text-muted hover:text-signal px-2 py-1.5 transition-colors"
           title="Add question"
         >
           <Plus size={13} /> Add
@@ -480,21 +479,21 @@ export default function SessionPage() {
 
       {activeQuestion && (
         <div>
-          {/* Question header with code + QR */}
-          <div className="bg-primary-50 border border-primary-100 rounded-xl p-4 mb-5">
+          {/* Question header */}
+          <div className="bg-surface-2 border border-hairline rounded-[14px] p-4 mb-5">
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
-                  <p className="text-xs text-primary-500 font-medium uppercase tracking-wide">Question</p>
-                  <span className="text-xs bg-primary-100 text-primary-600 font-medium px-1.5 py-0.5 rounded">
+                  <p className="text-xs text-muted font-medium uppercase tracking-wide">Question</p>
+                  <span className="text-xs bg-surface text-ink-2 border border-hairline font-medium px-1.5 py-0.5 rounded">
                     {questionTypeLabel(activeQuestion.type)}
                   </span>
                 </div>
-                <p className="text-gray-800 font-medium">{activeQuestion.text}</p>
+                <p className="text-ink font-medium">{activeQuestion.text}</p>
                 {(data.status === SessionStatus.DRAFT || data.status === SessionStatus.OPEN) && (
                   <button
                     onClick={() => openEditQuestion(activeQuestion)}
-                    className="mt-1.5 flex items-center gap-1 text-xs text-primary-400 hover:text-primary-600 transition-colors"
+                    className="mt-1.5 flex items-center gap-1 text-xs text-muted hover:text-signal transition-colors"
                     title="Edit question"
                   >
                     <Pencil size={11} /> Edit
@@ -504,15 +503,15 @@ export default function SessionPage() {
               <div className="flex items-center gap-3 shrink-0">
                 {/* Access code */}
                 <div className="text-center">
-                  <p className="text-xs text-primary-400 mb-0.5">Code</p>
-                  <p className="font-mono text-2xl font-bold text-primary-700 tracking-widest">{activeQuestion.accessCode}</p>
+                  <p className="text-xs text-muted mb-0.5">Code</p>
+                  <p className="font-mono text-2xl font-bold text-signal tracking-widest">{activeQuestion.accessCode}</p>
                 </div>
                 {/* QR toggle + copy */}
                 {'qrDataUrl' in activeQuestion && (activeQuestion as QuestionWithResponses & { qrDataUrl: string }).qrDataUrl && (
                   <div className="flex items-center gap-1.5">
                     <button
                       onClick={() => setExpandedQr(expandedQr === activeQuestion.id ? null : activeQuestion.id)}
-                      className="border border-primary-200 rounded-lg p-1.5 hover:bg-primary-100 transition-colors"
+                      className="border border-hairline rounded-sm p-1.5 hover:bg-surface transition-colors"
                       title="Show QR code"
                     >
                       <img
@@ -530,72 +529,72 @@ export default function SessionPage() {
                         setCopiedQrId(activeQuestion.id)
                         setTimeout(() => setCopiedQrId(null), 2000)
                       }}
-                      className="border border-primary-200 rounded-lg p-1.5 hover:bg-primary-100 transition-colors"
+                      className="border border-hairline rounded-sm p-1.5 hover:bg-surface transition-colors"
                       title="Copy QR + code as image"
                     >
                       {copiedQrId === activeQuestion.id
-                        ? <Check size={16} className="text-green-600" />
-                        : <Copy size={16} className="text-primary-500" />
+                        ? <Check size={16} className="text-good" />
+                        : <Copy size={16} className="text-muted" />
                       }
                     </button>
                   </div>
                 )}
               </div>
             </div>
+
+            {/* Rubric hint — FREE_TEXT, closed sessions only */}
+            {(data.status === SessionStatus.CLOSED || data.status === SessionStatus.ARCHIVED) &&
+              activeQuestion.type === 'FREE_TEXT' && (
+              <div className="mt-3 pt-3 border-t border-hairline">
+                <p className="text-xs text-muted font-medium mb-1.5">What were you looking for? <span className="font-normal">(optional — helps AI grade more accurately)</span></p>
+                <div className="flex gap-2">
+                  <input
+                    value={rubricDraft[activeQuestion.id] ?? activeQuestion.correctAnswer ?? ''}
+                    onChange={(e) => setRubricDraft((d) => ({ ...d, [activeQuestion.id]: e.target.value }))}
+                    onBlur={() => {
+                      const val = (rubricDraft[activeQuestion.id] ?? activeQuestion.correctAnswer ?? '').trim()
+                      if (val === (activeQuestion.correctAnswer ?? '')) return
+                      setCorrectAnswerMutation.mutate({ questionId: activeQuestion.id, correctAnswer: val || null })
+                    }}
+                    placeholder="e.g. dissipates the proton motive force, increases ETC flux"
+                    className="flex-1 border border-hairline rounded-sm px-3 py-1.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Mark correct answer — MCQ / YES_NO, closed sessions only */}
+            {(data.status === SessionStatus.CLOSED || data.status === SessionStatus.ARCHIVED) &&
+              (activeQuestion.type === 'MULTIPLE_CHOICE' || activeQuestion.type === 'YES_NO') && (
+              <div className="mt-3 pt-3 border-t border-hairline">
+                <p className="text-xs text-muted font-medium mb-2">Correct answer</p>
+                <div className="flex flex-wrap gap-2">
+                  {(activeQuestion.type === 'YES_NO' ? ['Yes', 'No'] : (activeQuestion.options ?? [])).map((opt) => {
+                    const isCorrect = activeQuestion.correctAnswer === opt
+                    return (
+                      <button
+                        key={opt}
+                        onClick={() => setCorrectAnswerMutation.mutate({
+                          questionId: activeQuestion.id,
+                          correctAnswer: isCorrect ? null : opt,
+                        })}
+                        disabled={setCorrectAnswerMutation.isPending}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-sm border transition-colors ${
+                          isCorrect
+                            ? 'bg-good-soft border-good/30 text-good font-medium'
+                            : 'bg-surface border-hairline text-ink-2 hover:border-good/30 hover:text-good'
+                        }`}
+                      >
+                        {isCorrect && <Check size={12} />} {opt}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Rubric hint — FREE_TEXT, closed sessions only */}
-          {(data.status === SessionStatus.CLOSED || data.status === SessionStatus.ARCHIVED) &&
-            activeQuestion.type === 'FREE_TEXT' && (
-            <div className="mt-3 pt-3 border-t border-primary-100">
-              <p className="text-xs text-primary-500 font-medium mb-1.5">What were you looking for? <span className="text-primary-300 font-normal">(optional — helps AI grade more accurately)</span></p>
-              <div className="flex gap-2">
-                <input
-                  value={rubricDraft[activeQuestion.id] ?? activeQuestion.correctAnswer ?? ''}
-                  onChange={(e) => setRubricDraft((d) => ({ ...d, [activeQuestion.id]: e.target.value }))}
-                  onBlur={() => {
-                    const val = (rubricDraft[activeQuestion.id] ?? activeQuestion.correctAnswer ?? '').trim()
-                    if (val === (activeQuestion.correctAnswer ?? '')) return
-                    setCorrectAnswerMutation.mutate({ questionId: activeQuestion.id, correctAnswer: val || null })
-                  }}
-                  placeholder="e.g. dissipates the proton motive force, increases ETC flux"
-                  className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Mark correct answer — MCQ / YES_NO, closed sessions only */}
-          {(data.status === SessionStatus.CLOSED || data.status === SessionStatus.ARCHIVED) &&
-            (activeQuestion.type === 'MULTIPLE_CHOICE' || activeQuestion.type === 'YES_NO') && (
-            <div className="mt-3 pt-3 border-t border-primary-100">
-              <p className="text-xs text-primary-500 font-medium mb-2">Correct answer</p>
-              <div className="flex flex-wrap gap-2">
-                {(activeQuestion.type === 'YES_NO' ? ['Yes', 'No'] : (activeQuestion.options ?? [])).map((opt) => {
-                  const isCorrect = activeQuestion.correctAnswer === opt
-                  return (
-                    <button
-                      key={opt}
-                      onClick={() => setCorrectAnswerMutation.mutate({
-                        questionId: activeQuestion.id,
-                        correctAnswer: isCorrect ? null : opt,
-                      })}
-                      disabled={setCorrectAnswerMutation.isPending}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
-                        isCorrect
-                          ? 'bg-green-50 border-green-300 text-green-700 font-medium'
-                          : 'bg-white border-gray-200 text-gray-600 hover:border-green-300 hover:text-green-700'
-                      }`}
-                    >
-                      {isCorrect && <Check size={12} />} {opt}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Responses */}
+          {/* Responses summary chart */}
           <ResultsSummary question={activeQuestion} />
 
           {/* Score summary line */}
@@ -604,8 +603,8 @@ export default function SessionPage() {
             if (scores.length === 0) return null
             const avg = scores.reduce((a, b) => a + b, 0) / scores.length
             return (
-              <p className="text-xs text-gray-400 mb-4">
-                {scores.length} of {activeQuestion.responses.length} scored — avg <span className="font-medium text-gray-600">{avg.toFixed(2)} / 1.0</span>
+              <p className="text-xs text-muted mb-4 font-mono">
+                {scores.length} of {activeQuestion.responses.length} scored — avg <span className="font-medium text-ink-2">{avg.toFixed(2)} / 1.0</span>
               </p>
             )
           })()}
@@ -623,7 +622,7 @@ export default function SessionPage() {
                     gradeMutation.mutate(activeQuestion.id)
                   }}
                   disabled={gradeMutation.isPending}
-                  className="flex items-center gap-1.5 text-sm text-green-700 border border-green-200 px-3 py-2 rounded-lg hover:bg-green-50 disabled:opacity-50 mb-2"
+                  className="flex items-center gap-1.5 text-sm text-good border border-good/20 px-3 py-2 rounded-sm hover:bg-good-soft disabled:opacity-50 mb-2 transition-colors"
                 >
                   <GraduationCap size={14} />
                   {gradeMutation.isPending ? 'Grading…' : 'Grade with AI'}
@@ -637,20 +636,20 @@ export default function SessionPage() {
                     summarizeMutation.mutate(activeQuestion.id)
                   }}
                   disabled={summarizeMutation.isPending}
-                  className="flex items-center gap-1.5 text-sm text-primary-600 border border-primary-200 px-3 py-2 rounded-lg hover:bg-primary-50 disabled:opacity-50"
+                  className="flex items-center gap-1.5 text-sm text-signal border border-signal/20 px-3 py-2 rounded-sm hover:bg-signal-soft disabled:opacity-50 transition-colors"
                 >
                   <Sparkles size={14} />
                   {summarizeMutation.isPending ? 'Summarizing…' : 'Summarize responses'}
                 </button>
               ) : (
-                <div className="bg-white border border-gray-200 rounded-xl p-5">
+                <Card className="p-5">
                   <div className="flex items-center justify-between mb-4">
-                    <p className="text-sm font-semibold text-gray-700 flex items-center gap-1.5">
-                      <Sparkles size={14} className="text-primary-500" /> AI Theme Summary
+                    <p className="text-sm font-semibold text-ink-2 flex items-center gap-1.5">
+                      <Sparkles size={14} className="text-signal" /> AI Theme Summary
                     </p>
                     <button
                       onClick={() => { setSummary(null); setSummaryQuestionId(null) }}
-                      className="text-xs text-gray-400 hover:text-gray-600"
+                      className="text-xs text-muted hover:text-ink transition-colors"
                     >
                       Dismiss
                     </button>
@@ -658,12 +657,12 @@ export default function SessionPage() {
                   <div className="space-y-3">
                     {summary.map((cat) => (
                       <div key={cat.label} className="flex items-start gap-3">
-                        <span className="shrink-0 bg-primary-100 text-primary-700 text-xs font-semibold px-2 py-0.5 rounded-full mt-0.5">
+                        <span className="shrink-0 bg-signal-soft text-signal text-xs font-semibold px-2 py-0.5 rounded-full mt-0.5 font-mono">
                           {cat.count}
                         </span>
                         <div>
-                          <p className="text-sm font-medium text-gray-800">{cat.label}</p>
-                          <p className="text-xs text-gray-500">{cat.description}</p>
+                          <p className="text-sm font-medium text-ink">{cat.label}</p>
+                          <p className="text-xs text-muted">{cat.description}</p>
                         </div>
                       </div>
                     ))}
@@ -671,7 +670,7 @@ export default function SessionPage() {
                   {summarizeMutation.isError && (
                     <p className="text-xs text-red-500 mt-3">Failed to summarize — try again.</p>
                   )}
-                </div>
+                </Card>
               )}
               {summarizeMutation.isError && !summary && (
                 <p className="text-xs text-red-500 mt-2">Failed to summarize — try again.</p>
@@ -682,41 +681,39 @@ export default function SessionPage() {
             <p className="text-xs text-red-500 mb-3">AI grading failed — try again.</p>
           )}
 
+          {/* Response list */}
           {activeQuestion.responses.length === 0 ? (
-            <p className="text-gray-400 text-center py-12 text-sm">No responses yet</p>
+            <Empty message="No responses yet" />
           ) : (
             <div className="space-y-3">
               {activeQuestion.responses.map((r) => (
                 <div
                   key={r.id}
-                  className={`bg-white border rounded-xl p-4 ${r.isFlagged ? 'border-yellow-200 bg-yellow-50' : 'border-gray-200'}`}
+                  className={`border rounded-[14px] p-4 ${r.isFlagged ? 'border-warn/20 bg-warn-soft' : 'bg-surface border-hairline'}`}
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-gray-800">{r.student.netId}</span>
-                    </div>
+                    <span className="text-sm font-medium text-ink">{r.student.netId}</span>
                     <div className="flex items-center gap-2">
                       {r.isFlagged && (
-                        <span className="flex items-center gap-1 text-xs text-yellow-600 bg-yellow-100 px-2 py-0.5 rounded-full">
+                        <span className="flex items-center gap-1 text-xs text-warn bg-warn-soft px-2 py-0.5 rounded-full border border-warn/20">
                           <Flag size={10} /> Short
                         </span>
                       )}
                       {activeQuestion.type === 'FREE_TEXT' && (
-                        <span className="text-xs text-gray-400">{r.wordCount}w</span>
+                        <span className="text-xs text-muted font-mono">{r.wordCount}w</span>
                       )}
-                      <span className="text-xs text-gray-300">
+                      <span className="text-xs text-hairline-strong font-mono">
                         {new Date(r.submittedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
-                      {/* Score chip */}
                       {(() => {
                         const score = calcResponseScore(activeQuestion, r)
                         const isFreeText = activeQuestion.type === 'FREE_TEXT'
                         if (score === null) return null
                         const label = score === 1.0 ? '1.0' : score === 0.5 ? '0.5' : '0'
                         const color = score === 1.0
-                          ? 'bg-green-100 text-green-700 border-green-200'
+                          ? 'bg-good-soft text-good border-good/20'
                           : score === 0.5
-                          ? 'bg-yellow-100 text-yellow-700 border-yellow-200'
+                          ? 'bg-warn-soft text-warn border-warn/20'
                           : 'bg-red-100 text-red-600 border-red-200'
                         const title = isFreeText && gradeReasons[r.id] ? gradeReasons[r.id] : undefined
                         return (
@@ -727,7 +724,7 @@ export default function SessionPage() {
                               responseId: r.id,
                               aiScore: cycleScore(r.aiScore),
                             }) : undefined}
-                            className={`text-xs font-medium px-2 py-0.5 rounded-full border ${color} ${isFreeText ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}
+                            className={`text-xs font-mono font-medium px-2 py-0.5 rounded-full border ${color} ${isFreeText ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}
                           >
                             {label} pt
                           </button>
@@ -735,7 +732,7 @@ export default function SessionPage() {
                       })()}
                     </div>
                   </div>
-                  <p className="text-gray-700 text-sm leading-relaxed">{r.responseText}</p>
+                  <p className="text-ink-2 text-sm leading-relaxed">{r.responseText}</p>
                 </div>
               ))}
             </div>
@@ -746,10 +743,10 @@ export default function SessionPage() {
       {/* Add question modal */}
       {showAddQuestion && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+          <Card flat className="w-full max-w-md p-6 shadow-pop">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-base font-semibold">Add question</h2>
-              <button onClick={() => setShowAddQuestion(false)}><X size={18} className="text-gray-400" /></button>
+              <h2 className="text-base font-semibold text-ink">Add question</h2>
+              <button onClick={() => setShowAddQuestion(false)} className="text-muted hover:text-ink-2 transition-colors"><X size={18} /></button>
             </div>
             <div className="space-y-4">
               <input
@@ -757,12 +754,12 @@ export default function SessionPage() {
                 value={aqText}
                 onChange={(e) => setAqText(e.target.value)}
                 placeholder="Question text…"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
               />
               <select
                 value={aqType}
                 onChange={(e) => setAqType(e.target.value as typeof aqType)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+                className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
               >
                 <option value="FREE_TEXT">Free text</option>
                 <option value="MULTIPLE_CHOICE">Multiple choice</option>
@@ -779,7 +776,7 @@ export default function SessionPage() {
                   value={aqOptions}
                   onChange={(e) => setAqOptions(e.target.value)}
                   placeholder={"Option A\nOption B\nOption C"}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+                  className="w-full border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal resize-none"
                 />
               )}
               {aqType === 'ORDERING' && (
@@ -788,35 +785,35 @@ export default function SessionPage() {
                   value={aqOptions}
                   onChange={(e) => setAqOptions(e.target.value)}
                   placeholder={"Step 1\nStep 2\nStep 3"}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+                  className="w-full border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal resize-none"
                 />
               )}
               {aqType === 'NUMERIC' && (
                 <div className="flex gap-2 flex-wrap">
                   <input value={aqNumericAnswer} onChange={(e) => setAqNumericAnswer(e.target.value)}
                     placeholder="Correct answer (optional)"
-                    className="flex-1 min-w-0 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                    className="flex-1 min-w-0 border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal" />
                   <input value={aqTolerance} onChange={(e) => setAqTolerance(e.target.value)}
                     placeholder="± tolerance"
-                    className="w-28 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                    className="w-28 border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal" />
                   <input value={aqUnit} onChange={(e) => setAqUnit(e.target.value)}
                     placeholder="Unit (optional)"
-                    className="w-32 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                    className="w-32 border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal" />
                 </div>
               )}
               {aqError && <p className="text-red-500 text-xs">{aqError}</p>}
               <div className="flex justify-end gap-3 pt-1">
-                <button onClick={() => setShowAddQuestion(false)} className="px-4 py-2 text-sm text-gray-600">Cancel</button>
-                <button
+                <button onClick={() => setShowAddQuestion(false)} className="px-4 py-2 text-sm text-muted hover:text-ink transition-colors">Cancel</button>
+                <Button
+                  variant="primary"
                   onClick={() => addQuestionMutation.mutate()}
                   disabled={!aqText.trim() || addQuestionMutation.isPending}
-                  className="px-5 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
                 >
                   {addQuestionMutation.isPending ? 'Adding…' : 'Add question'}
-                </button>
+                </Button>
               </div>
             </div>
-          </div>
+          </Card>
         </div>
       )}
 
@@ -827,10 +824,10 @@ export default function SessionPage() {
         const hasOptions = ['MULTIPLE_CHOICE', 'MULTI_SELECT', 'ORDERING'].includes(question.type)
         return (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <Card flat className="w-full max-w-md p-6 shadow-pop">
               <div className="flex items-center justify-between mb-5">
-                <h2 className="text-base font-semibold">Edit question</h2>
-                <button onClick={() => setShowEditQuestion(false)}><X size={18} className="text-gray-400" /></button>
+                <h2 className="text-base font-semibold text-ink">Edit question</h2>
+                <button onClick={() => setShowEditQuestion(false)} className="text-muted hover:text-ink-2 transition-colors"><X size={18} /></button>
               </div>
               <div className="space-y-4">
                 <input
@@ -838,22 +835,22 @@ export default function SessionPage() {
                   value={eqText}
                   onChange={(e) => setEqText(e.target.value)}
                   placeholder="Question text…"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
                 />
                 {hasOptions && (
                   <div className="space-y-2">
-                    <p className="text-xs text-gray-500 font-medium">Options</p>
+                    <p className="text-xs text-muted font-medium">Options</p>
                     {eqOptions.map((opt, i) => (
                       <div key={i} className="flex items-center gap-2">
                         <input
                           value={opt}
                           onChange={(e) => { const next = [...eqOptions]; next[i] = e.target.value; setEqOptions(next) }}
-                          className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                          className="flex-1 border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
                           placeholder={`Option ${i + 1}`}
                         />
                         <button
                           onClick={() => setEqOptions(eqOptions.filter((_, j) => j !== i))}
-                          className="text-gray-300 hover:text-red-400 transition-colors"
+                          className="text-hairline-strong hover:text-red-400 transition-colors"
                         >
                           <X size={14} />
                         </button>
@@ -861,7 +858,7 @@ export default function SessionPage() {
                     ))}
                     <button
                       onClick={() => setEqOptions([...eqOptions, ''])}
-                      className="flex items-center gap-1 text-xs text-primary-500 hover:text-primary-700 mt-1"
+                      className="flex items-center gap-1 text-xs text-signal hover:text-[var(--signal-bright)] mt-1 transition-colors"
                     >
                       <Plus size={12} /> Add option
                     </button>
@@ -869,22 +866,22 @@ export default function SessionPage() {
                 )}
                 {eqError && <p className="text-red-500 text-xs">{eqError}</p>}
                 <div className="flex justify-end gap-3 pt-1">
-                  <button onClick={() => setShowEditQuestion(false)} className="px-4 py-2 text-sm text-gray-600">Cancel</button>
-                  <button
+                  <button onClick={() => setShowEditQuestion(false)} className="px-4 py-2 text-sm text-muted hover:text-ink transition-colors">Cancel</button>
+                  <Button
+                    variant="primary"
                     onClick={() => editQuestionMutation.mutate()}
                     disabled={!eqText.trim() || (hasOptions && eqOptions.filter(o => o.trim()).length < 2) || editQuestionMutation.isPending}
-                    className="px-5 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
                   >
                     {editQuestionMutation.isPending ? 'Saving…' : 'Save changes'}
-                  </button>
+                  </Button>
                 </div>
               </div>
-            </div>
+            </Card>
           </div>
         )
       })()}
 
-      {/* PiP portal — renders live results into the floating window */}
+      {/* PiP portal */}
       {pipContainer && data && pipActiveTab !== null &&
         createPortal(
           <PipDisplay
@@ -897,19 +894,19 @@ export default function SessionPage() {
         )
       }
 
-      {/* Section picker modal — shown when opening a session with multiple sections */}
+      {/* Section picker modal */}
       {showSectionModal && sectionsData && (() => {
         const currentSectionId = (data as unknown as { targetSection?: { id: string } }).targetSection?.id ?? null
         return (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+            <Card flat className="w-full max-w-sm p-6 shadow-pop">
               <div className="flex items-center justify-between mb-2">
-                <h2 className="text-base font-semibold text-gray-900">Open for which section?</h2>
-                <button onClick={() => setShowSectionModal(false)}>
-                  <X size={18} className="text-gray-400" />
+                <h2 className="text-base font-semibold text-ink">Open for which section?</h2>
+                <button onClick={() => setShowSectionModal(false)} className="text-muted hover:text-ink-2 transition-colors">
+                  <X size={18} />
                 </button>
               </div>
-              <p className="text-sm text-gray-500 mb-5">
+              <p className="text-sm text-muted mb-5">
                 Only students in the selected section will be able to respond.
               </p>
               <div className="space-y-2">
@@ -920,31 +917,31 @@ export default function SessionPage() {
                       key={s.id}
                       onClick={() => openSessionMutation.mutate(s.id)}
                       disabled={openSessionMutation.isPending}
-                      className={`w-full text-left px-4 py-3 rounded-xl border transition-colors text-sm font-medium disabled:opacity-50 ${
+                      className={`w-full text-left px-4 py-3 rounded-[14px] border transition-colors text-sm font-medium disabled:opacity-50 ${
                         isCurrent
-                          ? 'border-primary-400 bg-primary-50 text-primary-800'
-                          : 'border-gray-200 hover:border-primary-400 hover:bg-primary-50 text-gray-800'
+                          ? 'border-signal bg-signal-soft text-ink'
+                          : 'border-hairline hover:border-signal hover:bg-signal-soft text-ink'
                       }`}
                     >
                       Section {s.name}
-                      {isCurrent && <span className="ml-2 text-xs font-normal text-primary-500">current</span>}
+                      {isCurrent && <span className="ml-2 text-xs font-normal text-signal">current</span>}
                     </button>
                   )
                 })}
                 <button
                   onClick={() => openSessionMutation.mutate(null)}
                   disabled={openSessionMutation.isPending}
-                  className={`w-full text-left px-4 py-3 rounded-xl border transition-colors text-sm disabled:opacity-50 ${
+                  className={`w-full text-left px-4 py-3 rounded-[14px] border transition-colors text-sm disabled:opacity-50 ${
                     currentSectionId === null
-                      ? 'border-gray-400 bg-gray-50 text-gray-700'
-                      : 'border-gray-200 hover:border-gray-400 hover:bg-gray-50 text-gray-500'
+                      ? 'border-hairline-strong bg-surface-2 text-ink-2'
+                      : 'border-hairline hover:border-hairline-strong hover:bg-surface-2 text-muted'
                   }`}
                 >
                   All sections
-                  {currentSectionId === null && <span className="ml-2 text-xs font-normal text-gray-400">current</span>}
+                  {currentSectionId === null && <span className="ml-2 text-xs font-normal text-muted">current</span>}
                 </button>
               </div>
-            </div>
+            </Card>
           </div>
         )
       })()}
@@ -955,15 +952,15 @@ export default function SessionPage() {
           className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 cursor-pointer"
           onClick={() => setExpandedQr(null)}
         >
-          <div className="bg-white rounded-2xl p-8 text-center">
+          <div className="bg-surface rounded-[14px] p-8 text-center border border-hairline">
             <img
               src={(activeQuestion as QuestionWithResponses & { qrDataUrl: string }).qrDataUrl}
               alt="QR Code"
               className="w-64 h-64"
             />
-            <p className="text-gray-500 text-sm mt-3">Scan to answer this question</p>
-            <p className="font-mono text-3xl font-bold text-gray-900 tracking-widest mt-1">{activeQuestion.accessCode}</p>
-            <p className="text-xs text-gray-400 mt-4">Click anywhere to close</p>
+            <p className="text-muted text-sm mt-3">Scan to answer this question</p>
+            <p className="font-mono text-3xl font-bold text-signal tracking-widest mt-1">{activeQuestion.accessCode}</p>
+            <p className="text-xs text-muted mt-4">Click anywhere to close</p>
           </div>
         </div>
       )}

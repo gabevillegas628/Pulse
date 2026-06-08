@@ -4,7 +4,12 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import { useStudentAuth } from '@/context/StudentAuthContext'
 import TextbookPage from '@/pages/shared/TextbookPage'
-import { BookOpen, ChevronLeft, Clock, KeyRound, LogOut, Radio } from 'lucide-react'
+import PulseMark from '@/components/ui/PulseMark'
+import Pill from '@/components/ui/Pill'
+import Tabs from '@/components/ui/Tabs'
+import LiveDot from '@/components/ui/LiveDot'
+import Empty from '@/components/ui/Empty'
+import { BookOpen, ChevronLeft, Clock, KeyRound, LogOut } from 'lucide-react'
 import type { AssignmentRow, GradeSession } from 'shared'
 import PasswordChangeModal from '@/components/PasswordChangeModal'
 import SessionGradeSheet from '@/components/SessionGradeSheet'
@@ -27,6 +32,13 @@ interface Enrollment {
 
 type Tab = 'sessions' | 'homework' | 'textbook' | 'gradebook'
 
+const CLASS_TABS = [
+  { key: 'sessions',  label: 'Live Sessions' },
+  { key: 'homework',  label: 'Homework' },
+  { key: 'textbook',  label: 'Textbook' },
+  { key: 'gradebook', label: 'Gradebook' },
+] as const
+
 // ─── Assignment link ───────────────────────────────────────────────────────────
 
 function AssignmentLink({ a }: { a: AssignmentRow }) {
@@ -36,12 +48,12 @@ function AssignmentLink({ a }: { a: AssignmentRow }) {
   return (
     <Link
       to={`/student/assignments/${a.id}`}
-      className="flex items-center justify-between bg-white border border-gray-200 rounded-xl p-5 hover:shadow-sm transition-shadow"
+      className="flex items-center justify-between bg-surface border border-hairline rounded-[14px] p-5 hover:shadow-card transition-shadow"
     >
       <div>
-        <p className="font-medium text-gray-900">{a.title}</p>
+        <p className="font-medium text-ink">{a.title}</p>
         {a.deadline && !isClosed && (
-          <p className={`text-xs mt-0.5 flex items-center gap-1 ${isPastDue ? 'text-red-500' : 'text-gray-400'}`}>
+          <p className={`text-xs mt-0.5 flex items-center gap-1 ${isPastDue ? 'text-red-500' : 'text-muted'}`}>
             <Clock size={11} />
             {isPastDue ? 'Past due' : `Due ${new Date(a.deadline).toLocaleDateString()}`}
           </p>
@@ -49,16 +61,14 @@ function AssignmentLink({ a }: { a: AssignmentRow }) {
       </div>
       <div className="flex items-center gap-2 shrink-0">
         {isClosed && a.earnedScore !== null && a.maxScore !== null && (
-          <span className="text-xs font-medium text-gray-700">{a.earnedScore.toFixed(1)}/{a.maxScore}</span>
+          <span className="text-xs font-mono font-medium text-ink-2">{a.earnedScore.toFixed(1)}/{a.maxScore}</span>
         )}
         {isClosed && (a.earnedScore === null || a.maxScore === null) && (
-          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Closed</span>
+          <Pill variant="muted">Closed</Pill>
         )}
-        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-          isComplete ? 'bg-green-100 text-green-700' : 'bg-yellow-50 text-yellow-700'
-        }`}>
+        <Pill variant={isComplete ? 'good' : 'warn'}>
           {isComplete ? 'Done' : `${a.submittedCount}/${a.questionCount}`}
-        </span>
+        </Pill>
       </div>
     </Link>
   )
@@ -85,7 +95,6 @@ export default function StudentClassPage() {
     }
   }, [])
 
-  // Pull class info from the cached enrollment list
   const { data: enrollments } = useQuery<Enrollment[]>({
     queryKey: ['student-classes'],
     queryFn: () => api.get('/student/classes').then((r) => r.data.data.enrollments),
@@ -111,25 +120,30 @@ export default function StudentClassPage() {
   const pastAssignments = assignments.filter((a) => a.status === 'CLOSED' || a.status === 'ARCHIVED')
 
   if (enrollments && !enrollment) {
-    return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-400">Class not found.</div>
+    return (
+      <div className="min-h-screen bg-canvas flex items-center justify-center text-muted">
+        Class not found.
+      </div>
+    )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header — matches ProfessorLayout */}
-      <header className="bg-white border-b border-gray-200">
+    <div className="min-h-screen bg-canvas">
+      {/* Header */}
+      <header className="bg-surface border-b border-hairline">
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
-          <Link to="/student/classes" className="font-semibold text-primary-700 text-lg tracking-tight">
-            Pulse
+          <Link to="/student/classes" className="inline-flex items-center gap-2">
+            <PulseMark size={20} />
+            <span className="font-extrabold text-ink text-lg tracking-tight" style={{ letterSpacing: '-0.02em' }}>Pulse</span>
           </Link>
           <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-500">{student?.netId}</span>
-            <button onClick={() => setShowPwModal(true)} className="text-gray-400 hover:text-gray-600" title="Change password">
+            <span className="text-sm text-muted font-mono">{student?.netId}</span>
+            <button onClick={() => setShowPwModal(true)} className="text-muted hover:text-ink-2 transition-colors" title="Change password">
               <KeyRound size={15} />
             </button>
             <button
               onClick={() => { logout(); navigate('/login') }}
-              className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800 transition-colors"
+              className="flex items-center gap-1 text-sm text-muted hover:text-ink transition-colors"
             >
               <LogOut size={15} /> Sign out
             </button>
@@ -139,15 +153,15 @@ export default function StudentClassPage() {
 
       <main className="max-w-6xl mx-auto px-4 py-8">
         {/* Back link */}
-        <Link to="/student/classes" className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 mb-4">
+        <Link to="/student/classes" className="flex items-center gap-1 text-sm text-muted hover:text-ink mb-4 transition-colors">
           <ChevronLeft size={16} /> My Classes
         </Link>
 
         {/* Class header */}
         <div className="flex items-start justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{cls?.name ?? '…'}</h1>
-            <p className="text-sm text-gray-500 mt-0.5">
+            <h1 className="text-2xl font-bold text-ink">{cls?.name ?? '…'}</h1>
+            <p className="text-sm text-muted mt-0.5">
               {cls?.professor.name}
               {enrollment?.section && <span> · Section {enrollment.section.name}</span>}
             </p>
@@ -155,57 +169,39 @@ export default function StudentClassPage() {
           {liveSessions.length > 0 && (
             <Link
               to="/student/enter-code"
-              className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
+              className="inline-flex items-center gap-2 bg-signal text-white px-4 py-2 rounded-sm text-sm font-bold hover:bg-[var(--signal-bright)] transition-colors"
             >
-              <Radio size={15} className="animate-pulse" /> Enter code
+              <LiveDot className="bg-white" /> Enter code
             </Link>
           )}
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 mb-6 border-b border-gray-200">
-          {([
-            { key: 'sessions', label: 'Live Sessions' },
-            { key: 'homework', label: 'Homework' },
-            { key: 'textbook', label: 'Textbook' },
-            { key: 'gradebook', label: 'Gradebook' },
-          ] as const).map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => setTab(key)}
-              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                tab === key
-                  ? 'border-primary-600 text-primary-700'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          tabs={CLASS_TABS as unknown as { key: string; label: string }[]}
+          active={tab}
+          onChange={(k) => setTab(k as Tab)}
+          className="mb-6"
+        />
 
         {/* Live Sessions tab */}
         {tab === 'sessions' && (
           liveSessions.length === 0 ? (
-            <div className="text-center py-16 text-gray-400">
-              <Radio size={32} className="mx-auto mb-3 text-gray-300" />
-              <p className="text-sm">No live session right now.</p>
-              <p className="text-xs mt-1">Your professor will start one in class.</p>
-            </div>
+            <Empty icon={BookOpen} message="No live session right now — your professor will start one in class." />
           ) : (
             <div className="space-y-3">
               {liveSessions.map((s) => (
-                <div key={s.id} className="flex items-center justify-between bg-white border border-green-200 rounded-xl p-5">
+                <div key={s.id} className="flex items-center justify-between bg-signal-soft border border-signal/20 rounded-[14px] p-5">
                   <div>
                     <div className="flex items-center gap-2 mb-0.5">
-                      <Radio size={13} className="text-green-600 animate-pulse" />
-                      <span className="text-xs font-medium text-green-600 uppercase tracking-wide">Live now</span>
+                      <LiveDot />
+                      <span className="text-xs font-bold text-signal uppercase tracking-wide">Live now</span>
                     </div>
-                    <p className="font-medium text-gray-900">{s.title}</p>
+                    <p className="font-medium text-ink">{s.title}</p>
                   </div>
                   <Link
                     to="/student/enter-code"
-                    className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors shrink-0"
+                    className="inline-flex items-center gap-2 bg-signal text-white px-4 py-2 rounded-sm text-sm font-bold hover:bg-[var(--signal-bright)] transition-colors shrink-0"
                   >
                     Enter code
                   </Link>
@@ -218,16 +214,14 @@ export default function StudentClassPage() {
         {/* Homework tab */}
         {tab === 'homework' && (
           !assignmentData ? (
-            <p className="text-gray-400 text-center py-8">Loading…</p>
+            <Empty icon={BookOpen} message="Loading assignments…" />
           ) : assignments.length === 0 ? (
-            <div className="text-center py-16 text-gray-400">
-              <p className="text-sm">No assignments yet.</p>
-            </div>
+            <Empty icon={BookOpen} message="No assignments yet." />
           ) : (
             <div className="space-y-6">
               {openAssignments.length > 0 && (
                 <div>
-                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">Open</p>
+                  <p className="text-xs font-medium text-muted uppercase tracking-wide mb-3">Open</p>
                   <div className="space-y-3">
                     {openAssignments.map((a) => <AssignmentLink key={a.id} a={a} />)}
                   </div>
@@ -235,7 +229,7 @@ export default function StudentClassPage() {
               )}
               {pastAssignments.length > 0 && (
                 <div>
-                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">Past</p>
+                  <p className="text-xs font-medium text-muted uppercase tracking-wide mb-3">Past</p>
                   <div className="space-y-3">
                     {pastAssignments.map((a) => <AssignmentLink key={a.id} a={a} />)}
                   </div>
@@ -248,13 +242,10 @@ export default function StudentClassPage() {
         {/* Textbook tab */}
         {tab === 'textbook' && (
           !cls?.textbookRepo ? (
-            <div className="text-center py-16 text-gray-400">
-              <BookOpen size={32} className="mx-auto mb-3 text-gray-300" />
-              <p className="text-sm">No textbook linked to this class yet.</p>
-            </div>
+            <Empty icon={BookOpen} message="No textbook linked to this class yet." />
           ) : (
             <div
-              className="border border-gray-200 rounded-xl overflow-hidden flex"
+              className="border border-hairline rounded-[14px] overflow-hidden flex"
               style={{ height: 'calc(100vh - 340px)', minHeight: '480px' }}
             >
               <TextbookPage repo={cls.textbookRepo} path={cls.textbookPath ?? ''} classId={classId} />
@@ -265,52 +256,52 @@ export default function StudentClassPage() {
         {/* Gradebook tab */}
         {tab === 'gradebook' && (
           !gradesData ? (
-            <p className="text-gray-400 text-center py-8">Loading…</p>
+            <Empty message="Loading grades…" />
           ) : gradesData.sessions.length === 0 ? (
-            <div className="text-center py-16 text-gray-400">
-              <p className="text-sm">No graded sessions yet.</p>
-            </div>
+            <Empty message="No graded sessions yet." />
           ) : (() => {
-            const liveSessions = gradesData.sessions.filter((s) => s.type === 'IN_CLASS')
+            const inClassSessions = gradesData.sessions.filter((s) => s.type === 'IN_CLASS')
             const hwSessions = gradesData.sessions.filter((s) => s.type === 'HOMEWORK')
+
             const renderGroup = (items: typeof gradesData.sessions) => (
-              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <div className="bg-surface border border-hairline rounded-[14px] overflow-hidden">
                 {items.map((s, i) => (
                   <button
                     key={s.id}
                     onClick={() => setSelectedSession(s)}
-                    className={`w-full flex items-center justify-between px-5 py-3.5 text-left hover:bg-gray-50 transition-colors ${
-                      i < items.length - 1 ? 'border-b border-gray-100' : ''
+                    className={`w-full flex items-center justify-between px-5 py-3.5 text-left hover:bg-surface-2 transition-colors ${
+                      i < items.length - 1 ? 'border-b border-hairline' : ''
                     }`}
                   >
-                    <p className="text-sm text-gray-700">{s.title}</p>
-                    <p className="text-sm font-medium text-gray-900 shrink-0">{s.earned}/{s.max}</p>
+                    <p className="text-sm text-ink-2">{s.title}</p>
+                    <p className="text-sm font-mono font-medium text-ink shrink-0">{s.earned}/{s.max}</p>
                   </button>
                 ))}
               </div>
             )
+
             return (
               <div className="space-y-5">
-                {liveSessions.length > 0 && (
+                {inClassSessions.length > 0 && (
                   <div>
-                    <p className="flex items-center gap-1.5 text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">
-                      <Radio size={12} /> Live Sessions
+                    <p className="flex items-center gap-1.5 text-xs font-medium text-muted uppercase tracking-wide mb-2">
+                      <LiveDot className="w-[5px] h-[5px]" /> Live Sessions
                     </p>
-                    {renderGroup(liveSessions)}
+                    {renderGroup(inClassSessions)}
                   </div>
                 )}
                 {hwSessions.length > 0 && (
                   <div>
-                    <p className="flex items-center gap-1.5 text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">
+                    <p className="flex items-center gap-1.5 text-xs font-medium text-muted uppercase tracking-wide mb-2">
                       <BookOpen size={12} /> Homework
                     </p>
                     {renderGroup(hwSessions)}
                   </div>
                 )}
                 {gradesData.sessions.length > 1 && (
-                  <div className="flex items-center justify-between px-5 py-3.5 bg-gray-50 border border-gray-200 rounded-xl">
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total</p>
-                    <p className="text-sm font-semibold text-gray-900">{gradesData.totalEarned}/{gradesData.totalMax}</p>
+                  <div className="flex items-center justify-between px-5 py-3.5 bg-surface-2 border border-hairline rounded-[14px]">
+                    <p className="text-xs font-medium text-muted uppercase tracking-wide">Total</p>
+                    <p className="text-sm font-mono font-semibold text-ink">{gradesData.totalEarned}/{gradesData.totalMax}</p>
                   </div>
                 )}
               </div>

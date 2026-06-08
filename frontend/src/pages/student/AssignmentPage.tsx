@@ -80,12 +80,12 @@ function SortableOrderItem({ id, label, disabled }: { id: string; label: string;
     <div
       ref={setNodeRef}
       style={style}
-      className={`flex items-center gap-2 px-3 py-2.5 border rounded-xl text-sm text-gray-800 bg-white ${
-        disabled ? 'border-gray-200 opacity-60' : 'border-gray-300 cursor-grab active:cursor-grabbing'
+      className={`flex items-center gap-2 px-3 py-2.5 border rounded-[14px] text-sm text-ink bg-surface ${
+        disabled ? 'border-hairline opacity-60' : 'border-hairline-strong cursor-grab active:cursor-grabbing'
       }`}
     >
       {!disabled && (
-        <span {...attributes} {...listeners} className="text-gray-300 hover:text-gray-500">
+        <span {...attributes} {...listeners} className="text-hairline-strong hover:text-muted">
           <GripVertical size={14} />
         </span>
       )}
@@ -96,9 +96,9 @@ function SortableOrderItem({ id, label, disabled }: { id: string; label: string;
 
 function ScoreBadge({ score, aiScore, type }: { score: number; aiScore: number | null; type: string }) {
   if (type === 'FREE_TEXT' && aiScore === null)
-    return <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Pending</span>
-  if (score >= 1.0) return <span className="text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded-full">Full credit</span>
-  if (score >= 0.5) return <span className="text-xs text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">Partial credit</span>
+    return <span className="text-xs text-muted bg-surface-2 px-2 py-0.5 rounded-full font-mono">Pending</span>
+  if (score >= 1.0) return <span className="text-xs text-good bg-good-soft px-2 py-0.5 rounded-full">Full credit</span>
+  if (score >= 0.5) return <span className="text-xs text-warn bg-warn-soft px-2 py-0.5 rounded-full">Partial credit</span>
   return <span className="text-xs text-red-700 bg-red-100 px-2 py-0.5 rounded-full">No credit</span>
 }
 
@@ -120,9 +120,9 @@ function Sidebar({
   isClosed: boolean
 }) {
   return (
-    <aside className="hidden md:flex w-56 shrink-0 flex-col border-r border-gray-200 bg-white">
-      <div className="px-4 py-3 border-b border-gray-100 shrink-0">
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Questions</p>
+    <aside className="hidden md:flex w-56 shrink-0 flex-col border-r border-hairline bg-surface">
+      <div className="px-4 py-3 border-b border-hairline shrink-0">
+        <p className="text-xs font-semibold text-muted uppercase tracking-wider">Questions</p>
       </div>
       <nav className="flex-1 overflow-y-auto py-2">
         {displayList.map((item, i) => {
@@ -135,16 +135,16 @@ function Sidebar({
                 key={`group-${item.group.id}`}
                 onClick={() => onStep(i)}
                 className={`w-full text-left px-4 py-2.5 flex items-center justify-between gap-2 transition-colors ${
-                  isActive ? 'bg-primary-50 text-primary-700' : 'text-gray-600 hover:bg-gray-50'
+                  isActive ? 'bg-signal-soft text-signal' : 'text-ink-2 hover:bg-surface-2'
                 }`}
               >
                 <span className="text-xs font-medium truncate">{item.group.title}</span>
                 {groupAllSaved ? (
-                  <Check size={12} className="shrink-0 text-green-500" />
+                  <Check size={12} className="shrink-0 text-good" />
                 ) : groupAnyDraft ? (
-                  <Save size={12} className="shrink-0 text-amber-400" />
+                  <Save size={12} className="shrink-0 text-warn" />
                 ) : isActive ? (
-                  <ChevronRight size={12} className="shrink-0 text-primary-400" />
+                  <ChevronRight size={12} className="shrink-0 text-signal" />
                 ) : null}
               </button>
             )
@@ -160,16 +160,16 @@ function Sidebar({
               key={`q-${q.id}`}
               onClick={() => onStep(i)}
               className={`w-full text-left px-4 py-2.5 flex items-center justify-between gap-2 transition-colors ${
-                isActive ? 'bg-primary-50 text-primary-700' : 'text-gray-600 hover:bg-gray-50'
+                isActive ? 'bg-signal-soft text-signal' : 'text-ink-2 hover:bg-surface-2'
               }`}
             >
-              <span className="text-xs truncate">Q{item.globalIdx + 1}</span>
+              <span className="text-xs truncate font-mono">Q{item.globalIdx + 1}</span>
               {isClosed && grade ? (
                 <ScoreBadge score={grade.score} aiScore={grade.response?.aiScore ?? null} type={q.type} />
               ) : isSubmitted ? (
-                <Check size={12} className="shrink-0 text-green-500" />
+                <Check size={12} className="shrink-0 text-good" />
               ) : hasDraft ? (
-                <Save size={12} className="shrink-0 text-amber-400" />
+                <Save size={12} className="shrink-0 text-warn" />
               ) : null}
             </button>
           )
@@ -194,7 +194,7 @@ function MobileProgress({
 }) {
   const total = displayList.length
   return (
-    <div className="md:hidden flex items-center gap-2 px-4 py-2 border-b border-gray-200 bg-white overflow-x-auto shrink-0">
+    <div className="md:hidden flex items-center gap-2 px-4 py-2 border-b border-hairline bg-surface overflow-x-auto shrink-0">
       {displayList.map((item, i) => {
         const isActive = i === currentStep
         let isSubmitted = false
@@ -214,19 +214,19 @@ function MobileProgress({
             onClick={() => onStep(i)}
             className={`shrink-0 w-7 h-7 rounded-full text-xs font-medium transition-colors ${
               isActive
-                ? 'bg-primary-600 text-white'
+                ? 'bg-signal text-white'
                 : isSubmitted
-                ? 'bg-green-100 text-green-700'
+                ? 'bg-good-soft text-good'
                 : hasDraft
-                ? 'bg-amber-100 text-amber-700'
-                : 'bg-gray-100 text-gray-500'
+                ? 'bg-warn-soft text-warn'
+                : 'bg-surface-2 text-muted'
             }`}
           >
             {label}
           </button>
         )
       })}
-      <span className="shrink-0 text-xs text-gray-400 ml-1">{currentStep + 1}/{total}</span>
+      <span className="shrink-0 text-xs text-muted ml-1 font-mono">{currentStep + 1}/{total}</span>
     </div>
   )
 }
@@ -261,7 +261,6 @@ export default function AssignmentPage() {
 
   const gradeMap = new Map<string, GradeQuestion>(gradesData?.questions.map((q) => [q.id, q]) ?? [])
 
-  // Pre-fill from existing responses
   useEffect(() => {
     if (!data) return
     const pre: Record<string, string> = {}
@@ -273,7 +272,6 @@ export default function AssignmentPage() {
     setAnswers((prev) => ({ ...pre, ...prev }))
   }, [data])
 
-  // Auto-save mutation
   const saveMutation = useMutation({
     mutationFn: ({ questionId, responseText }: { questionId: string; responseText: string }) =>
       api.post('/responses', { questionId, responseText }),
@@ -282,10 +280,9 @@ export default function AssignmentPage() {
       qc.invalidateQueries({ queryKey: ['student-assignment', assignmentId] })
       qc.invalidateQueries({ queryKey: ['student-assignments'] })
     },
-    onError: () => { /* save failed — auto-save will retry on next change */ },
+    onError: () => { /* auto-save will retry on next change */ },
   })
 
-  // Submit assignment mutation
   const submitMutation = useMutation({
     mutationFn: () => api.post(`/student/assignments/${assignmentId}/submit`),
     onSuccess: () => {
@@ -294,7 +291,6 @@ export default function AssignmentPage() {
     },
   })
 
-  // Debounced auto-save
   function scheduleAutoSave(questionId: string, responseText: string) {
     clearTimeout(saveTimers.current[questionId])
     saveTimers.current[questionId] = setTimeout(() => {
@@ -323,8 +319,8 @@ export default function AssignmentPage() {
 
   if (isLoading || !data) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-400">Loading…</p>
+      <div className="min-h-screen bg-canvas flex items-center justify-center">
+        <p className="text-muted text-sm">Loading…</p>
       </div>
     )
   }
@@ -336,17 +332,16 @@ export default function AssignmentPage() {
   data.groups.forEach((group) => {
     const groupQuestions = data.questions
       .filter((q) => q.groupId === group.id)
-      .map((q) => ({ question: q, globalIdx: 0 })) // globalIdx assigned below
+      .map((q) => ({ question: q, globalIdx: 0 }))
     if (!groupQuestions.length) return
     groupQuestions.forEach(({ question }) => usedIds.add(question.id))
     displayList.push({ kind: 'group', group, questions: groupQuestions })
   })
   data.questions.forEach((q) => {
     if (!usedIds.has(q.id))
-      displayList.push({ kind: 'question', question: q, globalIdx: 0 }) // globalIdx assigned below
+      displayList.push({ kind: 'question', question: q, globalIdx: 0 })
   })
 
-  // Assign sequential question numbers in display order (groups first, then their questions)
   const questionNumbers = new Map<string, number>()
   let qCounter = 0
   for (const item of displayList) {
@@ -373,13 +368,13 @@ export default function AssignmentPage() {
     const displayNum = (questionNumbers.get(q.id) ?? 0) + 1
 
     return (
-      <div key={q.id} className={`bg-white border rounded-2xl p-6 ${isSubmitted ? 'border-green-200' : 'border-gray-200'}`}>
+      <div key={q.id} className={`bg-surface border rounded-[14px] p-6 ${isSubmitted ? 'border-good/20' : 'border-hairline'}`}>
         <div className="flex items-start justify-between gap-3 mb-4">
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Question {displayNum}</p>
+          <p className="text-xs font-medium text-muted uppercase tracking-wide">Question {displayNum}</p>
           <div className="flex items-center gap-2 shrink-0">
             {grade && <ScoreBadge score={grade.score} aiScore={grade.response?.aiScore ?? null} type={q.type} />}
             {!grade && isSubmitted && (
-              <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
+              <span className="flex items-center gap-1 text-xs text-good font-medium">
                 <Check size={12} /> Saved
               </span>
             )}
@@ -397,19 +392,20 @@ export default function AssignmentPage() {
             onChange={(e) => setAnswer(q.id, e.target.value)}
             disabled={isDisabled}
             placeholder={isDisabled ? '' : 'Your answer…'}
-            className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none disabled:bg-gray-50 disabled:text-gray-500"
+            className="w-full border border-hairline rounded-[14px] px-4 py-3 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal resize-none disabled:bg-surface-2 disabled:text-muted"
           />
         )}
 
         {q.type === 'MULTIPLE_CHOICE' && q.options && (
           <div className="space-y-2">
             {q.options.map((opt) => (
-              <label key={opt} className={`flex items-center gap-3 p-3.5 border rounded-xl cursor-pointer transition-colors ${
-                answers[q.id] === opt ? 'border-primary-500 bg-primary-50' : 'border-gray-200 hover:border-gray-300'
+              <label key={opt} className={`flex items-center gap-3 p-3.5 border rounded-[14px] cursor-pointer transition-colors ${
+                answers[q.id] === opt ? 'border-signal bg-signal-soft' : 'border-hairline hover:border-hairline-strong'
               } ${isDisabled ? 'opacity-60 cursor-not-allowed' : ''}`}>
                 <input type="radio" name={`q-${q.id}`} value={opt} checked={answers[q.id] === opt}
-                  onChange={() => !isDisabled && setAnswer(q.id, opt)} disabled={isDisabled} className="text-primary-600" />
-                <span className="text-sm text-gray-800">{opt}</span>
+                  onChange={() => !isDisabled && setAnswer(q.id, opt)} disabled={isDisabled}
+                  className="accent-[var(--signal)]" />
+                <span className="text-sm text-ink">{opt}</span>
               </label>
             ))}
           </div>
@@ -418,8 +414,8 @@ export default function AssignmentPage() {
         {q.type === 'YES_NO' && (
           <div className="flex gap-3">
             {['Yes', 'No'].map((opt) => (
-              <label key={opt} className={`flex items-center gap-2 px-5 py-3 border rounded-xl cursor-pointer transition-colors ${
-                answers[q.id] === opt ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-700 hover:border-gray-300'
+              <label key={opt} className={`flex items-center gap-2 px-5 py-3 border rounded-[14px] cursor-pointer transition-colors ${
+                answers[q.id] === opt ? 'border-signal bg-signal-soft text-signal' : 'border-hairline text-ink-2 hover:border-hairline-strong'
               } ${isDisabled ? 'opacity-60 cursor-not-allowed' : ''}`}>
                 <input type="radio" name={`q-${q.id}`} value={opt} checked={answers[q.id] === opt}
                   onChange={() => !isDisabled && setAnswer(q.id, opt)} disabled={isDisabled} className="sr-only" />
@@ -434,8 +430,8 @@ export default function AssignmentPage() {
             {[1, 2, 3, 4, 5].map((n) => (
               <button key={n} type="button" disabled={isDisabled}
                 onClick={() => !isDisabled && setAnswer(q.id, String(n))}
-                className={`w-12 h-12 rounded-xl text-sm font-medium border transition-colors ${
-                  answers[q.id] === String(n) ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                className={`w-12 h-12 rounded-[14px] text-sm font-medium border transition-colors ${
+                  answers[q.id] === String(n) ? 'border-signal bg-signal-soft text-signal' : 'border-hairline text-muted hover:border-hairline-strong'
                 } disabled:opacity-60 disabled:cursor-not-allowed`}
               >{n}</button>
             ))}
@@ -447,9 +443,9 @@ export default function AssignmentPage() {
             <input type="text" value={answers[q.id] ?? ''}
               onChange={(e) => setAnswer(q.id, e.target.value)}
               disabled={isDisabled} placeholder={isDisabled ? '' : 'Your answer…'}
-              className="w-48 border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:bg-gray-50 disabled:text-gray-500"
+              className="w-48 border border-hairline rounded-[14px] px-4 py-3 text-sm bg-surface font-mono focus:outline-none focus:ring-2 focus:ring-signal disabled:bg-surface-2 disabled:text-muted"
             />
-            {q.unit && <span className="text-sm text-gray-500">{q.unit}</span>}
+            {q.unit && <span className="text-sm text-muted">{q.unit}</span>}
           </div>
         )}
 
@@ -460,17 +456,18 @@ export default function AssignmentPage() {
               try { selected = JSON.parse(answers[q.id] ?? '[]') } catch { /* ignore */ }
               const isChecked = selected.includes(opt)
               return (
-                <label key={opt} className={`flex items-center gap-3 p-3.5 border rounded-xl cursor-pointer transition-colors ${
-                  isChecked ? 'border-primary-500 bg-primary-50' : 'border-gray-200 hover:border-gray-300'
+                <label key={opt} className={`flex items-center gap-3 p-3.5 border rounded-[14px] cursor-pointer transition-colors ${
+                  isChecked ? 'border-signal bg-signal-soft' : 'border-hairline hover:border-hairline-strong'
                 } ${isDisabled ? 'opacity-60 cursor-not-allowed' : ''}`}>
-                  <input type="checkbox" checked={isChecked} disabled={isDisabled} className="text-primary-600"
+                  <input type="checkbox" checked={isChecked} disabled={isDisabled}
+                    className="accent-[var(--signal)]"
                     onChange={() => {
                       if (isDisabled) return
                       const next = isChecked ? selected.filter(v => v !== opt) : [...selected, opt]
                       setAnswer(q.id, JSON.stringify(next))
                     }}
                   />
-                  <span className="text-sm text-gray-800">{opt}</span>
+                  <span className="text-sm text-ink">{opt}</span>
                 </label>
               )
             })}
@@ -504,7 +501,7 @@ export default function AssignmentPage() {
         })()}
 
         {q.type === 'STRUCTURE' && (
-          <Suspense fallback={<div className="h-48 bg-gray-50 rounded-xl animate-pulse" />}>
+          <Suspense fallback={<div className="h-48 bg-surface-2 rounded-[14px] animate-pulse" />}>
             <Jsme height="420px" width="600px"
               smiles={(jsmeInitialSmiles.current[q.id] ??= answers[q.id] ?? '')}
               onChange={(smiles: string) => !isDisabled && setAnswer(q.id, smiles)}
@@ -517,30 +514,30 @@ export default function AssignmentPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen bg-canvas flex flex-col">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 shrink-0">
+      <header className="bg-surface border-b border-hairline shrink-0">
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
           <Link
             to={`/student/classes/${data.class.id}`}
-            className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 shrink-0"
+            className="flex items-center gap-1 text-sm text-muted hover:text-ink shrink-0 transition-colors"
           >
             <ChevronLeft size={16} /> {data.class.name}
           </Link>
-          <h1 className="text-sm font-semibold text-gray-800 truncate">{data.title}</h1>
+          <h1 className="text-sm font-semibold text-ink truncate">{data.title}</h1>
           <div className="flex items-center gap-3 shrink-0">
             {data.deadline && !isClosed && (
-              <span className={`flex items-center gap-1 text-xs ${data.isPastDue ? 'text-red-500' : 'text-gray-400'}`}>
+              <span className={`flex items-center gap-1 text-xs font-mono ${data.isPastDue ? 'text-red-500' : 'text-muted'}`}>
                 <Clock size={12} />
                 {data.isPastDue ? 'Past due' : `Due ${new Date(data.deadline).toLocaleString()}`}
               </span>
             )}
-            {isClosed && <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Closed</span>}
+            {isClosed && <span className="text-xs text-muted bg-surface-2 px-2 py-0.5 rounded-full">Closed</span>}
             {!isLocked && (
               <button
                 onClick={() => submitMutation.mutate()}
                 disabled={submitMutation.isPending || hasExplicitlySubmitted}
-                className="flex items-center gap-1.5 bg-primary-600 text-white text-sm font-medium px-4 py-1.5 rounded-lg hover:bg-primary-700 disabled:opacity-50 transition-colors"
+                className="flex items-center gap-1.5 bg-signal text-white text-sm font-bold px-4 py-1.5 rounded-sm hover:bg-[var(--signal-bright)] disabled:opacity-50 transition-colors"
               >
                 {submitMutation.isPending ? 'Submitting…' : hasExplicitlySubmitted ? 'Submitted ✓' : 'Submit'}
               </button>
@@ -551,10 +548,12 @@ export default function AssignmentPage() {
 
       {/* Grade banner */}
       {isClosed && gradesData && (
-        <div className="bg-blue-50 border-b border-blue-200 px-4 py-2.5">
+        <div className="bg-surface-2 border-b border-hairline px-4 py-2.5">
           <div className="max-w-6xl mx-auto flex items-center justify-between">
-            <span className="text-sm text-blue-800 font-medium">Assignment closed</span>
-            <span className="text-sm text-blue-700">Score: <span className="font-semibold">{gradesData.earned} / {gradesData.max}</span></span>
+            <span className="text-sm text-ink font-medium">Assignment closed</span>
+            <span className="text-sm text-ink-2">
+              Score: <span className="font-semibold font-mono">{gradesData.earned} / {gradesData.max}</span>
+            </span>
           </div>
         </div>
       )}
@@ -587,7 +586,7 @@ export default function AssignmentPage() {
           <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6">
             {currentItem?.kind === 'group' && (
               <div className="space-y-4">
-                <div className="bg-amber-50 border border-amber-100 rounded-2xl p-6">
+                <div className="bg-amber-50 border border-amber-100 rounded-[14px] p-6">
                   <p className="text-sm font-semibold text-amber-900 mb-2">{currentItem.group.title}</p>
                   {currentItem.group.text && <RichTextRenderer content={currentItem.group.text} />}
                 </div>
@@ -600,22 +599,21 @@ export default function AssignmentPage() {
           </div>
 
           {/* Prev / Next / Save */}
-          <div className="shrink-0 flex items-center justify-between gap-3 px-4 md:px-8 py-4 border-t border-gray-200 bg-white">
+          <div className="shrink-0 flex items-center justify-between gap-3 px-4 md:px-8 py-4 border-t border-hairline bg-surface">
             <button
               onClick={() => setCurrentStep((s) => Math.max(0, s - 1))}
               disabled={safeStep === 0}
-              className="flex items-center gap-1.5 text-sm text-gray-600 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-40"
+              className="flex items-center gap-1.5 text-sm text-ink-2 border border-hairline px-4 py-2 rounded-sm hover:bg-surface-2 disabled:opacity-40 transition-colors"
             >
               <ChevronLeft size={15} /> Previous
             </button>
 
-            {/* Save indicator — centre of footer */}
             <div className="flex flex-col items-center gap-1">
               {!isLocked && !hasExplicitlySubmitted && (
                 <button
                   onClick={saveCurrentNow}
                   disabled={saveMutation.isPending}
-                  className="flex items-center gap-1.5 text-xs text-gray-500 border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-50 disabled:opacity-40 transition-colors"
+                  className="flex items-center gap-1.5 text-xs text-muted border border-hairline px-3 py-1.5 rounded-sm hover:bg-surface-2 disabled:opacity-40 transition-colors"
                 >
                   {saveMutation.isPending
                     ? <><Loader2 size={12} className="animate-spin" /> Saving…</>
@@ -624,19 +622,19 @@ export default function AssignmentPage() {
                 </button>
               )}
               {lastSaved && (
-                <span className="text-xs text-gray-400">
+                <span className="text-xs text-muted font-mono">
                   Last saved {lastSaved.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
               )}
               {!lastSaved && (
-                <span className="text-xs text-gray-400">{safeStep + 1} / {displayList.length}</span>
+                <span className="text-xs text-muted font-mono">{safeStep + 1} / {displayList.length}</span>
               )}
             </div>
 
             <button
               onClick={() => setCurrentStep((s) => Math.min(displayList.length - 1, s + 1))}
               disabled={safeStep === displayList.length - 1}
-              className="flex items-center gap-1.5 text-sm text-gray-600 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-40"
+              className="flex items-center gap-1.5 text-sm text-ink-2 border border-hairline px-4 py-2 rounded-sm hover:bg-surface-2 disabled:opacity-40 transition-colors"
             >
               Next <ChevronRight size={15} />
             </button>

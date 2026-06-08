@@ -69,10 +69,10 @@ function ChapterSidebar({
   return (
     <>
       {/* Permanent w-10 strip — always in flow so content width never shifts */}
-      <aside className="w-10 shrink-0 bg-white border-r border-gray-200 flex flex-col items-center py-3 gap-3">
+      <aside className="w-10 shrink-0 bg-surface border-r border-hairline flex flex-col items-center py-3 gap-3">
         <button
           onClick={onToggleCollapse}
-          className="text-gray-400 hover:text-gray-700 transition-colors"
+          className="text-muted hover:text-ink transition-colors"
           title={collapsed ? 'Show chapters' : 'Hide chapters'}
         >
           <Menu size={16} />
@@ -82,7 +82,7 @@ function ChapterSidebar({
             key={ch.name}
             onClick={() => { onSelect(ch); onToggleCollapse() }}
             className={`w-2 h-2 rounded-full shrink-0 transition-colors ${
-              ch.name === selectedName ? 'bg-primary-500' : 'bg-gray-200 hover:bg-gray-400'
+              ch.name === selectedName ? 'bg-signal' : 'bg-hairline hover:bg-hairline-strong'
             }`}
             title={filenameToTitle(ch.name)}
           />
@@ -90,21 +90,21 @@ function ChapterSidebar({
       </aside>
 
       {/* Expanded overlay panel — left-0 so -translate-x-full clears the strip completely */}
-      <aside className={`absolute left-0 top-0 bottom-0 w-64 z-10 bg-white border-r border-gray-200 shadow-lg flex flex-col transition-transform duration-200 ease-in-out ${collapsed ? '-translate-x-full pointer-events-none' : 'translate-x-0'}`}>
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between shrink-0">
+      <aside className={`absolute left-0 top-0 bottom-0 w-64 z-10 bg-surface border-r border-hairline shadow-lg flex flex-col transition-transform duration-200 ease-in-out ${collapsed ? '-translate-x-full pointer-events-none' : 'translate-x-0'}`}>
+          <div className="px-4 py-3 border-b border-hairline flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2">
               <button
                 onClick={onToggleCollapse}
-                className="text-gray-400 hover:text-gray-700 transition-colors"
+                className="text-muted hover:text-ink transition-colors"
                 title="Collapse sidebar"
               >
                 <Menu size={14} />
               </button>
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Chapters</p>
+              <p className="text-xs font-semibold text-muted uppercase tracking-wider">Chapters</p>
             </div>
             <button
               onClick={onToggleExpand}
-              className="text-gray-400 hover:text-gray-700 transition-colors"
+              className="text-muted hover:text-ink transition-colors"
               title={expanded ? 'Exit fullscreen' : 'Fullscreen'}
             >
               {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
@@ -119,29 +119,29 @@ function ChapterSidebar({
                   onClick={() => onSelect(ch)}
                   className={`w-full text-left px-4 py-2.5 flex items-center justify-between gap-2 transition-colors ${
                     isActive
-                      ? 'bg-primary-50 text-primary-700'
-                      : 'text-gray-700 hover:bg-gray-50'
+                      ? 'bg-signal-soft text-signal'
+                      : 'text-ink-2 hover:bg-surface-2'
                   }`}
                 >
                   <span className="text-sm leading-snug flex-1">{filenameToTitle(ch.name)}</span>
                   <span className="shrink-0 flex items-center gap-1">
                     {viewCounts && (
-                      <span className="text-[10px] font-medium text-gray-400 tabular-nums">
+                      <span className="text-[10px] font-medium text-muted tabular-nums font-mono">
                         {viewCounts[ch.name] ?? 0}
                       </span>
                     )}
-                    {isActive && <ChevronRight size={13} className="text-primary-400" />}
+                    {isActive && <ChevronRight size={13} className="text-signal" />}
                   </span>
                 </button>
               )
             })}
           </nav>
           {/* Width + font size controls */}
-          <div className="px-4 py-3 border-t border-gray-100 shrink-0 space-y-3">
+          <div className="px-4 py-3 border-t border-hairline shrink-0 space-y-3">
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <p className="text-xs text-gray-400">Text width</p>
-                <span className="text-xs font-medium text-gray-500 tabular-nums">{contentWidth}px</span>
+                <p className="text-xs text-muted">Text width</p>
+                <span className="text-xs font-medium text-muted tabular-nums font-mono">{contentWidth}px</span>
               </div>
               <input
                 type="range"
@@ -150,20 +150,20 @@ function ChapterSidebar({
                 step={20}
                 value={contentWidth}
                 onChange={(e) => onWidthChange(Number(e.target.value))}
-                className="w-full accent-primary-600"
+                className="w-full accent-[var(--signal)]"
               />
             </div>
             <div>
-              <p className="text-xs text-gray-400 mb-1.5">Text size</p>
-              <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+              <p className="text-xs text-muted mb-1.5">Text size</p>
+              <div className="flex rounded-sm border border-hairline overflow-hidden">
                 {FONT_SIZES.map((s) => (
                   <button
                     key={s.value}
                     onClick={() => onFontSizeChange(s.value)}
                     className={`flex-1 text-xs py-1.5 transition-colors ${
                       fontSize === s.value
-                        ? 'bg-primary-600 text-white font-medium'
-                        : 'text-gray-600 hover:bg-gray-50'
+                        ? 'bg-signal text-white font-medium'
+                        : 'text-ink-2 hover:bg-surface-2'
                     }`}
                   >
                     {s.label}
@@ -206,7 +206,7 @@ function ChapterContent({
 
   if (isLoading) {
     return (
-      <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
+      <div className="flex-1 flex items-center justify-center text-muted text-sm">
         Loading…
       </div>
     )
@@ -223,11 +223,11 @@ function ChapterContent({
   return (
     <article className="flex-1 flex flex-col overflow-hidden">
       {/* Chapter header bar */}
-      <div className="flex items-center justify-between px-8 py-3 border-b border-gray-100 shrink-0">
-        <p className="text-sm font-semibold text-gray-700 truncate pr-4">{filenameToTitle(name)}</p>
+      <div className="flex items-center justify-between px-8 py-3 border-b border-hairline shrink-0">
+        <p className="text-sm font-semibold text-ink-2 truncate pr-4">{filenameToTitle(name)}</p>
         <button
           onClick={onToggleExpand}
-          className="flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+          className="flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-sm border border-hairline text-sm text-ink-2 hover:bg-surface-2 hover:border-hairline-strong transition-colors"
         >
           {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
           {expanded ? 'Exit fullscreen' : 'Fullscreen'}
@@ -251,9 +251,9 @@ function ChapterContent({
 
 function EmptyState() {
   return (
-    <div className="flex-1 flex items-center justify-center text-gray-400">
+    <div className="flex-1 flex items-center justify-center text-muted">
       <div className="text-center">
-        <BookOpen size={40} className="mx-auto mb-3 text-gray-300" />
+        <BookOpen size={40} className="mx-auto mb-3 text-muted opacity-40" />
         <p className="text-sm">Select a chapter to start reading.</p>
       </div>
     </div>
@@ -368,7 +368,7 @@ export default function TextbookPage({ repo, path, classId, viewCounts }: Textbo
 
   if (isLoading) {
     return (
-      <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
+      <div className="flex-1 flex items-center justify-center text-muted text-sm">
         Loading chapters…
       </div>
     )
@@ -421,13 +421,13 @@ export default function TextbookPage({ repo, path, classId, viewCounts }: Textbo
 
           {/* Modal panel */}
           <div
-            className="relative bg-white rounded-xl shadow-2xl overflow-hidden flex"
+            className="relative bg-surface rounded-[14px] shadow-2xl overflow-hidden flex"
             style={{ width: '95vw', height: '95vh' }}
           >
             {/* X button in top-right corner */}
             <button
               onClick={() => setExpanded(false)}
-              className="absolute top-3 right-3 z-10 text-gray-400 hover:text-gray-700 bg-white rounded-full p-1 shadow"
+              className="absolute top-3 right-3 z-10 text-muted hover:text-ink bg-surface rounded-full p-1 shadow"
               title="Close (Esc)"
             >
               <X size={16} />

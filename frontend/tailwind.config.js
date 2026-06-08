@@ -4,18 +4,27 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: {
-          50: '#f0f9ff',
-          100: '#e0f2fe',
-          200: '#bae6fd',
-          300: '#7dd3fc',
-          400: '#38bdf8',
-          500: '#0ea5e9',
-          600: '#0284c7',
-          700: '#0369a1',
-          800: '#075985',
-          900: '#0c4a6e',
-        },
+        // Pulse design tokens
+        canvas:    'var(--canvas)',
+        surface:   { DEFAULT: 'var(--surface)', 2: 'var(--surface-2)' },
+        ink:       { DEFAULT: 'var(--ink)',      2: 'var(--ink-2)' },
+        muted:     'var(--muted)',
+        hairline:  { DEFAULT: 'var(--hairline)', strong: 'var(--hairline-strong)' },
+        signal:    { DEFAULT: 'var(--signal)',   soft: 'var(--signal-soft)' },
+        good:      { DEFAULT: 'var(--good)',     soft: 'var(--good-soft)' },
+        warn:      { DEFAULT: 'var(--warn)',     soft: 'var(--warn-soft)' },
+      },
+      borderRadius: {
+        DEFAULT: '14px',
+        sm: '9px',
+      },
+      fontFamily: {
+        sans: ['"Hanken Grotesk"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'ui-monospace', 'SF Mono', 'monospace'],
+      },
+      boxShadow: {
+        card: 'var(--shadow-card)',
+        pop:  'var(--shadow-pop)',
       },
     },
   },

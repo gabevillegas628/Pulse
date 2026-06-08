@@ -31,23 +31,23 @@ export default function StudentRegisterPage() {
       await registerUser(data.netId, data.email, data.password)
       navigate(next, { replace: true })
     } catch (e: unknown) {
-            setError(apiError(e, 'Registration failed'))
+      setError(apiError(e, 'Registration failed'))
     }
   }
 
   return (
     <StudentLayout>
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
-        <h1 className="text-2xl font-bold text-gray-900 mb-1">Create account</h1>
-        <p className="text-sm text-gray-500 mb-6">One account for all your classes</p>
+      <div className="bg-surface rounded-[14px] shadow-card border border-hairline p-8">
+        <h1 className="text-2xl font-bold text-ink mb-1">Create account</h1>
+        <p className="text-sm text-muted mb-6">One account for all your classes</p>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">NetID</label>
+            <label className="block text-sm font-medium text-ink-2 mb-1">NetID</label>
             <input
               {...register('netId')}
               placeholder="abc123"
-              className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full border border-hairline rounded-[14px] px-3 py-3 text-base bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
               autoCapitalize="none"
               autoCorrect="off"
             />
@@ -55,42 +55,42 @@ export default function StudentRegisterPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <label className="block text-sm font-medium text-ink-2 mb-1">Email</label>
             <input
               {...register('email')}
               type="email"
               placeholder="abc123@rutgers.edu"
-              className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full border border-hairline rounded-[14px] px-3 py-3 text-base bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
               autoCapitalize="none"
             />
             {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email.message}</p>}
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <label className="block text-sm font-medium text-ink-2 mb-1">Password</label>
             <input
               {...register('password')}
               type="password"
               placeholder="8+ characters"
-              className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full border border-hairline rounded-[14px] px-3 py-3 text-base bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
             />
             {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password.message}</p>}
           </div>
 
-          {error && <p className="text-red-500 text-sm bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+          {error && <p className="text-red-500 text-sm bg-red-50 rounded-sm px-3 py-2">{error}</p>}
 
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full bg-primary-600 text-white rounded-lg py-3 text-base font-medium hover:bg-primary-700 disabled:opacity-50 transition-colors"
+            className="w-full bg-signal text-white rounded-sm py-3 text-base font-bold hover:bg-[var(--signal-bright)] disabled:opacity-50 transition-colors"
           >
             {isSubmitting ? 'Creating account…' : 'Create account'}
           </button>
         </form>
 
-        <p className="text-center text-sm text-gray-500 mt-6">
+        <p className="text-center text-sm text-muted mt-6">
           Already have an account?{' '}
-          <Link to={`/student/login${next !== '/student' ? `?next=${next}` : ''}`} className="text-primary-600 font-medium">
+          <Link to={`/student/login${next !== '/student' ? `?next=${next}` : ''}`} className="text-signal font-medium">
             Sign in
           </Link>
         </p>

@@ -43,20 +43,20 @@ export default function CodeEntryPage() {
     <StudentLayout>
       <button
         onClick={() => navigate('/student')}
-        className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 mb-5"
+        className="flex items-center gap-1 text-sm text-muted hover:text-ink mb-5 transition-colors"
       >
         <ChevronLeft size={16} /> My classes
       </button>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 text-center">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">Enter question code</h1>
-        <p className="text-sm text-gray-500 mb-8">Enter the 4-digit code your professor is showing</p>
+      <div className="bg-surface rounded-[14px] shadow-card border border-hairline p-8 text-center">
+        <h1 className="text-2xl font-bold text-ink mb-2">Enter question code</h1>
+        <p className="text-sm text-muted mb-8">Enter the 4-digit code your professor is showing</p>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <input
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
-            className="w-full text-center text-4xl font-mono tracking-widest border-2 border-gray-300 rounded-xl px-4 py-5 focus:outline-none focus:border-primary-500"
+            className="w-full text-center text-4xl font-mono tracking-widest border-2 border-hairline-strong rounded-[14px] px-4 py-5 bg-surface focus:outline-none focus:border-signal transition-colors"
             placeholder="0000"
             inputMode="numeric"
             maxLength={4}
@@ -68,7 +68,7 @@ export default function CodeEntryPage() {
           <button
             type="submit"
             disabled={loading || code.length !== 4}
-            className="w-full bg-primary-600 text-white rounded-xl py-4 text-lg font-medium hover:bg-primary-700 disabled:opacity-40 transition-colors"
+            className="w-full bg-signal text-white rounded-[14px] py-4 text-lg font-bold hover:bg-[var(--signal-bright)] disabled:opacity-40 transition-colors"
           >
             {loading ? 'Looking up…' : 'Go'}
           </button>

@@ -28,7 +28,7 @@ export default function StudentTextbookPage() {
   if (isLoading) {
     return (
       <TextbookLayout backHref={backHref} backLabel="My Classes">
-        <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
+        <div className="flex-1 flex items-center justify-center text-muted text-sm">
           Loading…
         </div>
       </TextbookLayout>
@@ -50,9 +50,9 @@ export default function StudentTextbookPage() {
       <TextbookLayout backHref={backHref} backLabel="My Classes">
         <div className="flex-1 flex items-center justify-center p-8">
           <div className="text-center">
-            <BookOpen size={40} className="mx-auto mb-3 text-gray-300" />
-            <p className="text-sm text-gray-500">
-              No textbook has been linked to <strong>{data.name}</strong> yet.
+            <BookOpen size={40} className="mx-auto mb-3 text-muted" />
+            <p className="text-sm text-muted">
+              No textbook has been linked to <strong className="text-ink-2">{data.name}</strong> yet.
             </p>
           </div>
         </div>

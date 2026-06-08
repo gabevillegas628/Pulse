@@ -6,6 +6,12 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
+import Button from '@/components/ui/Button'
+import Card from '@/components/ui/Card'
+import Tabs from '@/components/ui/Tabs'
+import Pill from '@/components/ui/Pill'
+import CodeChip from '@/components/ui/CodeChip'
+import Empty from '@/components/ui/Empty'
 import { Plus, Trash2, X, ChevronLeft, ChevronDown, Download, KeyRound, Copy, Users, BookOpen, Settings, RefreshCw } from 'lucide-react'
 import type { QuestionType, StudentStats, ActivitySession, GradebookSession, GradebookStudentRow } from 'shared'
 import TextbookPage from '@/pages/shared/TextbookPage'
@@ -64,6 +70,22 @@ interface Section {
   name: string
   joinCode: string
 }
+
+type PillVariant = 'live' | 'good' | 'warn' | 'muted'
+function statusPill(status: string) {
+  const map: Record<string, PillVariant> = {
+    OPEN: 'good', DRAFT: 'warn', CLOSED: 'muted', ARCHIVED: 'muted',
+  }
+  return map[status] ?? 'muted'
+}
+
+const CLASS_TABS = [
+  { key: 'sessions',     label: 'Sessions' },
+  { key: 'assignments',  label: 'Assignments' },
+  { key: 'grades',       label: 'Grades' },
+  { key: 'roster',       label: 'Roster' },
+  { key: 'textbook',     label: 'Textbook' },
+] as const
 
 export default function ClassPage() {
   const { classId } = useParams<{ classId: string }>()
@@ -185,7 +207,7 @@ export default function ClassPage() {
       reset()
     },
     onError: (e: unknown) => {
-            setCreateError(apiError(e, 'Failed to create session'))
+      setCreateError(apiError(e, 'Failed to create session'))
     },
   })
 
@@ -213,7 +235,7 @@ export default function ClassPage() {
       navigate(`/professor/classes/${classId}/assignments/${res.data.data.session.id}`)
     },
     onError: (e: unknown) => {
-            setAssignmentError(apiError(e, 'Failed to create assignment'))
+      setAssignmentError(apiError(e, 'Failed to create assignment'))
     },
   })
 
@@ -238,7 +260,7 @@ export default function ClassPage() {
       api.post(`/classes/${classId}/students/${studentId}/reset-password`, { newPassword }),
     onSuccess: () => setResetSuccess(true),
     onError: (e: unknown) => {
-            setResetError(apiError(e, 'Reset failed — try again'))
+      setResetError(apiError(e, 'Reset failed — try again'))
     },
   })
 
@@ -279,7 +301,7 @@ export default function ClassPage() {
       qc.invalidateQueries({ queryKey: ['classes'] })
       navigate(`/professor/classes/${newClassId}`)
     } catch (err: unknown) {
-            setDupError(apiError(err, 'Failed to duplicate class'))
+      setDupError(apiError(err, 'Failed to duplicate class'))
     } finally {
       setDupLoading(false)
     }
@@ -299,38 +321,39 @@ export default function ClassPage() {
       qc.invalidateQueries({ queryKey: ['class', classId] })
       setShowTextbookSettings(false)
     } catch (err: unknown) {
-            setTbError(apiError(err, 'Failed to save'))
+      setTbError(apiError(err, 'Failed to save'))
     } finally {
       setTbSaving(false)
     }
   }
 
-  if (isLoading) return <ProfessorLayout><p className="text-gray-400">Loading…</p></ProfessorLayout>
+  if (isLoading) return <ProfessorLayout><Empty icon={BookOpen} message="Loading class…" /></ProfessorLayout>
 
   return (
     <ProfessorLayout>
+      {/* Page header */}
       <div className="mb-6">
-        <Link to="/professor" className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 mb-4">
+        <Link to="/professor" className="flex items-center gap-1 text-sm text-muted hover:text-ink mb-4 transition-colors">
           <ChevronLeft size={16} /> All classes
         </Link>
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{data?.name}</h1>
-            {data?.description && <p className="text-gray-500 text-sm">{data.description}</p>}
-            <div className="flex items-center gap-3 mt-2">
-              <span className="text-xs text-gray-400">Join code:</span>
-              <span className="font-mono text-sm bg-gray-100 px-2 py-0.5 rounded font-medium tracking-wider">{data?.joinCode}</span>
+            <h1 className="text-2xl font-bold text-ink">{data?.name}</h1>
+            {data?.description && <p className="text-muted text-sm mt-0.5">{data.description}</p>}
+            <div className="flex items-center gap-2 mt-2">
+              <span className="text-xs text-muted">Join code</span>
+              <CodeChip>{data?.joinCode}</CodeChip>
             </div>
 
             {/* Sections */}
             <div className="flex flex-wrap items-center gap-2 mt-2">
-              <Users size={13} className="text-gray-400 shrink-0" />
+              <Users size={13} className="text-muted shrink-0" />
               {sections.length === 0 ? (
-                <span className="text-xs text-gray-400">No sections</span>
+                <span className="text-xs text-muted">No sections</span>
               ) : (
                 sections.map((s) => (
-                  <span key={s.id} className="text-xs bg-gray-100 px-2 py-0.5 rounded font-medium text-gray-700">
-                    {s.name} <span className="font-mono text-gray-400">{s.joinCode}</span>
+                  <span key={s.id} className="text-xs bg-surface-2 px-2 py-0.5 rounded-sm font-medium text-ink-2">
+                    {s.name} <span className="font-mono text-muted">{s.joinCode}</span>
                   </span>
                 ))
               )}
@@ -340,114 +363,84 @@ export default function ClassPage() {
                     value={newSectionName}
                     onChange={(e) => setNewSectionName(e.target.value)}
                     placeholder="e.g. 001"
-                    className="border border-gray-300 rounded px-2 py-0.5 text-xs w-20 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    className="border border-hairline rounded px-2 py-0.5 text-xs w-20 focus:outline-none focus:ring-1 focus:ring-signal bg-surface"
                     autoFocus
                   />
-                  <button type="submit" disabled={sectionLoading || !newSectionName.trim()} className="text-xs text-primary-600 hover:text-primary-800 disabled:opacity-50">Add</button>
-                  <button type="button" onClick={() => { setShowAddSection(false); setNewSectionName('') }} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+                  <button type="submit" disabled={sectionLoading || !newSectionName.trim()} className="text-xs text-signal hover:text-[var(--signal-bright)] disabled:opacity-50">Add</button>
+                  <button type="button" onClick={() => { setShowAddSection(false); setNewSectionName('') }} className="text-xs text-muted hover:text-ink">Cancel</button>
                 </form>
               ) : (
-                <button onClick={() => setShowAddSection(true)} className="text-xs text-primary-600 hover:text-primary-800 flex items-center gap-0.5">
+                <button onClick={() => setShowAddSection(true)} className="text-xs text-signal hover:text-[var(--signal-bright)] flex items-center gap-0.5 transition-colors">
                   <Plus size={12} /> Add section
                 </button>
               )}
             </div>
           </div>
+
+          {/* Toolbar */}
           <div className="flex items-center gap-2">
-            <button
-              onClick={openDuplicate}
-              className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2 rounded-lg text-sm hover:bg-gray-50"
-              title="Duplicate this class for a new semester"
-            >
+            <Button variant="ghost" onClick={openDuplicate} title="Duplicate this class for a new semester">
               <Copy size={14} /> Duplicate
-            </button>
+            </Button>
             <a
               href={`/api/classes/${classId}/grades`}
-              className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2 rounded-lg text-sm hover:bg-gray-50"
+              className="inline-flex items-center gap-1.5 bg-surface border border-hairline-strong text-ink-2 rounded-sm px-4 py-2 text-sm font-bold hover:bg-surface-2 transition-colors"
               title="Export class-wide grade CSV"
             >
               <Download size={14} /> Export Grades
             </a>
             {tab === 'sessions' && (
-              <button
-                onClick={() => setShowModal(true)}
-                className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors"
-              >
+              <Button variant="primary" onClick={() => setShowModal(true)}>
                 <Plus size={16} /> New session
-              </button>
+              </Button>
             )}
             {tab === 'assignments' && (
-              <button
-                onClick={() => { setAssignmentError(''); setShowAssignmentModal(true) }}
-                className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors"
-              >
+              <Button variant="primary" onClick={() => { setAssignmentError(''); setShowAssignmentModal(true) }}>
                 <Plus size={16} /> New assignment
-              </button>
+              </Button>
             )}
           </div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 border-b border-gray-200">
-        {([
-          { key: 'sessions', label: 'Sessions' },
-          { key: 'assignments', label: 'Assignments' },
-          { key: 'grades', label: 'Grades' },
-          { key: 'roster', label: 'Roster' },
-          { key: 'textbook', label: 'Textbook' },
-        ] as const).map(({ key, label }) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              tab === key
-                ? 'border-primary-600 text-primary-700'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        tabs={CLASS_TABS as unknown as { key: string; label: string }[]}
+        active={tab}
+        onChange={(k) => setTab(k as typeof tab)}
+        className="mb-6"
+      />
 
       {/* Sessions tab */}
       {tab === 'sessions' && (
         !sessionsData ? (
-          <p className="text-gray-400 text-center py-8">Loading…</p>
+          <Empty icon={BookOpen} message="Loading sessions…" />
         ) : sessionsData.length === 0 ? (
-          <div className="text-center py-16 text-gray-400">
-            <p className="text-sm">No sessions yet — create one to start collecting responses</p>
-          </div>
+          <Empty icon={BookOpen} message="No sessions yet — create one to start collecting responses." />
         ) : (
           <div className="space-y-3">
             {sessionsData.map((s) => (
-              <div key={s.id} className="group relative flex items-center bg-white border border-gray-200 rounded-xl hover:shadow-sm transition-shadow">
+              <div key={s.id} className="group relative flex items-center bg-surface border border-hairline rounded-[14px] hover:shadow-card transition-shadow">
                 <Link
                   to={`/professor/sessions/${s.id}`}
                   className="flex-1 flex items-center justify-between p-5"
                 >
                   <div>
-                    <p className="font-medium text-gray-900">{s.title}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">
+                    <p className="font-medium text-ink">{s.title}</p>
+                    <p className="text-xs text-muted mt-0.5">
                       {s.questions?.length ?? 0} question{(s.questions?.length ?? 0) !== 1 ? 's' : ''} ·{' '}
                       {new Date(s.createdAt).toLocaleDateString()}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
                     {s.targetSection && (
-                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
+                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-surface-2 text-ink-2">
                         §{s.targetSection.name}
                       </span>
                     )}
-                    <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${
-                      s.status === 'DRAFT' ? 'bg-yellow-50 text-yellow-600' :
-                      s.status === 'OPEN' ? 'bg-green-100 text-green-700' :
-                      s.status === 'CLOSED' ? 'bg-gray-100 text-gray-500' :
-                      'bg-gray-50 text-gray-400'
-                    }`}>
+                    <Pill variant={statusPill(s.status)}>
                       {s.status.charAt(0) + s.status.slice(1).toLowerCase()}
-                    </span>
+                    </Pill>
                   </div>
                 </Link>
                 <button
@@ -457,7 +450,7 @@ export default function ClassPage() {
                     deleteSessionMutation.mutate(s.id)
                   }}
                   disabled={deleteSessionMutation.isPending}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 px-4 py-5 text-gray-300 hover:text-red-500 disabled:opacity-30"
+                  className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 px-4 py-5 text-hairline-strong hover:text-red-500 disabled:opacity-30"
                   title="Delete session"
                 >
                   <Trash2 size={15} />
@@ -471,34 +464,26 @@ export default function ClassPage() {
       {/* Assignments tab */}
       {tab === 'assignments' && (
         !assignmentsData ? (
-          <p className="text-gray-400 text-center py-8">Loading…</p>
+          <Empty icon={BookOpen} message="Loading assignments…" />
         ) : assignmentsData.length === 0 ? (
-          <div className="text-center py-16 text-gray-400">
-            <BookOpen size={32} className="mx-auto mb-3 opacity-30" />
-            <p className="text-sm">No assignments yet — create one above</p>
-          </div>
+          <Empty icon={BookOpen} message="No assignments yet — create one above." />
         ) : (
           <div className="space-y-3">
             {assignmentsData.map((a) => (
-              <div key={a.id} className="group relative flex items-center bg-white border border-gray-200 rounded-xl hover:shadow-sm transition-shadow">
+              <div key={a.id} className="group relative flex items-center bg-surface border border-hairline rounded-[14px] hover:shadow-card transition-shadow">
                 <Link
                   to={`/professor/classes/${classId}/assignments/${a.id}`}
                   className="flex-1 flex items-center justify-between p-5"
                 >
                   <div>
-                    <p className="font-medium text-gray-900">{a.title}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">
+                    <p className="font-medium text-ink">{a.title}</p>
+                    <p className="text-xs text-muted mt-0.5">
                       {a._count.questions} question{a._count.questions !== 1 ? 's' : ''}{a.deadline ? ` · Due ${new Date(a.deadline).toLocaleDateString()}` : ''}
                     </p>
                   </div>
-                  <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${
-                    a.status === 'DRAFT' ? 'bg-yellow-50 text-yellow-600' :
-                    a.status === 'OPEN' ? 'bg-green-100 text-green-700' :
-                    a.status === 'CLOSED' ? 'bg-gray-100 text-gray-500' :
-                    'bg-gray-50 text-gray-400'
-                  }`}>
+                  <Pill variant={statusPill(a.status)}>
                     {a.status.charAt(0) + a.status.slice(1).toLowerCase()}
-                  </span>
+                  </Pill>
                 </Link>
                 <button
                   onClick={(e) => {
@@ -507,7 +492,7 @@ export default function ClassPage() {
                     deleteAssignmentMutation.mutate(a.id)
                   }}
                   disabled={deleteAssignmentMutation.isPending}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 px-4 py-5 text-gray-300 hover:text-red-500 disabled:opacity-30"
+                  className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 px-4 py-5 text-hairline-strong hover:text-red-500 disabled:opacity-30"
                   title="Delete assignment"
                 >
                   <Trash2 size={15} />
@@ -521,7 +506,7 @@ export default function ClassPage() {
       {/* Grades tab */}
       {tab === 'grades' && (
         !gradebookData ? (
-          <p className="text-gray-400 text-center py-8">Loading…</p>
+          <Empty message="Loading grades…" />
         ) : (
           <>
             <GradebookTable
@@ -559,20 +544,18 @@ export default function ClassPage() {
       {/* Roster tab */}
       {tab === 'roster' && (
         !rosterData ? (
-          <p className="text-gray-400 text-center py-8">Loading…</p>
+          <Empty icon={Users} message="Loading roster…" />
         ) : rosterData.length === 0 ? (
-          <div className="text-center py-16 text-gray-400">
-            <p className="text-sm">No students enrolled yet</p>
-          </div>
+          <Empty icon={Users} message="No students enrolled yet." />
         ) : (
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="bg-surface border border-hairline rounded-[14px] overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-100 text-left">
-                  <th className="px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">NetID</th>
-                  <th className="px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Email</th>
-                  {sections.length > 0 && <th className="px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Section</th>}
-                  <th className="px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Participation</th>
+                <tr className="border-b border-hairline text-left">
+                  <th className="px-5 py-3 text-xs font-medium text-muted uppercase tracking-wide">NetID</th>
+                  <th className="px-5 py-3 text-xs font-medium text-muted uppercase tracking-wide">Email</th>
+                  {sections.length > 0 && <th className="px-5 py-3 text-xs font-medium text-muted uppercase tracking-wide">Section</th>}
+                  <th className="px-5 py-3 text-xs font-medium text-muted uppercase tracking-wide">Participation</th>
                   <th className="px-5 py-3"></th>
                 </tr>
               </thead>
@@ -595,39 +578,39 @@ export default function ClassPage() {
                       <tr
                         key={e.student.id}
                         onClick={toggleExpand}
-                        className="border-t border-gray-50 hover:bg-gray-50 cursor-pointer"
+                        className="border-t border-hairline hover:bg-surface-2 cursor-pointer"
                       >
-                        <td className="px-5 py-3.5 font-medium text-gray-900 flex items-center gap-1.5">
-                          <ChevronDown size={14} className={`text-gray-300 transition-transform shrink-0 ${isExpanded ? 'rotate-180' : ''}`} />
+                        <td className="px-5 py-3.5 font-medium text-ink flex items-center gap-1.5">
+                          <ChevronDown size={14} className={`text-hairline-strong transition-transform shrink-0 ${isExpanded ? 'rotate-180' : ''}`} />
                           {e.student.netId}
                         </td>
-                        <td className="px-5 py-3.5 text-gray-600">{e.student.email}</td>
-                        <td className="px-5 py-3.5 text-gray-500">{e.student.email}</td>
+                        <td className="px-5 py-3.5 text-ink-2">{e.student.email}</td>
+                        <td className="px-5 py-3.5 text-muted">{e.student.email}</td>
                         {sections.length > 0 && (
                           <td className="px-5 py-3.5" onClick={(ev) => ev.stopPropagation()}>
                             <select
                               value={e.section?.id ?? ''}
                               onChange={(ev) => assignSection(e.student.id, ev.target.value || null)}
-                              className="text-xs border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                              className="text-xs border border-hairline rounded px-1.5 py-1 bg-surface text-ink-2 focus:outline-none focus:ring-1 focus:ring-signal"
                             >
                               <option value="">— unassigned</option>
                               {sections.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                             </select>
                           </td>
                         )}
-                        <td className="px-5 py-3.5 text-gray-600">
+                        <td className="px-5 py-3.5 text-ink-2">
                           {e.stats.totalClosedSessions > 0 ? (
-                            <span className={e.stats.sessionsParticipated === 0 ? 'text-gray-400' : ''}>
+                            <span className={e.stats.sessionsParticipated === 0 ? 'text-muted' : ''}>
                               {e.stats.sessionsParticipated}/{e.stats.totalClosedSessions} sessions
                             </span>
                           ) : (
-                            <span className="text-gray-300">—</span>
+                            <span className="text-hairline-strong">—</span>
                           )}
                         </td>
                         <td className="px-5 py-3.5 text-right" onClick={(ev) => ev.stopPropagation()}>
                           <button
                             onClick={() => openReset(e.student)}
-                            className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-primary-600 ml-auto"
+                            className="flex items-center gap-1.5 text-xs text-muted hover:text-signal ml-auto transition-colors"
                           >
                             <KeyRound size={13} /> Reset password
                           </button>
@@ -635,25 +618,21 @@ export default function ClassPage() {
                       </tr>
 
                       {isExpanded && (
-                        <tr key={`${e.student.id}-detail`} className="border-t border-gray-50 bg-gray-50">
+                        <tr key={`${e.student.id}-detail`} className="border-t border-hairline bg-surface-2">
                           <td colSpan={sections.length > 0 ? 6 : 5} className="px-5 py-4">
                             {!activity ? (
-                              <p className="text-xs text-gray-400">Loading…</p>
+                              <p className="text-xs text-muted">Loading…</p>
                             ) : activity.length === 0 ? (
-                              <p className="text-xs text-gray-400">No sessions yet.</p>
+                              <p className="text-xs text-muted">No sessions yet.</p>
                             ) : (
                               <div className="space-y-3">
                                 {activity.map((session) => (
                                   <div key={session.id}>
                                     <div className="flex items-center gap-2 mb-1.5">
-                                      <span className="text-xs font-medium text-gray-700">{session.title}</span>
-                                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                                        session.status === 'OPEN' ? 'bg-green-100 text-green-700' :
-                                        session.status === 'CLOSED' ? 'bg-gray-100 text-gray-500' :
-                                        'bg-gray-50 text-gray-400'
-                                      }`}>
+                                      <span className="text-xs font-medium text-ink-2">{session.title}</span>
+                                      <Pill variant={statusPill(session.status)}>
                                         {session.status.charAt(0) + session.status.slice(1).toLowerCase()}
-                                      </span>
+                                      </Pill>
                                     </div>
                                     <div className="flex flex-wrap gap-2">
                                       {session.questions.map((q) => (
@@ -662,13 +641,13 @@ export default function ClassPage() {
                                           title={q.text + (q.response ? `\n"${q.response.responseText}"` : '')}
                                           className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${
                                             q.response
-                                              ? 'border-primary-200 bg-primary-50 text-primary-700'
-                                              : 'border-gray-200 bg-white text-gray-400'
+                                              ? 'border-good/30 bg-good-soft text-good'
+                                              : 'border-hairline bg-surface text-muted'
                                           }`}
                                         >
                                           Q{q.number} {q.response ? '✓' : '—'}
                                           {q.response && q.type === 'FREE_TEXT' && (
-                                            <span className="text-primary-400">{q.response.wordCount}w</span>
+                                            <span className="text-good">{q.response.wordCount}w</span>
                                           )}
                                         </span>
                                       ))}
@@ -697,53 +676,49 @@ export default function ClassPage() {
         if (showTextbookSettings || !repo) {
           return (
             <div className="max-w-lg">
-              <h2 className="text-base font-semibold text-gray-800 mb-1">
+              <h2 className="text-base font-semibold text-ink mb-1">
                 {repo ? 'Edit textbook' : 'Link a textbook'}
               </h2>
-              <p className="text-sm text-gray-500 mb-5">
-                Point to a public GitHub repo containing <code className="bg-gray-100 px-1 rounded">.md</code> chapter files.
+              <p className="text-sm text-muted mb-5">
+                Point to a public GitHub repo containing <code className="bg-surface-2 px-1 rounded">.md</code> chapter files.
                 The chapter list is read from the GitHub Contents API.
               </p>
               <form onSubmit={saveTextbook} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    GitHub repo <span className="text-gray-400 font-normal">(owner/repo)</span>
+                  <label className="block text-sm font-medium text-ink-2 mb-1">
+                    GitHub repo <span className="text-muted font-normal">(owner/repo)</span>
                   </label>
                   <input
                     value={tbRepo}
                     onChange={(e) => setTbRepo(e.target.value)}
                     placeholder="gabevillegas628/BiochemistryLifeSci"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
                     autoFocus
                     onFocus={() => { if (!tbRepo && repo) setTbRepo(repo) }}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Sub-folder <span className="text-gray-400 font-normal">(leave blank if .md files are at the root)</span>
+                  <label className="block text-sm font-medium text-ink-2 mb-1">
+                    Sub-folder <span className="text-muted font-normal">(leave blank if .md files are at the root)</span>
                   </label>
                   <input
                     value={tbPath}
                     onChange={(e) => setTbPath(e.target.value)}
                     placeholder="chapters"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
                     onFocus={() => { if (!tbPath && path) setTbPath(path) }}
                   />
                 </div>
                 {tbError && <p className="text-red-500 text-sm">{tbError}</p>}
                 <div className="flex items-center gap-3 pt-1">
                   {repo && (
-                    <button type="button" onClick={() => setShowTextbookSettings(false)} className="text-sm text-gray-500 hover:text-gray-700">
+                    <button type="button" onClick={() => setShowTextbookSettings(false)} className="text-sm text-muted hover:text-ink transition-colors">
                       Cancel
                     </button>
                   )}
-                  <button
-                    type="submit"
-                    disabled={tbSaving || !tbRepo.trim()}
-                    className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
-                  >
+                  <Button type="submit" variant="primary" disabled={tbSaving || !tbRepo.trim()}>
                     {tbSaving ? 'Saving…' : repo ? 'Save changes' : 'Link textbook'}
-                  </button>
+                  </Button>
                   {repo && (
                     <button
                       type="button"
@@ -756,7 +731,7 @@ export default function ClassPage() {
                           setShowTextbookSettings(false)
                         } finally { setTbSaving(false) }
                       }}
-                      className="ml-auto text-sm text-red-400 hover:text-red-600 disabled:opacity-50"
+                      className="ml-auto text-sm text-red-400 hover:text-red-600 disabled:opacity-50 transition-colors"
                     >
                       Remove textbook
                     </button>
@@ -770,16 +745,16 @@ export default function ClassPage() {
         return (
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm text-gray-500">
+              <div className="flex items-center gap-2 text-sm text-muted">
                 <BookOpen size={14} />
-                <span className="font-mono text-gray-700">{repo}</span>
-                {path && <span className="text-gray-400">/{path}</span>}
+                <span className="font-mono text-ink-2">{repo}</span>
+                {path && <span className="text-muted">/{path}</span>}
               </div>
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => refreshTextbookMutation.mutate()}
                   disabled={refreshTextbookMutation.isPending}
-                  className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-700 disabled:opacity-50"
+                  className="flex items-center gap-1.5 text-sm text-muted hover:text-ink disabled:opacity-50 transition-colors"
                   title="Clears the server cache so students see the latest version from GitHub"
                 >
                   <RefreshCw size={13} className={refreshTextbookMutation.isPending ? 'animate-spin' : ''} />
@@ -787,14 +762,14 @@ export default function ClassPage() {
                 </button>
                 <button
                   onClick={() => { setTbRepo(repo); setTbPath(path); setShowTextbookSettings(true) }}
-                  className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-700"
+                  className="flex items-center gap-1.5 text-sm text-muted hover:text-ink transition-colors"
                 >
                   <Settings size={13} /> Edit
                 </button>
               </div>
             </div>
             <div
-              className="border border-gray-200 rounded-xl overflow-hidden flex"
+              className="border border-hairline rounded-[14px] overflow-hidden flex"
               style={{ height: 'calc(100vh - 400px)', minHeight: '480px' }}
             >
               <TextbookPage repo={repo} path={path} classId={classId} viewCounts={viewCounts} />
@@ -806,19 +781,21 @@ export default function ClassPage() {
       {/* Create session modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex items-start justify-center z-50 px-4 py-8 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 my-auto">
+          <Card flat className="w-full max-w-lg p-6 shadow-pop my-auto">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-semibold">New session</h2>
-              <button onClick={() => { setShowModal(false); reset() }}><X size={20} className="text-gray-400" /></button>
+              <h2 className="text-lg font-semibold text-ink">New session</h2>
+              <button onClick={() => { setShowModal(false); reset() }} className="text-muted hover:text-ink-2 transition-colors">
+                <X size={20} />
+              </button>
             </div>
 
             <form onSubmit={handleSubmit((d) => { setCreateError(''); createMutation.mutate(d) })} className="space-y-5">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Session title</label>
+                <label className="block text-sm font-medium text-ink-2 mb-1">Session title</label>
                 <input
                   {...register('title')}
                   placeholder="Week 3 Opener"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
                   autoFocus
                 />
                 {errors.title && <p className="text-red-500 text-xs mt-1">{errors.title.message}</p>}
@@ -826,11 +803,11 @@ export default function ClassPage() {
 
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-sm font-medium text-gray-700">Questions</label>
+                  <label className="text-sm font-medium text-ink-2">Questions</label>
                   <button
                     type="button"
                     onClick={() => append({ text: '', type: 'FREE_TEXT', options: [] })}
-                    className="text-xs text-primary-600 hover:text-primary-800 flex items-center gap-1"
+                    className="text-xs text-signal hover:text-[var(--signal-bright)] flex items-center gap-1 transition-colors"
                   >
                     <Plus size={13} /> Add question
                   </button>
@@ -838,11 +815,11 @@ export default function ClassPage() {
 
                 <div className="space-y-4">
                   {fields.map((field, idx) => (
-                    <div key={field.id} className="border border-gray-200 rounded-xl p-4 space-y-3">
+                    <div key={field.id} className="border border-hairline rounded-[14px] p-4 space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium text-gray-400">Question {idx + 1}</span>
+                        <span className="text-xs font-medium text-muted">Question {idx + 1}</span>
                         {fields.length > 1 && (
-                          <button type="button" onClick={() => remove(idx)} className="text-gray-300 hover:text-red-400">
+                          <button type="button" onClick={() => remove(idx)} className="text-hairline-strong hover:text-red-400 transition-colors">
                             <Trash2 size={14} />
                           </button>
                         )}
@@ -851,7 +828,7 @@ export default function ClassPage() {
                       <input
                         {...register(`questions.${idx}.text`)}
                         placeholder="Enter question text…"
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        className="w-full border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
                       />
                       {errors.questions?.[idx]?.text && (
                         <p className="text-red-500 text-xs">{errors.questions[idx]?.text?.message}</p>
@@ -859,7 +836,7 @@ export default function ClassPage() {
 
                       <select
                         {...register(`questions.${idx}.type`)}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+                        className="w-full border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
                       >
                         {Object.entries(TYPE_LABELS).map(([val, label]) => (
                           <option key={val} value={val}>{label}</option>
@@ -868,11 +845,11 @@ export default function ClassPage() {
 
                       {watchedQuestions[idx]?.type === 'MULTIPLE_CHOICE' && (
                         <div className="space-y-2">
-                          <p className="text-xs text-gray-500">Options (one per line)</p>
+                          <p className="text-xs text-muted">Options (one per line)</p>
                           <textarea
                             rows={3}
                             placeholder={"Option A\nOption B\nOption C"}
-                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+                            className="w-full border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal resize-none"
                             onChange={(e) => {
                               const opts = e.target.value.split('\n').map((s) => s.trim()).filter(Boolean)
                               setValue(`questions.${idx}.options`, opts)
@@ -888,74 +865,71 @@ export default function ClassPage() {
               {createError && <p className="text-red-500 text-sm">{createError}</p>}
 
               <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => { setShowModal(false); reset() }} className="px-4 py-2 text-sm text-gray-600">
+                <button type="button" onClick={() => { setShowModal(false); reset() }} className="px-4 py-2 text-sm text-muted hover:text-ink transition-colors">
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-5 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
-                >
+                <Button type="submit" variant="primary" disabled={isSubmitting}>
                   {isSubmitting ? 'Creating…' : 'Create session'}
-                </button>
+                </Button>
               </div>
             </form>
-          </div>
+          </Card>
         </div>
       )}
 
       {/* Reset password modal */}
       {resetTarget && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+          <Card flat className="w-full max-w-sm p-6 shadow-pop">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-semibold">Reset password</h2>
-              <button onClick={closeReset}><X size={18} className="text-gray-400" /></button>
+              <h2 className="text-base font-semibold text-ink">Reset password</h2>
+              <button onClick={closeReset} className="text-muted hover:text-ink-2 transition-colors"><X size={18} /></button>
             </div>
 
             {resetSuccess ? (
               <div className="text-center py-4">
-                <p className="text-green-600 font-medium mb-1">Password updated</p>
-                <p className="text-sm text-gray-500 mb-5">{resetTarget.netId}'s password has been reset.</p>
-                <button onClick={closeReset} className="text-sm text-primary-600 hover:underline">Close</button>
+                <p className="text-good font-medium mb-1">Password updated</p>
+                <p className="text-sm text-muted mb-5">{resetTarget.netId}'s password has been reset.</p>
+                <button onClick={closeReset} className="text-sm text-signal hover:underline">Close</button>
               </div>
             ) : (
               <>
-                <p className="text-sm text-gray-500 mb-4">
-                  Setting a new password for <span className="font-medium text-gray-800">{resetTarget.netId}</span>
+                <p className="text-sm text-muted mb-4">
+                  Setting a new password for <span className="font-medium text-ink">{resetTarget.netId}</span>
                 </p>
                 <input
                   type="password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="New password (min 8 chars)"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 mb-3"
+                  className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal mb-3"
                   autoFocus
                 />
                 {resetError && <p className="text-red-500 text-xs mb-3">{resetError}</p>}
                 <div className="flex justify-end gap-3">
-                  <button onClick={closeReset} className="px-4 py-2 text-sm text-gray-600">Cancel</button>
-                  <button
+                  <button onClick={closeReset} className="px-4 py-2 text-sm text-muted hover:text-ink transition-colors">Cancel</button>
+                  <Button
+                    variant="primary"
                     onClick={() => resetMutation.mutate({ studentId: resetTarget.id, newPassword })}
                     disabled={newPassword.length < 8 || resetMutation.isPending}
-                    className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
                   >
                     {resetMutation.isPending ? 'Saving…' : 'Save'}
-                  </button>
+                  </Button>
                 </div>
               </>
             )}
-          </div>
+          </Card>
         </div>
       )}
+
       {/* Create assignment modal */}
       {showAssignmentModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+          <Card flat className="w-full max-w-md p-6 shadow-pop">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-semibold">New assignment</h2>
-              <button onClick={() => { setShowAssignmentModal(false); resetHw() }}>
-                <X size={20} className="text-gray-400" />
+              <h2 className="text-lg font-semibold text-ink">New assignment</h2>
+              <button onClick={() => { setShowAssignmentModal(false); resetHw() }} className="text-muted hover:text-ink-2 transition-colors">
+                <X size={20} />
               </button>
             </div>
 
@@ -967,25 +941,25 @@ export default function ClassPage() {
               className="space-y-4"
             >
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                <label className="block text-sm font-medium text-ink-2 mb-1">Title</label>
                 <input
                   {...regHw('title')}
                   placeholder="Homework 1"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
                   autoFocus
                 />
                 {hwErrors.title && <p className="text-red-500 text-xs mt-1">{hwErrors.title.message}</p>}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Deadline</label>
+                <label className="block text-sm font-medium text-ink-2 mb-1">Deadline</label>
                 <input
                   {...regHw('deadline')}
                   type="datetime-local"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
                 />
                 {hwErrors.deadline && <p className="text-red-500 text-xs mt-1">{hwErrors.deadline.message}</p>}
               </div>
-              <p className="text-xs text-gray-400">Questions are added in the assignment editor after creation.</p>
+              <p className="text-xs text-muted">Questions are added in the assignment editor after creation.</p>
 
               {assignmentError && <p className="text-red-500 text-sm">{assignmentError}</p>}
 
@@ -993,54 +967,50 @@ export default function ClassPage() {
                 <button
                   type="button"
                   onClick={() => { setShowAssignmentModal(false); resetHw() }}
-                  className="px-4 py-2 text-sm text-gray-600"
+                  className="px-4 py-2 text-sm text-muted hover:text-ink transition-colors"
                 >
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  disabled={hwSubmitting}
-                  className="px-5 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
-                >
+                <Button type="submit" variant="primary" disabled={hwSubmitting}>
                   {hwSubmitting ? 'Creating…' : 'Create & edit'}
-                </button>
+                </Button>
               </div>
             </form>
-          </div>
+          </Card>
         </div>
       )}
 
       {/* Duplicate class modal */}
       {showDuplicateModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+          <Card flat className="w-full max-w-md p-6 shadow-pop">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-semibold text-gray-900">Duplicate class</h2>
-              <button onClick={() => setShowDuplicateModal(false)} className="text-gray-400 hover:text-gray-600">
+              <h2 className="text-lg font-semibold text-ink">Duplicate class</h2>
+              <button onClick={() => setShowDuplicateModal(false)} className="text-muted hover:text-ink-2 transition-colors">
                 <X size={20} />
               </button>
             </div>
 
             <form onSubmit={submitDuplicate} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Class name</label>
+                <label className="block text-sm font-medium text-ink-2 mb-1">Class name</label>
                 <input
                   value={dupName}
                   onChange={(e) => setDupName(e.target.value)}
                   placeholder="Biochemistry 395"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
                   autoFocus
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description (optional)</label>
+                <label className="block text-sm font-medium text-ink-2 mb-1">Description (optional)</label>
                 <input
                   value={dupDescription}
                   onChange={(e) => setDupDescription(e.target.value)}
                   placeholder="Spring 2027"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
                 />
               </div>
 
@@ -1049,11 +1019,11 @@ export default function ClassPage() {
                   type="checkbox"
                   checked={dupTransferQr}
                   onChange={(e) => setDupTransferQr(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  className="mt-0.5 h-4 w-4 rounded border-hairline text-signal focus:ring-signal"
                 />
                 <span>
-                  <span className="block text-sm font-medium text-gray-700">Transfer QR codes</span>
-                  <span className="block text-xs text-gray-400 mt-0.5">
+                  <span className="block text-sm font-medium text-ink-2">Transfer QR codes</span>
+                  <span className="block text-xs text-muted mt-0.5">
                     QR codes in your slides will point to the new class's sessions. The old class keeps its history but gets new codes.
                   </span>
                 </span>
@@ -1065,20 +1035,16 @@ export default function ClassPage() {
                 <button
                   type="button"
                   onClick={() => setShowDuplicateModal(false)}
-                  className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+                  className="px-4 py-2 text-sm text-muted hover:text-ink transition-colors"
                 >
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  disabled={dupLoading || !dupName.trim()}
-                  className="px-5 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
-                >
+                <Button type="submit" variant="primary" disabled={dupLoading || !dupName.trim()}>
                   {dupLoading ? 'Duplicating…' : 'Duplicate'}
-                </button>
+                </Button>
               </div>
             </form>
-          </div>
+          </Card>
         </div>
       )}
     </ProfessorLayout>

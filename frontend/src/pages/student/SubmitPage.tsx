@@ -41,9 +41,9 @@ function SortableOrderItem({ id, label }: { id: string; label: string }) {
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-2 px-3 py-2.5 border border-gray-300 rounded-xl text-sm text-gray-800 bg-white cursor-grab active:cursor-grabbing"
+      className="flex items-center gap-2 px-3 py-2.5 border border-hairline-strong rounded-[14px] text-sm text-ink bg-surface cursor-grab active:cursor-grabbing"
     >
-      <span {...attributes} {...listeners} className="text-gray-300 hover:text-gray-500">
+      <span {...attributes} {...listeners} className="text-hairline-strong hover:text-muted">
         <GripVertical size={14} />
       </span>
       {label}
@@ -62,7 +62,6 @@ export default function SubmitPage() {
   const [loadError, setLoadError] = useState('')
   const [submitError, setSubmitError] = useState('')
   const [sessionClosed, setSessionClosed] = useState(false)
-  // Per-question state for complex types
   const [orderedItems, setOrderedItems] = useState<Record<string, string[]>>({})
   const [multiSelectAnswers, setMultiSelectAnswers] = useState<Record<string, string[]>>({})
   const [structureAnswers, setStructureAnswers] = useState<Record<string, string>>({})
@@ -85,7 +84,6 @@ export default function SubmitPage() {
         setSession(s)
         setAlreadySubmitted(r.data.data.alreadySubmitted)
         if (s.status !== 'OPEN') setSessionClosed(true)
-        // Initialize ordering questions with shuffled options
         const initialOrders: Record<string, string[]> = {}
         s.questions.forEach((q) => {
           if (q.type === 'ORDERING' && q.options) {
@@ -136,19 +134,19 @@ export default function SubmitPage() {
       await api.post('/responses', { sessionId: session.id, responses })
       navigate(`/s/${session.id}/confirmation`)
     } catch (e: unknown) {
-            setSubmitError(apiError(e, 'Submission failed — please try again'))
+      setSubmitError(apiError(e, 'Submission failed — please try again'))
     }
   }
 
   if (authLoading || (!session && !loadError)) {
-    return <StudentLayout><div className="text-center py-16 text-gray-400">Loading…</div></StudentLayout>
+    return <StudentLayout><div className="text-center py-16 text-muted text-sm">Loading…</div></StudentLayout>
   }
 
   if (loadError) {
     return (
       <StudentLayout>
-        <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center">
-          <p className="text-gray-500">{loadError}</p>
+        <div className="bg-surface rounded-[14px] border border-hairline p-8 text-center">
+          <p className="text-muted">{loadError}</p>
         </div>
       </StudentLayout>
     )
@@ -157,9 +155,9 @@ export default function SubmitPage() {
   if (sessionClosed) {
     return (
       <StudentLayout>
-        <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center">
-          <p className="text-xl font-semibold text-gray-700 mb-2">Session closed</p>
-          <p className="text-gray-400 text-sm">This session is no longer accepting responses.</p>
+        <div className="bg-surface rounded-[14px] border border-hairline p-8 text-center">
+          <p className="text-xl font-semibold text-ink mb-2">Session closed</p>
+          <p className="text-muted text-sm">This session is no longer accepting responses.</p>
         </div>
       </StudentLayout>
     )
@@ -168,9 +166,9 @@ export default function SubmitPage() {
   if (alreadySubmitted) {
     return (
       <StudentLayout>
-        <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center">
-          <p className="text-xl font-semibold text-gray-700 mb-2">Already submitted</p>
-          <p className="text-gray-400 text-sm">You've already responded to this session.</p>
+        <div className="bg-surface rounded-[14px] border border-hairline p-8 text-center">
+          <p className="text-xl font-semibold text-ink mb-2">Already submitted</p>
+          <p className="text-muted text-sm">You've already responded to this session.</p>
         </div>
       </StudentLayout>
     )
@@ -178,17 +176,17 @@ export default function SubmitPage() {
 
   return (
     <StudentLayout>
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="bg-primary-600 px-6 py-4">
-          <p className="text-primary-100 text-xs font-medium uppercase tracking-wide">{session!.class.name}</p>
+      <div className="bg-surface rounded-[14px] shadow-card border border-hairline overflow-hidden">
+        <div className="bg-signal px-6 py-4">
+          <p className="text-white/70 text-xs font-medium uppercase tracking-wide">{session!.class.name}</p>
           <h1 className="text-white text-lg font-semibold mt-0.5">{session!.title}</h1>
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-8">
           {session!.questions.map((q, idx) => (
             <div key={q.id}>
-              <p className="text-sm font-medium text-gray-800 mb-3">
-                {session!.questions.length > 1 && <span className="text-primary-500 mr-1">Q{idx + 1}.</span>}
+              <p className="text-sm font-medium text-ink mb-3">
+                {session!.questions.length > 1 && <span className="text-signal mr-1">Q{idx + 1}.</span>}
                 {q.text}
               </p>
 
@@ -197,7 +195,7 @@ export default function SubmitPage() {
                   {...register(q.id)}
                   rows={4}
                   placeholder="Write your response…"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+                  className="w-full border border-hairline rounded-[14px] px-3 py-3 text-base bg-surface focus:outline-none focus:ring-2 focus:ring-signal resize-none"
                 />
               )}
 
@@ -208,15 +206,15 @@ export default function SubmitPage() {
                   render={({ field }) => (
                     <div className="space-y-2">
                       {q.options!.map((opt) => (
-                        <label key={opt} className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                        <label key={opt} className="flex items-center gap-3 p-3 border border-hairline rounded-[14px] cursor-pointer hover:bg-surface-2 transition-colors">
                           <input
                             type="radio"
                             value={opt}
                             checked={field.value === opt}
                             onChange={() => field.onChange(opt)}
-                            className="accent-primary-600"
+                            className="accent-[var(--signal)]"
                           />
-                          <span className="text-gray-800">{opt}</span>
+                          <span className="text-ink">{opt}</span>
                         </label>
                       ))}
                     </div>
@@ -235,10 +233,10 @@ export default function SubmitPage() {
                           key={n}
                           type="button"
                           onClick={() => field.onChange(String(n))}
-                          className={`flex-1 py-3 rounded-lg border-2 text-lg font-semibold transition-colors ${
+                          className={`flex-1 py-3 rounded-[14px] border-2 text-lg font-semibold transition-colors ${
                             field.value === String(n)
-                              ? 'border-primary-600 bg-primary-50 text-primary-700'
-                              : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                              ? 'border-signal bg-signal-soft text-signal'
+                              : 'border-hairline text-muted hover:border-hairline-strong'
                           }`}
                         >
                           {n}
@@ -260,10 +258,10 @@ export default function SubmitPage() {
                           key={opt}
                           type="button"
                           onClick={() => field.onChange(opt.toLowerCase())}
-                          className={`flex-1 py-3 rounded-lg border-2 font-medium transition-colors ${
+                          className={`flex-1 py-3 rounded-[14px] border-2 font-medium transition-colors ${
                             field.value === opt.toLowerCase()
-                              ? 'border-primary-600 bg-primary-50 text-primary-700'
-                              : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                              ? 'border-signal bg-signal-soft text-signal'
+                              : 'border-hairline text-ink-2 hover:border-hairline-strong'
                           }`}
                         >
                           {opt}
@@ -286,9 +284,9 @@ export default function SubmitPage() {
                         value={field.value ?? ''}
                         onChange={(e) => field.onChange(e.target.value)}
                         placeholder="Your answer…"
-                        className="w-48 border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        className="w-48 border border-hairline rounded-[14px] px-3 py-3 text-base font-mono bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
                       />
-                      {q.unit && <span className="text-sm text-gray-500">{q.unit}</span>}
+                      {q.unit && <span className="text-sm text-muted">{q.unit}</span>}
                     </div>
                   )}
                 />
@@ -300,8 +298,8 @@ export default function SubmitPage() {
                     const selected = multiSelectAnswers[q.id] ?? []
                     const isChecked = selected.includes(opt)
                     return (
-                      <label key={opt} className={`flex items-center gap-3 p-3 border rounded-xl cursor-pointer transition-colors ${
-                        isChecked ? 'border-primary-500 bg-primary-50' : 'border-gray-200 hover:border-gray-300'
+                      <label key={opt} className={`flex items-center gap-3 p-3 border rounded-[14px] cursor-pointer transition-colors ${
+                        isChecked ? 'border-signal bg-signal-soft' : 'border-hairline hover:border-hairline-strong'
                       }`}>
                         <input
                           type="checkbox"
@@ -310,9 +308,9 @@ export default function SubmitPage() {
                             const next = isChecked ? selected.filter(v => v !== opt) : [...selected, opt]
                             setMultiSelectAnswers((prev) => ({ ...prev, [q.id]: next }))
                           }}
-                          className="accent-primary-600"
+                          className="accent-[var(--signal)]"
                         />
-                        <span className="text-gray-800">{opt}</span>
+                        <span className="text-ink">{opt}</span>
                       </label>
                     )
                   })}
@@ -336,7 +334,7 @@ export default function SubmitPage() {
               )}
 
               {q.type === 'STRUCTURE' && (
-                <Suspense fallback={<div className="h-40 bg-gray-50 rounded-xl animate-pulse" />}>
+                <Suspense fallback={<div className="h-40 bg-surface-2 rounded-[14px] animate-pulse" />}>
                   <Jsme
                     height="420px"
                     width="600px"
@@ -350,13 +348,13 @@ export default function SubmitPage() {
           ))}
 
           {submitError && (
-            <p className="text-red-500 text-sm bg-red-50 rounded-lg px-3 py-2">{submitError}</p>
+            <p className="text-red-500 text-sm bg-red-50 rounded-sm px-3 py-2">{submitError}</p>
           )}
 
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full bg-primary-600 text-white rounded-xl py-4 text-base font-semibold hover:bg-primary-700 disabled:opacity-50 transition-colors"
+            className="w-full bg-signal text-white rounded-[14px] py-4 text-base font-bold hover:bg-[var(--signal-bright)] disabled:opacity-50 transition-colors"
           >
             {isSubmitting ? 'Submitting…' : 'Submit response'}
           </button>
