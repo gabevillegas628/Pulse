@@ -10,7 +10,8 @@ import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
 import CodeChip from '@/components/ui/CodeChip'
 import Empty from '@/components/ui/Empty'
-import { Plus, BookOpen, Users, X } from 'lucide-react'
+import LiveDot from '@/components/ui/LiveDot'
+import { Plus, BookOpen, Users, X, Radio } from 'lucide-react'
 import type { ClassWithCounts } from 'shared'
 import { apiError } from '@/lib/errors'
 
@@ -51,8 +52,38 @@ export default function DashboardPage() {
     createMutation.mutate(data)
   }
 
+  const liveClasses = data?.filter((c) => c.sessions.length > 0) ?? []
+
   return (
     <ProfessorLayout>
+      {/* Live session alert banner */}
+      {liveClasses.length > 0 && (
+        <div className="mb-6 bg-signal-soft border border-signal/20 rounded-[14px] px-5 py-4">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2 shrink-0">
+              <LiveDot />
+              <span className="text-sm font-bold text-signal">
+                {liveClasses.length === 1
+                  ? `${liveClasses[0].sessions[0].title} is live`
+                  : `${liveClasses.length} sessions live now`}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {liveClasses.map((c) => (
+                <Link
+                  key={c.sessions[0].id}
+                  to={`/professor/sessions/${c.sessions[0].id}`}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-signal hover:bg-[var(--signal-bright)] px-3 py-1.5 rounded-sm transition-colors"
+                >
+                  <Radio size={12} />
+                  {liveClasses.length > 1 ? c.name : 'Open monitor'}
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-2xl font-bold text-ink">Classes</h1>
         <Button variant="primary" onClick={() => setShowModal(true)}>
@@ -67,29 +98,35 @@ export default function DashboardPage() {
         <Empty icon={BookOpen} message="No classes yet — create one to get started." />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {data?.map((cls) => (
-            <Link key={cls.id} to={`/professor/classes/${cls.id}`}>
-              <Card className="p-6 hover:shadow-pop transition-shadow cursor-pointer h-full">
-                <h2 className="font-semibold text-ink mb-1">{cls.name}</h2>
-                {cls.description && (
-                  <p className="text-sm text-muted mb-3 line-clamp-1">{cls.description}</p>
-                )}
-                <div className="flex items-center gap-4 text-xs text-muted mt-auto">
-                  <span className="flex items-center gap-1">
-                    <BookOpen size={12} />
-                    {cls._count.sessions} sessions
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Users size={12} />
-                    {cls._count.enrollments} students
-                  </span>
-                </div>
-                <div className="mt-3 pt-3 border-t border-hairline">
-                  <CodeChip>{cls.joinCode}</CodeChip>
-                </div>
-              </Card>
-            </Link>
-          ))}
+          {data?.map((cls) => {
+            const isLive = cls.sessions.length > 0
+            return (
+              <Link key={cls.id} to={`/professor/classes/${cls.id}`}>
+                <Card className={`p-6 hover:shadow-pop transition-shadow cursor-pointer h-full flex flex-col gap-4 ${isLive ? 'border-signal/30' : ''}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <h2 className="font-semibold text-ink leading-snug">{cls.name}</h2>
+                    {isLive && <LiveDot className="shrink-0 mt-1" />}
+                  </div>
+                  {cls.description && (
+                    <p className="text-sm text-muted line-clamp-1 -mt-2">{cls.description}</p>
+                  )}
+                  <div className="flex items-center gap-4 text-xs text-muted mt-auto">
+                    <span className="flex items-center gap-1">
+                      <BookOpen size={12} />
+                      {cls._count.sessions} session{cls._count.sessions !== 1 ? 's' : ''}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Users size={12} />
+                      {cls._count.enrollments} student{cls._count.enrollments !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  <div className="pt-3 border-t border-hairline">
+                    <CodeChip>{cls.joinCode}</CodeChip>
+                  </div>
+                </Card>
+              </Link>
+            )
+          })}
         </div>
       )}
 

@@ -417,48 +417,74 @@ export default function ClassPage() {
           <Empty icon={BookOpen} message="Loading sessions…" />
         ) : sessionsData.length === 0 ? (
           <Empty icon={BookOpen} message="No sessions yet — create one to start collecting responses." />
-        ) : (
-          <div className="space-y-3">
-            {sessionsData.map((s) => (
-              <div key={s.id} className="group relative flex items-center bg-surface border border-hairline rounded-[14px] hover:shadow-card transition-shadow">
-                <Link
-                  to={`/professor/sessions/${s.id}`}
-                  className="flex-1 flex items-center justify-between p-5"
-                >
+        ) : (() => {
+          const openSessions = sessionsData.filter((s) => s.status === 'OPEN')
+          const otherSessions = sessionsData.filter((s) => s.status !== 'OPEN')
+          const renderSessionRow = (s: typeof sessionsData[0]) => (
+            <div key={s.id} className="group relative flex items-center bg-surface border border-hairline rounded-[14px] hover:shadow-card transition-shadow">
+              <Link
+                to={`/professor/sessions/${s.id}`}
+                className="flex-1 flex items-center justify-between p-5"
+              >
+                <div>
+                  <p className="font-medium text-ink">{s.title}</p>
+                  <p className="text-xs text-muted mt-0.5">
+                    {s.questions?.length ?? 0} question{(s.questions?.length ?? 0) !== 1 ? 's' : ''} ·{' '}
+                    {new Date(s.createdAt).toLocaleDateString()}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {s.targetSection && (
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-surface-2 text-ink-2">
+                      §{s.targetSection.name}
+                    </span>
+                  )}
+                  <Pill variant={statusPill(s.status)}>
+                    {s.status.charAt(0) + s.status.slice(1).toLowerCase()}
+                  </Pill>
+                </div>
+              </Link>
+              <button
+                onClick={(e) => {
+                  e.preventDefault()
+                  if (!confirm(`Delete "${s.title}"? This will remove all responses and cannot be undone.`)) return
+                  deleteSessionMutation.mutate(s.id)
+                }}
+                disabled={deleteSessionMutation.isPending}
+                className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 px-4 py-5 text-hairline-strong hover:text-red-500 disabled:opacity-30"
+                title="Delete session"
+              >
+                <Trash2 size={15} />
+              </button>
+            </div>
+          )
+          return (
+            <div className="space-y-3">
+              {openSessions.map((s) => (
+                <div key={s.id} className="bg-signal-soft border border-signal/20 rounded-[14px] p-5 flex items-center justify-between gap-4">
                   <div>
-                    <p className="font-medium text-ink">{s.title}</p>
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <Pill variant="live" dot>Live</Pill>
+                    </div>
+                    <p className="font-semibold text-ink mt-1">{s.title}</p>
                     <p className="text-xs text-muted mt-0.5">
-                      {s.questions?.length ?? 0} question{(s.questions?.length ?? 0) !== 1 ? 's' : ''} ·{' '}
-                      {new Date(s.createdAt).toLocaleDateString()}
+                      {s.questions?.length ?? 0} question{(s.questions?.length ?? 0) !== 1 ? 's' : ''}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {s.targetSection && (
-                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-surface-2 text-ink-2">
-                        §{s.targetSection.name}
-                      </span>
-                    )}
-                    <Pill variant={statusPill(s.status)}>
-                      {s.status.charAt(0) + s.status.slice(1).toLowerCase()}
-                    </Pill>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Link
+                      to={`/professor/sessions/${s.id}`}
+                      className="inline-flex items-center gap-1.5 text-sm font-bold text-white bg-signal hover:bg-[var(--signal-bright)] px-4 py-2 rounded-sm transition-colors"
+                    >
+                      Open monitor
+                    </Link>
                   </div>
-                </Link>
-                <button
-                  onClick={(e) => {
-                    e.preventDefault()
-                    if (!confirm(`Delete "${s.title}"? This will remove all responses and cannot be undone.`)) return
-                    deleteSessionMutation.mutate(s.id)
-                  }}
-                  disabled={deleteSessionMutation.isPending}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 px-4 py-5 text-hairline-strong hover:text-red-500 disabled:opacity-30"
-                  title="Delete session"
-                >
-                  <Trash2 size={15} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )
+                </div>
+              ))}
+              {otherSessions.map(renderSessionRow)}
+            </div>
+          )
+        })()
       )}
 
       {/* Assignments tab */}

@@ -5,6 +5,7 @@ import { api } from '@/api/client'
 import { useStudentAuth } from '@/context/StudentAuthContext'
 import StudentLayout from '@/components/layout/StudentLayout'
 import Pill from '@/components/ui/Pill'
+import LiveDot from '@/components/ui/LiveDot'
 import Empty from '@/components/ui/Empty'
 import { BookOpen, LogOut, KeyRound } from 'lucide-react'
 import PasswordChangeModal from '@/components/PasswordChangeModal'
@@ -37,6 +38,9 @@ export default function MyClassesPage() {
     navigate('/student/login')
   }
 
+  const liveEnrollments = data?.filter((e) => e.class.sessions.length > 0) ?? []
+  const hasLive = liveEnrollments.length > 0
+
   return (
     <StudentLayout>
       {/* User row */}
@@ -55,14 +59,50 @@ export default function MyClassesPage() {
         </div>
       </div>
 
-      {/* Primary action */}
-      <button
-        onClick={() => navigate('/student/enter-code')}
-        className="w-full bg-signal text-white rounded-[14px] p-5 text-left mb-6 hover:bg-[var(--signal-bright)] transition-colors"
-      >
-        <p className="text-lg font-semibold mb-0.5">Enter question code</p>
-        <p className="text-white/70 text-sm">Enter the 4-digit code your professor displays</p>
-      </button>
+      {/* Live now — primary CTA when session is open */}
+      {hasLive && (
+        <div className="mb-5 space-y-2">
+          {liveEnrollments.map((e) => (
+            <div
+              key={e.class.id}
+              className="bg-signal-soft border border-signal/20 rounded-[14px] p-5 flex items-center justify-between gap-4"
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <LiveDot />
+                  <span className="text-xs font-bold text-signal uppercase tracking-wide">Live now</span>
+                </div>
+                <p className="font-semibold text-ink truncate">{e.class.name}</p>
+                <p className="text-xs text-muted mt-0.5">{e.class.sessions[0].title}</p>
+              </div>
+              <Link
+                to="/student/enter-code"
+                className="shrink-0 inline-flex items-center gap-2 bg-signal text-white px-4 py-2 rounded-sm text-sm font-bold hover:bg-[var(--signal-bright)] transition-colors"
+              >
+                Answer now
+              </Link>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Code entry — primary when no live, secondary when live */}
+      {hasLive ? (
+        <button
+          onClick={() => navigate('/student/enter-code')}
+          className="w-full text-sm text-muted hover:text-ink text-center py-2 mb-5 transition-colors"
+        >
+          Enter a question code manually
+        </button>
+      ) : (
+        <button
+          onClick={() => navigate('/student/enter-code')}
+          className="w-full bg-signal text-white rounded-[14px] p-5 text-left mb-6 hover:bg-[var(--signal-bright)] transition-colors"
+        >
+          <p className="text-lg font-semibold mb-0.5">Enter question code</p>
+          <p className="text-white/70 text-sm">Enter the 4-digit code your professor displays</p>
+        </button>
+      )}
 
       {/* Class list */}
       {isLoading ? (

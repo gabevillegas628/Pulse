@@ -262,6 +262,9 @@ export default function StudentClassPage() {
           ) : (() => {
             const inClassSessions = gradesData.sessions.filter((s) => s.type === 'IN_CLASS')
             const hwSessions = gradesData.sessions.filter((s) => s.type === 'HOMEWORK')
+            const pct = gradesData.totalMax > 0
+              ? Math.round((gradesData.totalEarned / gradesData.totalMax) * 100)
+              : null
 
             const renderGroup = (items: typeof gradesData.sessions) => (
               <div className="bg-surface border border-hairline rounded-[14px] overflow-hidden">
@@ -282,6 +285,23 @@ export default function StudentClassPage() {
 
             return (
               <div className="space-y-5">
+                {/* Standing headline */}
+                <div className="bg-surface border border-hairline rounded-[14px] px-5 py-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-muted uppercase tracking-wide mb-1">Current standing</p>
+                    <p className="text-2xl font-bold font-mono text-ink">
+                      {gradesData.totalEarned}<span className="text-muted font-normal">/{gradesData.totalMax}</span>
+                    </p>
+                  </div>
+                  {pct !== null && (
+                    <div className="text-right">
+                      <p className={`text-3xl font-bold font-mono ${pct >= 70 ? 'text-good' : pct >= 50 ? 'text-warn' : 'text-red-500'}`}>
+                        {pct}%
+                      </p>
+                    </div>
+                  )}
+                </div>
+
                 {inClassSessions.length > 0 && (
                   <div>
                     <p className="flex items-center gap-1.5 text-xs font-medium text-muted uppercase tracking-wide mb-2">
@@ -296,12 +316,6 @@ export default function StudentClassPage() {
                       <BookOpen size={12} /> Homework
                     </p>
                     {renderGroup(hwSessions)}
-                  </div>
-                )}
-                {gradesData.sessions.length > 1 && (
-                  <div className="flex items-center justify-between px-5 py-3.5 bg-surface-2 border border-hairline rounded-[14px]">
-                    <p className="text-xs font-medium text-muted uppercase tracking-wide">Total</p>
-                    <p className="text-sm font-mono font-semibold text-ink">{gradesData.totalEarned}/{gradesData.totalMax}</p>
                   </div>
                 )}
               </div>

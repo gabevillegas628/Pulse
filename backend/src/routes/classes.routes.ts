@@ -55,7 +55,10 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     const classes = await prisma.class.findMany({
       where: { professorId: professor.id },
       orderBy: { createdAt: 'desc' },
-      include: { _count: { select: { sessions: true, enrollments: true } } },
+      include: {
+        _count: { select: { sessions: true, enrollments: true } },
+        sessions: { where: { status: 'OPEN' }, select: { id: true, title: true }, take: 1 },
+      },
     })
     res.json({ success: true, data: { classes } })
   } catch (err) {
