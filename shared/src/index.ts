@@ -226,6 +226,7 @@ export interface SessionDetail extends Session {
   groups: QuestionGroup[]
   class: Pick<Class, 'id' | 'name'>
   qrDataUrl: string
+  enrolledCount: number
 }
 
 // ─── View model types (used by frontend pages) ────────────────────────────────

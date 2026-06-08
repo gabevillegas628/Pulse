@@ -144,7 +144,7 @@ router.get('/sessions/:id', requireProfessor, async (req: Request, res: Response
     const session = await prisma.session.findFirst({
       where: { id: p(req.params.id), class: { professorId: professor.id } },
       include: {
-        class: { select: { id: true, name: true } },
+        class: { select: { id: true, name: true, _count: { select: { enrollments: true } } } },
         targetSection: { select: { id: true, name: true } },
         groups: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] },
         questions: {
@@ -163,7 +163,8 @@ router.get('/sessions/:id', requireProfessor, async (req: Request, res: Response
     const questionsWithQr = await attachQuestionQrs(
       session.questions as { id: string; accessCode: string; [key: string]: unknown }[]
     )
-    res.json({ success: true, data: { session: { ...session, questions: questionsWithQr } } })
+    const enrolledCount = (session.class as typeof session.class & { _count: { enrollments: number } })._count.enrollments
+    res.json({ success: true, data: { session: { ...session, enrolledCount, questions: questionsWithQr } } })
   } catch (err) {
     next(err)
   }
