@@ -11,29 +11,17 @@ interface Props {
   onClose: () => void
 }
 
-function scoreChip(type: string, correctAnswer: string | null, responseText: string, aiScore: number | null) {
-  if (type === 'MULTIPLE_CHOICE' || type === 'YES_NO') {
-    if (!correctAnswer) return null
-    const correct = responseText === correctAnswer
-    return (
-      <span className={`text-xs font-mono font-medium px-2 py-0.5 rounded-full border ${correct ? 'bg-good-soft text-good border-good/20' : 'bg-warn-soft text-warn border-warn/20'}`}>
-        {correct ? '1.0' : '0.5'} pt
-      </span>
-    )
-  }
-  if (type === 'FREE_TEXT' && aiScore !== null) {
-    const color = aiScore === 1.0
-      ? 'bg-good-soft text-good border-good/20'
-      : aiScore === 0.5
-      ? 'bg-warn-soft text-warn border-warn/20'
-      : 'bg-red-100 text-red-600 border-red-200'
-    return (
-      <span className={`text-xs font-mono font-medium px-2 py-0.5 rounded-full border ${color}`}>
-        {aiScore.toFixed(1)} pt
-      </span>
-    )
-  }
-  return null
+function scoreChip(score: number) {
+  const color = score >= 1.0
+    ? 'bg-good-soft text-good border-good/20'
+    : score >= 0.5
+    ? 'bg-warn-soft text-warn border-warn/20'
+    : 'bg-red-100 text-red-600 border-red-200'
+  return (
+    <span className={`text-xs font-mono font-medium px-2 py-0.5 rounded-full border ${color}`}>
+      {score.toFixed(1)} pt
+    </span>
+  )
 }
 
 export default function StudentSessionModal({ classId, studentId, netId, session, onClose }: Props) {
@@ -68,17 +56,24 @@ export default function StudentSessionModal({ classId, studentId, netId, session
             <p className="text-sm text-muted text-center py-8">No data for this session.</p>
           )}
           {sessionData && sessionData.questions.map((q) => (
-            <div key={q.id} className="space-y-1.5">
+            <div key={q.id} className={`space-y-1.5 ${!q.counted ? 'opacity-60' : ''}`}>
               <div className="flex items-start gap-2">
                 <span className="shrink-0 text-xs font-semibold text-muted bg-surface-2 px-1.5 py-0.5 rounded mt-0.5">
                   Q{q.number}
                 </span>
-                <p className="text-sm text-ink-2">{q.text}</p>
+                <div className="flex-1 flex items-start justify-between gap-2">
+                  <p className="text-sm text-ink-2">{q.text}</p>
+                  {!q.counted && (
+                    <span className="shrink-0 text-[10px] font-medium text-muted border border-hairline px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                      not graded
+                    </span>
+                  )}
+                </div>
               </div>
               {q.response ? (
                 <div className="ml-7 flex items-start justify-between gap-3">
                   <p className="text-sm text-ink leading-relaxed flex-1">{q.response.responseText}</p>
-                  {scoreChip(q.type, q.correctAnswer, q.response.responseText, q.response.aiScore)}
+                  {q.counted && q.score !== null && scoreChip(q.score)}
                 </div>
               ) : (
                 <p className="ml-7 text-sm text-hairline-strong italic">No response</p>

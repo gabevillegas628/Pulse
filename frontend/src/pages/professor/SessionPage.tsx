@@ -69,12 +69,22 @@ export default function SessionPage() {
   const [eqId, setEqId] = useState<string | null>(null)
   const [eqText, setEqText] = useState('')
   const [eqOptions, setEqOptions] = useState<string[]>([])
+  const [eqCorrectAnswer, setEqCorrectAnswer] = useState('')
+  const [eqTolerance, setEqTolerance] = useState('')
+  const [eqUnit, setEqUnit] = useState('')
   const [eqError, setEqError] = useState('')
+
+  const [numericDraftAnswer, setNumericDraftAnswer] = useState<Record<string, string>>({})
+  const [numericDraftTolerance, setNumericDraftTolerance] = useState<Record<string, string>>({})
+  const [numericDraftUnit, setNumericDraftUnit] = useState<Record<string, string>>({})
 
   function openEditQuestion(q: QuestionWithResponses) {
     setEqId(q.id)
     setEqText(q.text)
     setEqOptions((q.options as string[] | null) ?? [])
+    setEqCorrectAnswer(q.correctAnswer ?? '')
+    setEqTolerance(q.tolerance != null ? String(q.tolerance) : '')
+    setEqUnit(q.unit ?? '')
     setEqError('')
     setShowEditQuestion(true)
   }
@@ -128,12 +138,21 @@ export default function SessionPage() {
         if (changed) payload.options = eqOptions.filter(o => o.trim()).map(o => o.trim())
       }
 
+      if (question.type === 'NUMERIC') {
+        const newCA = eqCorrectAnswer.trim() || null
+        if (newCA !== question.correctAnswer) payload.correctAnswer = newCA
+        const newTol = eqTolerance.trim() ? parseFloat(eqTolerance) : null
+        if (newTol !== question.tolerance) payload.tolerance = newTol
+        const newUnit = eqUnit.trim() || null
+        if (newUnit !== question.unit) payload.unit = newUnit
+      }
+
       return api.patch(`/sessions/${sessionId}/questions/${eqId}`, payload)
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['session', sessionId] })
       setShowEditQuestion(false)
-      setEqId(null); setEqText(''); setEqOptions([]); setEqError('')
+      setEqId(null); setEqText(''); setEqOptions([]); setEqCorrectAnswer(''); setEqTolerance(''); setEqUnit(''); setEqError('')
     },
     onError: (e: unknown) => setEqError(apiError(e, 'Failed to save question')),
   })
@@ -193,8 +212,12 @@ export default function SessionPage() {
   })
 
   const setCorrectAnswerMutation = useMutation({
-    mutationFn: ({ questionId, correctAnswer }: { questionId: string; correctAnswer: string | null }) =>
-      api.patch(`/sessions/${sessionId}/questions/${questionId}`, { correctAnswer }),
+    mutationFn: ({ questionId, correctAnswer, tolerance, unit }: { questionId: string; correctAnswer?: string | null; tolerance?: number | null; unit?: string | null }) =>
+      api.patch(`/sessions/${sessionId}/questions/${questionId}`, {
+        ...(correctAnswer !== undefined && { correctAnswer }),
+        ...(tolerance !== undefined && { tolerance }),
+        ...(unit !== undefined && { unit }),
+      }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['session', sessionId] }),
   })
 
@@ -215,6 +238,30 @@ export default function SessionPage() {
     },
   })
 
+  const fullCreditMutation = useMutation({
+    mutationFn: (questionId: string) => {
+      const question = qc.getQueryData<SessionDetail>(['session', sessionId])?.questions.find(q => q.id === questionId)
+      if (!question) throw new Error('Question not found')
+      return Promise.all(
+        question.responses.map(r =>
+          api.patch(`/sessions/${sessionId}/questions/${questionId}/responses/${r.id}`, { aiScore: 1.0 })
+        )
+      )
+    },
+    onSuccess: (_data, questionId) => {
+      qc.setQueryData<SessionDetail>(['session', sessionId], (prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          questions: prev.questions.map((q) => {
+            if (q.id !== questionId) return q
+            return { ...q, responses: q.responses.map(r => ({ ...r, aiScore: 1.0 })) }
+          }),
+        }
+      })
+    },
+  })
+
   function questionTypeLabel(type: string): string {
     const labels: Record<string, string> = {
       FREE_TEXT: 'Free text', MULTIPLE_CHOICE: 'Multiple choice', MULTI_SELECT: 'Multi-select',
@@ -229,12 +276,21 @@ export default function SessionPage() {
     return 1.0
   }
 
-  function calcResponseScore(q: { type: string; correctAnswer: string | null }, r: { responseText: string; aiScore: number | null }): number | null {
+  function calcResponseScore(q: { type: string; correctAnswer: string | null; tolerance?: number | null }, r: { responseText: string; aiScore: number | null }): number | null {
+    // aiScore is always the override — takes priority over computed scores
+    if (r.aiScore !== null) return r.aiScore
     if (q.type === 'MULTIPLE_CHOICE' || q.type === 'YES_NO') {
       if (!q.correctAnswer) return null
       return r.responseText === q.correctAnswer ? 1.0 : 0.5
     }
-    if (q.type === 'FREE_TEXT') return r.aiScore
+    if (q.type === 'FREE_TEXT') return null
+    if (q.type === 'NUMERIC') {
+      if (!q.correctAnswer) return null
+      const correct = parseFloat(q.correctAnswer)
+      const answer = parseFloat(r.responseText)
+      if (isNaN(correct) || isNaN(answer)) return null
+      return Math.abs(answer - correct) <= (q.tolerance ?? 0) ? 1.0 : 0
+    }
     return null
   }
 
@@ -446,17 +502,43 @@ export default function SessionPage() {
 
       {/* Question tabs */}
       <div className="flex items-center gap-1 mb-6 border-b border-hairline">
-        {data.questions.map((q, i) => (
+        {data.questions.map((q, i) => {
+          const scorableTypes = ['FREE_TEXT', 'MULTIPLE_CHOICE', 'YES_NO', 'NUMERIC']
+          const isScorable = scorableTypes.includes(q.type)
+          const n = q.responses.length
+          const scoredCount = isScorable && n > 0
+            ? q.responses.filter(r => calcResponseScore(q, r) !== null).length
+            : 0
+
+          let countColor = ''
+          if (n > 0) {
+            if (!isScorable) countColor = 'text-ink-2/40'
+            else if (scoredCount === 0) countColor = 'text-warn'
+            else if (scoredCount < n) countColor = 'text-yellow-500'
+            else countColor = 'text-good'
+          }
+
+          const gradingLabel = !isScorable
+            ? `${n} response${n !== 1 ? 's' : ''}`
+            : scoredCount === 0 ? `${n} response${n !== 1 ? 's' : ''} — not graded`
+            : scoredCount < n ? `${scoredCount} / ${n} graded`
+            : `All ${n} graded`
+
+          return (
           <div key={q.id} className="group relative flex items-center">
             <button
               onClick={() => setActiveTab(i)}
-              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              title={n > 0 ? gradingLabel : undefined}
+              className={`flex flex-col items-center px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === i
                   ? 'border-signal text-ink'
                   : 'border-transparent text-muted hover:text-ink'
               }`}
             >
               Q{i + 1}
+              {n > 0 && (
+                <span className={`text-[10px] font-mono leading-none mt-0.5 ${countColor}`}>{n}</span>
+              )}
             </button>
             {data.status === SessionStatus.DRAFT && (
               <button
@@ -472,7 +554,8 @@ export default function SessionPage() {
               </button>
             )}
           </div>
-        ))}
+        )
+        })}
         <button
           onClick={() => setShowAddQuestion(true)}
           className="ml-1 mb-px flex items-center gap-1 text-xs text-muted hover:text-signal px-2 py-1.5 transition-colors"
@@ -597,20 +680,78 @@ export default function SessionPage() {
                 </div>
               </div>
             )}
+
+            {/* Correct answer / tolerance — NUMERIC, all statuses */}
+            {activeQuestion.type === 'NUMERIC' && (
+              <div className="mt-3 pt-3 border-t border-hairline">
+                <p className="text-xs text-muted font-medium mb-1.5">Correct answer <span className="font-normal">(used for automatic scoring)</span></p>
+                <div className="flex gap-2 flex-wrap">
+                  <input
+                    value={numericDraftAnswer[activeQuestion.id] ?? activeQuestion.correctAnswer ?? ''}
+                    onChange={(e) => setNumericDraftAnswer((d) => ({ ...d, [activeQuestion.id]: e.target.value }))}
+                    onBlur={() => {
+                      const val = (numericDraftAnswer[activeQuestion.id] ?? activeQuestion.correctAnswer ?? '').trim()
+                      if (val === (activeQuestion.correctAnswer ?? '')) return
+                      setCorrectAnswerMutation.mutate({ questionId: activeQuestion.id, correctAnswer: val || null })
+                    }}
+                    placeholder="Correct value"
+                    className="w-36 border border-hairline rounded-sm px-3 py-1.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
+                  />
+                  <input
+                    value={numericDraftTolerance[activeQuestion.id] ?? (activeQuestion.tolerance != null ? String(activeQuestion.tolerance) : '')}
+                    onChange={(e) => setNumericDraftTolerance((d) => ({ ...d, [activeQuestion.id]: e.target.value }))}
+                    onBlur={() => {
+                      const raw = (numericDraftTolerance[activeQuestion.id] ?? (activeQuestion.tolerance != null ? String(activeQuestion.tolerance) : '')).trim()
+                      const newTol = raw ? parseFloat(raw) : null
+                      if (newTol === activeQuestion.tolerance) return
+                      setCorrectAnswerMutation.mutate({ questionId: activeQuestion.id, tolerance: newTol })
+                    }}
+                    placeholder="± tolerance"
+                    className="w-28 border border-hairline rounded-sm px-3 py-1.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
+                  />
+                  <input
+                    value={numericDraftUnit[activeQuestion.id] ?? activeQuestion.unit ?? ''}
+                    onChange={(e) => setNumericDraftUnit((d) => ({ ...d, [activeQuestion.id]: e.target.value }))}
+                    onBlur={() => {
+                      const val = (numericDraftUnit[activeQuestion.id] ?? activeQuestion.unit ?? '').trim()
+                      if (val === (activeQuestion.unit ?? '')) return
+                      setCorrectAnswerMutation.mutate({ questionId: activeQuestion.id, unit: val || null })
+                    }}
+                    placeholder="Unit (optional)"
+                    className="w-32 border border-hairline rounded-sm px-3 py-1.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Responses summary chart */}
           <ResultsSummary question={activeQuestion} />
 
           {/* Score summary line */}
-          {activeQuestion.responses.length > 0 && (activeQuestion.type === 'MULTIPLE_CHOICE' || activeQuestion.type === 'YES_NO' || activeQuestion.type === 'FREE_TEXT') && (() => {
+          {activeQuestion.responses.length > 0 && (() => {
             const scores = activeQuestion.responses.map((r) => calcResponseScore(activeQuestion, r)).filter((s): s is number => s !== null)
-            if (scores.length === 0) return null
-            const avg = scores.reduce((a, b) => a + b, 0) / scores.length
+            const avg = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null
             return (
-              <p className="text-xs text-muted mb-4 font-mono">
-                {scores.length} of {activeQuestion.responses.length} scored — avg <span className="font-medium text-ink-2">{avg.toFixed(2)} / 1.0</span>
-              </p>
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-xs text-muted font-mono">
+                  {avg !== null
+                    ? <>{scores.length} of {activeQuestion.responses.length} scored — avg <span className="font-medium text-ink-2">{avg.toFixed(2)} / 1.0</span></>
+                    : <span className="text-hairline-strong">{activeQuestion.responses.length} response{activeQuestion.responses.length !== 1 ? 's' : ''}</span>
+                  }
+                </p>
+                <button
+                  onClick={() => {
+                    const alreadyFull = activeQuestion.responses.every(r => r.aiScore === 1.0)
+                    if (alreadyFull || window.confirm(`Give all ${activeQuestion.responses.length} responses full credit?`))
+                      fullCreditMutation.mutate(activeQuestion.id)
+                  }}
+                  disabled={fullCreditMutation.isPending}
+                  className="flex items-center gap-1 text-xs text-muted hover:text-good border border-hairline hover:border-good/30 px-2.5 py-1 rounded-sm transition-colors disabled:opacity-50"
+                >
+                  <Check size={11} /> Give all full credit
+                </button>
+              </div>
             )
           })()}
 
@@ -712,7 +853,6 @@ export default function SessionPage() {
                       </span>
                       {(() => {
                         const score = calcResponseScore(activeQuestion, r)
-                        const isFreeText = activeQuestion.type === 'FREE_TEXT'
                         if (score === null) return null
                         const label = score === 1.0 ? '1.0' : score === 0.5 ? '0.5' : '0'
                         const color = score === 1.0
@@ -720,16 +860,16 @@ export default function SessionPage() {
                           : score === 0.5
                           ? 'bg-warn-soft text-warn border-warn/20'
                           : 'bg-red-100 text-red-600 border-red-200'
-                        const title = isFreeText && gradeReasons[r.id] ? gradeReasons[r.id] : undefined
+                        const title = gradeReasons[r.id] || 'Click to cycle score'
                         return (
                           <button
                             title={title}
-                            onClick={isFreeText ? () => overrideScoreMutation.mutate({
+                            onClick={() => overrideScoreMutation.mutate({
                               questionId: activeQuestion.id,
                               responseId: r.id,
-                              aiScore: cycleScore(r.aiScore),
-                            }) : undefined}
-                            className={`text-xs font-mono font-medium px-2 py-0.5 rounded-full border ${color} ${isFreeText ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}
+                              aiScore: cycleScore(score),
+                            })}
+                            className={`text-xs font-mono font-medium px-2 py-0.5 rounded-full border ${color} cursor-pointer hover:opacity-80`}
                           >
                             {label} pt
                           </button>
@@ -867,6 +1007,28 @@ export default function SessionPage() {
                     >
                       <Plus size={12} /> Add option
                     </button>
+                  </div>
+                )}
+                {question.type === 'NUMERIC' && (
+                  <div className="flex gap-2 flex-wrap">
+                    <input
+                      value={eqCorrectAnswer}
+                      onChange={(e) => setEqCorrectAnswer(e.target.value)}
+                      placeholder="Correct answer (optional)"
+                      className="flex-1 min-w-0 border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
+                    />
+                    <input
+                      value={eqTolerance}
+                      onChange={(e) => setEqTolerance(e.target.value)}
+                      placeholder="± tolerance"
+                      className="w-28 border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
+                    />
+                    <input
+                      value={eqUnit}
+                      onChange={(e) => setEqUnit(e.target.value)}
+                      placeholder="Unit (optional)"
+                      className="w-32 border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
+                    />
                   </div>
                 )}
                 {eqError && <p className="text-red-500 text-xs">{eqError}</p>}

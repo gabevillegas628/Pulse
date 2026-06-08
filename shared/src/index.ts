@@ -254,6 +254,10 @@ export interface ActivityQuestion {
   number: number
   correctAnswer: string | null
   response: { responseText: string; wordCount: number; isFlagged: boolean; submittedAt: string; aiScore: number | null } | null
+  /** Score computed by gradeSession (null for open/unscored sessions) */
+  score: number | null
+  /** Whether this question was graded and counts toward earned/max */
+  counted: boolean
 }
 
 /** A session with its questions, as returned by the student activity endpoint */
@@ -298,6 +302,8 @@ export interface GradeQuestion {
   correctAnswer: string | null
   response: { responseText: string; aiScore: number | null; submittedAt: string } | null
   score: number
+  /** Whether this question was graded and counts toward earned/max */
+  counted: boolean
 }
 
 /** Full question-level breakdown for one closed session */

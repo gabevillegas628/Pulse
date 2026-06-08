@@ -23,24 +23,32 @@ function scoreChip(score: number) {
 
 function QuestionBlock({ q, index }: { q: GradeQuestion; index: number }) {
   const isWrong =
+    q.counted &&
     q.correctAnswer !== null &&
     (q.type === 'MULTIPLE_CHOICE' || q.type === 'YES_NO') &&
     q.response?.responseText !== q.correctAnswer
 
   return (
-    <div className="space-y-1.5 py-4 border-b border-hairline last:border-0">
+    <div className={`space-y-1.5 py-4 border-b border-hairline last:border-0 ${!q.counted ? 'opacity-60' : ''}`}>
       <div className="flex items-start gap-2">
         <span className="shrink-0 text-xs font-semibold text-muted bg-surface-2 px-1.5 py-0.5 rounded mt-0.5">
           Q{index + 1}
         </span>
-        <p className="text-sm text-ink-2 leading-snug">{q.text}</p>
+        <div className="flex-1 flex items-start justify-between gap-2">
+          <p className="text-sm text-ink-2 leading-snug">{q.text}</p>
+          {!q.counted && (
+            <span className="shrink-0 text-[10px] font-medium text-muted border border-hairline px-1.5 py-0.5 rounded-full whitespace-nowrap">
+              not graded
+            </span>
+          )}
+        </div>
       </div>
 
       {q.response ? (
         <div className="ml-7 space-y-1">
           <div className="flex items-start justify-between gap-3">
             <p className="text-sm text-ink leading-relaxed flex-1">{q.response.responseText}</p>
-            {scoreChip(q.score)}
+            {q.counted && scoreChip(q.score)}
           </div>
           {isWrong && (
             <p className="text-xs text-muted">

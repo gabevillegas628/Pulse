@@ -6,3 +6,7 @@ dist/
 *.tsbuildinfo
 backend/prisma/seed.ts
 backend/prisma/seeds/
+Redesign/
+01-thermodynamics.md
+13-pentose-phosphate-pathway.md
+docs/

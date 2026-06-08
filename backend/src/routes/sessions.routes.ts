@@ -7,7 +7,7 @@ import { AppError } from '../middleware/error.middleware.js'
 import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
 import { getIo } from '../socket.js'
 import { SessionStatus } from 'shared'
-import { calcScore } from '../utils/scoring.js'
+import { gradeSession } from '../utils/scoring.js'
 import { generateUniqueCode } from '../utils/codes.js'
 import { attachQuestionQrs } from '../utils/qr.js'
 import { p } from '../utils/params.js'
@@ -255,23 +255,34 @@ router.get('/sessions/:id/export', requireProfessor, async (req: Request, res: R
 
     const students = session.class.enrollments.map((e) => e.student)
 
-    type Row = { netId: string; scores: number[] }
-    const rows: Row[] = students.map((s) => {
-      const scores = session.questions.map((q) => {
-        const resp = q.responses.find((r) => r.studentId === s.id) ?? null
-        return calcScore(q.type, q.correctAnswer, resp, q.tolerance)
-      })
-      return { netId: s.netId, scores }
+    const rows = students.map((s) => {
+      const gradeResult = gradeSession(session.type as string, session.questions.map(q => ({
+        id: q.id,
+        type: q.type,
+        correctAnswer: q.correctAnswer,
+        tolerance: q.tolerance,
+        totalResponseCount: q.responses.length,
+        hasAnyAiScore: q.responses.some(r => r.aiScore !== null),
+        studentResponse: q.responses.find(r => r.studentId === s.id) ?? null,
+      })))
+      return { netId: s.netId, gradeResult }
     })
 
-    const maxPerQ = session.questions.map(() => 1.0)
-    const grandMax = maxPerQ.reduce((a, b) => a + b, 0)
+    // Use the first student's result (or an empty grade) to determine column headers
+    const sampleResult = rows[0]?.gradeResult ?? gradeSession(session.type as string, [])
+    const grandMax = sampleResult.max
 
-    const qHeaders = session.questions.map((_q, i) => `Q${i + 1} Score`)
+    const qHeaders = session.questions.map((q, i) => {
+      const qr = sampleResult.questions.find(r => r.id === q.id)
+      return qr?.counted ? `Q${i + 1}` : `Q${i + 1} (ungraded)`
+    })
     const header = ['NetID', ...qHeaders, 'Total', `Max (${grandMax})`].join(',')
-    const csvRows = rows.map((r) => {
-      const total = r.scores.reduce((a, b) => a + b, 0)
-      return [r.netId, ...r.scores.map(String), total.toFixed(1), grandMax.toFixed(1)].join(',')
+    const csvRows = rows.map(({ netId, gradeResult: gr }) => {
+      const scores = session.questions.map(q => {
+        const qr = gr.questions.find(r => r.id === q.id)!
+        return qr.counted ? qr.score.toFixed(1) : '—'
+      })
+      return [netId, ...scores, gr.earned.toFixed(1), grandMax.toFixed(1)].join(',')
     })
 
     const csv = [header, ...csvRows].join('\n')

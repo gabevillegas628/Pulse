@@ -6,7 +6,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../db/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
-import { calcScore, calcSessionMax } from '../utils/scoring.js'
+import { gradeSession } from '../utils/scoring.js'
 import { generateUniqueCode } from '../utils/codes.js'
 import { p } from '../utils/params.js'
 
@@ -421,26 +421,59 @@ router.get('/:id/students/:studentId/activity', async (req: Request, res: Respon
               where: { studentId },
               select: { responseText: true, wordCount: true, isFlagged: true, submittedAt: true, aiScore: true },
             },
+            _count: { select: { responses: true } },
           },
         },
       },
     })
 
-    const result = sessions.map((session) => ({
-      id: session.id,
-      title: session.title,
-      type: session.type as 'IN_CLASS' | 'HOMEWORK',
-      status: session.status,
-      createdAt: session.createdAt,
-      questions: session.questions.map((q, i) => ({
-        id: q.id,
-        text: q.text,
-        type: q.type,
-        number: i + 1,
-        correctAnswer: q.correctAnswer,
-        response: q.responses[0] ?? null,
-      })),
-    }))
+    const allQuestionIds = sessions.flatMap(s => s.questions.map(q => q.id))
+    const aiGradedQuestionIds = new Set(
+      (await prisma.response.groupBy({
+        by: ['questionId'],
+        where: { questionId: { in: allQuestionIds }, aiScore: { not: null } },
+      })).map(r => r.questionId)
+    )
+
+    const isClosed = (status: string) => status === 'CLOSED' || status === 'ARCHIVED'
+
+    const result = sessions.map((session) => {
+      const qs = session.questions as Array<typeof session.questions[number] & { _count: { responses: number } }>
+
+      // Only compute grades for closed sessions; open sessions haven't been graded yet
+      const gradeResult = isClosed(session.status)
+        ? gradeSession(session.type as string, qs.map(q => ({
+            id: q.id,
+            type: q.type,
+            correctAnswer: q.correctAnswer,
+            tolerance: q.tolerance,
+            totalResponseCount: q._count.responses,
+            hasAnyAiScore: aiGradedQuestionIds.has(q.id),
+            studentResponse: q.responses[0] ?? null,
+          })))
+        : null
+
+      return {
+        id: session.id,
+        title: session.title,
+        type: session.type as 'IN_CLASS' | 'HOMEWORK',
+        status: session.status,
+        createdAt: session.createdAt,
+        questions: qs.map((q, i) => {
+          const qResult = gradeResult?.questions.find(r => r.id === q.id)
+          return {
+            id: q.id,
+            text: q.text,
+            type: q.type,
+            number: i + 1,
+            correctAnswer: q.correctAnswer,
+            response: q.responses[0] ?? null,
+            score: qResult?.counted ? qResult.score : null,
+            counted: qResult?.counted ?? false,
+          }
+        }),
+      }
+    })
 
     res.json({ success: true, data: { sessions: result } })
   } catch (err) {
@@ -477,8 +510,10 @@ router.post('/:id/students/:studentId/reset-password', async (req: Request, res:
 
 
 type GradeQuestion = {
+  id: string
   type: string
   correctAnswer: string | null
+  tolerance: number | null
   responses: { studentId: string; responseText: string; aiScore: number | null }[]
 }
 type GradeSession = {
@@ -529,12 +564,22 @@ router.get('/:id/grades/json', async (req: Request, res: Response, next: NextFun
     const participationSessions = allSessions.filter((s) => s.type !== 'HOMEWORK')
     const homeworkSessions = allSessions.filter((s) => s.type === 'HOMEWORK')
 
-    const participationMax = participationSessions.reduce(
-      (sum, s) => sum + calcSessionMax('IN_CLASS', s.questions.map((q) => q.responses.length)), 0
-    )
-    const hwMax = homeworkSessions.reduce(
-      (sum, s) => sum + calcSessionMax('HOMEWORK', s.questions.map((q) => q.responses.length)), 0
-    )
+    const participationMax = participationSessions.reduce((sum, s) => {
+      return sum + gradeSession('IN_CLASS', s.questions.map(q => ({
+        id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
+        totalResponseCount: q.responses.length,
+        hasAnyAiScore: q.responses.some(r => r.aiScore !== null),
+        studentResponse: null,
+      }))).max
+    }, 0)
+    const hwMax = homeworkSessions.reduce((sum, s) => {
+      return sum + gradeSession('HOMEWORK', s.questions.map(q => ({
+        id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
+        totalResponseCount: q.responses.length,
+        hasAnyAiScore: q.responses.some(r => r.aiScore !== null),
+        studentResponse: null,
+      }))).max
+    }, 0)
 
     const sessions = allSessions.map((s) => ({
       id: s.id,
@@ -546,12 +591,13 @@ router.get('/:id/grades/json', async (req: Request, res: Response, next: NextFun
     const students = enrollments.map((enrollment) => {
       const student = enrollment.student
       const scores = allSessions.map((session) => {
-        const earned = session.questions.reduce((sum: number, q: GradeQuestion) => {
-          const resp = q.responses.find((r) => r.studentId === student.id) ?? null
-          return sum + calcScore(q.type, q.correctAnswer, resp)
-        }, 0)
-        const max = calcSessionMax(session.type, session.questions.map((q) => q.responses.length))
-        return { sessionId: session.id, earned: Math.round(earned * 10) / 10, max }
+        const result = gradeSession(session.type, session.questions.map(q => ({
+          id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
+          totalResponseCount: q.responses.length,
+          hasAnyAiScore: q.responses.some(r => r.aiScore !== null),
+          studentResponse: q.responses.find(r => r.studentId === student.id) ?? null,
+        })))
+        return { sessionId: session.id, earned: result.earned, max: result.max }
       })
 
       const participationTotal = participationSessions.reduce((sum, s) => {
@@ -618,12 +664,22 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
     const participationSessions = allSessions.filter((s) => s.type !== 'HOMEWORK')
     const homeworkSessions = allSessions.filter((s) => s.type === 'HOMEWORK')
 
-    const participationMax = participationSessions.reduce(
-      (sum, s) => sum + calcSessionMax('IN_CLASS', s.questions.map((q) => q.responses.length)), 0
-    )
-    const homeworkMax = homeworkSessions.reduce(
-      (sum, s) => sum + calcSessionMax('HOMEWORK', s.questions.map((q) => q.responses.length)), 0
-    )
+    const participationMax = participationSessions.reduce((sum, s) => {
+      return sum + gradeSession('IN_CLASS', s.questions.map(q => ({
+        id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
+        totalResponseCount: q.responses.length,
+        hasAnyAiScore: q.responses.some(r => r.aiScore !== null),
+        studentResponse: null,
+      }))).max
+    }, 0)
+    const homeworkMax = homeworkSessions.reduce((sum, s) => {
+      return sum + gradeSession('HOMEWORK', s.questions.map(q => ({
+        id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
+        totalResponseCount: q.responses.length,
+        hasAnyAiScore: q.responses.some(r => r.aiScore !== null),
+        studentResponse: null,
+      }))).max
+    }, 0)
 
     const participationHeaders = participationSessions.map((s) => s.title.replace(/,/g, ' '))
     const homeworkHeaders = homeworkSessions.map((s) => `HW: ${s.title.replace(/,/g, ' ')}`)
@@ -641,16 +697,20 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
       const sectionName = enrollment.section?.name ?? ''
 
       const pTotals = participationSessions.map((session) =>
-        session.questions.reduce((sum: number, q: GradeQuestion) => {
-          const resp = q.responses.find((r) => r.studentId === student.id) ?? null
-          return sum + calcScore(q.type, q.correctAnswer, resp)
-        }, 0)
+        gradeSession('IN_CLASS', session.questions.map(q => ({
+          id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
+          totalResponseCount: q.responses.length,
+          hasAnyAiScore: q.responses.some(r => r.aiScore !== null),
+          studentResponse: q.responses.find(r => r.studentId === student.id) ?? null,
+        }))).earned
       )
       const hwTotals = homeworkSessions.map((session) =>
-        session.questions.reduce((sum: number, q: GradeQuestion) => {
-          const resp = q.responses.find((r) => r.studentId === student.id) ?? null
-          return sum + calcScore(q.type, q.correctAnswer, resp)
-        }, 0)
+        gradeSession('HOMEWORK', session.questions.map(q => ({
+          id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
+          totalResponseCount: q.responses.length,
+          hasAnyAiScore: q.responses.some(r => r.aiScore !== null),
+          studentResponse: q.responses.find(r => r.studentId === student.id) ?? null,
+        }))).earned
       )
 
       const pTotal = pTotals.reduce((a, b) => a + b, 0)

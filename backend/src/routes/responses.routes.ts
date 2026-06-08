@@ -5,7 +5,7 @@ import { AppError } from '../middleware/error.middleware.js'
 import { requireStudent, StudentRequest } from '../middleware/auth.middleware.js'
 import { getIo } from '../socket.js'
 
-import { calcScore, calcSessionMax } from '../utils/scoring.js'
+import { gradeSession } from '../utils/scoring.js'
 import { upsertEnrollment } from '../utils/enrollment.js'
 import { p } from '../utils/params.js'
 import { toInchi } from '../utils/indigo.js'
@@ -241,14 +241,25 @@ router.get('/student/classes/:classId/grades', requireStudent, async (req: Reque
       },
     })
 
+    const allQuestionIds = sessions.flatMap(s => s.questions.map(q => q.id))
+    const aiGradedQuestionIds = new Set(
+      (await prisma.response.groupBy({
+        by: ['questionId'],
+        where: { questionId: { in: allQuestionIds }, aiScore: { not: null } },
+      })).map(r => r.questionId)
+    )
+
     const result = sessions.map((session) => {
-      let earned = 0
       const qs = session.questions as Array<typeof session.questions[number] & { _count: { responses: number } }>
-      const max = calcSessionMax(session.type as string, qs.map((q) => q._count.responses))
-      for (const q of session.questions) {
-        const resp = q.responses[0] ?? null
-        earned += calcScore(q.type, q.correctAnswer, resp, q.tolerance)
-      }
+      const gradeResult = gradeSession(session.type as string, qs.map(q => ({
+        id: q.id,
+        type: q.type,
+        correctAnswer: q.correctAnswer,
+        tolerance: q.tolerance,
+        totalResponseCount: q._count.responses,
+        hasAnyAiScore: aiGradedQuestionIds.has(q.id),
+        studentResponse: q.responses[0] ?? null,
+      })))
       return {
         id: session.id,
         title: session.title,
@@ -256,8 +267,8 @@ router.get('/student/classes/:classId/grades', requireStudent, async (req: Reque
         date: session.type === 'IN_CLASS'
           ? session.closedAt?.toISOString() ?? null
           : (session as unknown as { deadline: Date | null }).deadline?.toISOString() ?? null,
-        earned: Math.round(earned * 10) / 10,
-        max,
+        earned: gradeResult.earned,
+        max: gradeResult.max,
       }
     })
 
@@ -297,29 +308,42 @@ router.get('/student/sessions/:sessionId/grades', requireStudent, async (req: Re
     })
     if (!enrollment) throw new AppError('Not enrolled in this class', 403)
 
-    let earned = 0
+    const aiGradedQuestionIds = new Set(
+      (await prisma.response.groupBy({
+        by: ['questionId'],
+        where: { questionId: { in: session.questions.map(q => q.id) }, aiScore: { not: null } },
+      })).map(r => r.questionId)
+    )
+
     const qs = session.questions as Array<typeof session.questions[number] & { _count: { responses: number } }>
-    const max = calcSessionMax(session.type as string, qs.map((q) => q._count.responses))
+    const gradeResult = gradeSession(session.type as string, qs.map(q => ({
+      id: q.id,
+      type: q.type,
+      correctAnswer: q.correctAnswer,
+      tolerance: q.tolerance,
+      totalResponseCount: q._count.responses,
+      hasAnyAiScore: aiGradedQuestionIds.has(q.id),
+      studentResponse: q.responses[0] ?? null,
+    })))
 
-    const presentedQs = session.type === 'IN_CLASS'
-      ? qs.filter((q) => q._count.responses > 0)
-      : qs
-
-    const questions = presentedQs.map((q) => {
-      const resp = q.responses[0] ?? null
-      const score = calcScore(q.type, q.correctAnswer, resp, q.tolerance)
-      earned += score
-      return {
-        id: q.id,
-        text: q.text,
-        type: q.type,
-        options: q.options,
-        order: q.order,
-        correctAnswer: q.correctAnswer,
-        response: resp ? { responseText: resp.responseText, aiScore: resp.aiScore, submittedAt: resp.submittedAt } : null,
-        score,
-      }
-    })
+    const questions = qs
+      .filter(q => session.type !== 'IN_CLASS' || q._count.responses > 0)
+      .map(q => {
+        const qResult = gradeResult.questions.find(r => r.id === q.id)!
+        return {
+          id: q.id,
+          text: q.text,
+          type: q.type,
+          options: q.options,
+          order: q.order,
+          correctAnswer: q.correctAnswer,
+          response: q.responses[0]
+            ? { responseText: q.responses[0].responseText, aiScore: q.responses[0].aiScore, submittedAt: q.responses[0].submittedAt }
+            : null,
+          score: qResult.score,
+          counted: qResult.counted,
+        }
+      })
 
     res.json({
       success: true,
@@ -329,8 +353,8 @@ router.get('/student/sessions/:sessionId/grades', requireStudent, async (req: Re
           title: session.title,
           type: session.type as 'IN_CLASS' | 'HOMEWORK',
           questions,
-          earned: Math.round(earned * 10) / 10,
-          max,
+          earned: gradeResult.earned,
+          max: gradeResult.max,
         },
       },
     })
@@ -501,6 +525,14 @@ router.get('/student/classes/:classId/assignments', requireStudent, async (req: 
       },
     })
 
+    const allAssignmentQuestionIds = assignments.flatMap(a => a.questions.map(q => q.id))
+    const aiGradedQIds = new Set(
+      (await prisma.response.groupBy({
+        by: ['questionId'],
+        where: { questionId: { in: allAssignmentQuestionIds }, aiScore: { not: null } },
+      })).map(r => r.questionId)
+    )
+
     type AssignmentRow = {
       id: string
       title: string
@@ -519,8 +551,17 @@ router.get('/student/classes/:classId/assignments', requireStudent, async (req: 
       let earnedScore: number | null = null
       let maxScore: number | null = null
       if (isClosed && qs.length > 0) {
-        earnedScore = qs.reduce((sum, q) => sum + calcScore(q.type, q.correctAnswer, q.responses[0] ?? null, q.tolerance), 0)
-        maxScore = qs.length
+        const gradeResult = gradeSession('HOMEWORK', qs.map(q => ({
+          id: q.id,
+          type: q.type,
+          correctAnswer: q.correctAnswer,
+          tolerance: q.tolerance,
+          totalResponseCount: 1, // HOMEWORK: all questions count regardless of total responses
+          hasAnyAiScore: aiGradedQIds.has(q.id),
+          studentResponse: q.responses[0] ?? null,
+        })))
+        earnedScore = gradeResult.earned
+        maxScore = gradeResult.max
       }
       return {
         id: a.id,
@@ -639,11 +680,25 @@ router.get('/student/assignments/:id/grades', requireStudent, async (req: Reques
     })
     if (!enrollment) throw new AppError('Not enrolled in this class', 403)
 
-    let earned = 0
-    const questions = assignment.questions.map((q) => {
-      const resp = q.responses[0] ?? null
-      const score = calcScore(q.type, q.correctAnswer, resp, q.tolerance)
-      earned += score
+    const aiGradedQIds = new Set(
+      (await prisma.response.groupBy({
+        by: ['questionId'],
+        where: { questionId: { in: assignment.questions.map(q => q.id) }, aiScore: { not: null } },
+      })).map(r => r.questionId)
+    )
+
+    const gradeResult = gradeSession('HOMEWORK', assignment.questions.map(q => ({
+      id: q.id,
+      type: q.type,
+      correctAnswer: q.correctAnswer,
+      tolerance: q.tolerance,
+      totalResponseCount: 1,
+      hasAnyAiScore: aiGradedQIds.has(q.id),
+      studentResponse: q.responses[0] ?? null,
+    })))
+
+    const questions = assignment.questions.map(q => {
+      const qResult = gradeResult.questions.find(r => r.id === q.id)!
       return {
         id: q.id,
         text: q.text,
@@ -651,8 +706,10 @@ router.get('/student/assignments/:id/grades', requireStudent, async (req: Reques
         options: q.options,
         order: q.order,
         groupId: (q as typeof q & { groupId: string | null }).groupId,
-        response: resp ? { responseText: resp.responseText, aiScore: resp.aiScore, submittedAt: resp.submittedAt } : null,
-        score,
+        response: q.responses[0]
+          ? { responseText: q.responses[0].responseText, aiScore: q.responses[0].aiScore, submittedAt: q.responses[0].submittedAt }
+          : null,
+        score: qResult.score,
       }
     })
 
@@ -668,8 +725,8 @@ router.get('/student/assignments/:id/grades', requireStudent, async (req: Reques
           class: assignment.class,
           groups,
           questions,
-          earned: Math.round(earned * 10) / 10,
-          max: calcSessionMax('HOMEWORK', new Array(assignment.questions.length).fill(1)),
+          earned: gradeResult.earned,
+          max: gradeResult.max,
         },
       },
     })
