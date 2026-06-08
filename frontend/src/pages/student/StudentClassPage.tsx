@@ -356,8 +356,25 @@ export default function StudentClassPage() {
               </div>
             )
 
+            const unanswered = openAssignments.reduce(
+              (sum, a) => sum + Math.max(0, a.questionCount - a.submittedCount), 0
+            )
             return (
               <div className="space-y-5">
+                {/* HW nudge */}
+                {unanswered > 0 && (
+                  <Link
+                    to={`/student/classes/${classId}`}
+                    onClick={() => setTab('homework')}
+                    className="flex items-center justify-between bg-warn-soft border border-warn/20 rounded-[14px] px-5 py-3 hover:shadow-card transition-shadow"
+                  >
+                    <p className="text-sm text-warn font-medium">
+                      {unanswered} homework question{unanswered !== 1 ? 's' : ''} unanswered
+                    </p>
+                    <span className="text-xs text-warn font-bold">View →</span>
+                  </Link>
+                )}
+
                 {/* Standing headline */}
                 <div className="bg-surface border border-hairline rounded-[14px] px-5 py-4 flex items-center justify-between">
                   <div>
