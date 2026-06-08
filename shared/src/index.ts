@@ -199,7 +199,7 @@ export interface SessionWithCounts extends Session {
 
 export interface ClassWithCounts extends Class {
   _count: { sessions: number; enrollments: number }
-  sessions: Array<{ id: string; title: string }>
+  sessions: Array<{ id: string; title: string; status: string; createdAt: string }>
 }
 
 export interface ResponseWithStudent extends Response {

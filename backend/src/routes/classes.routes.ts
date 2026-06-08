@@ -57,7 +57,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       orderBy: { createdAt: 'desc' },
       include: {
         _count: { select: { sessions: true, enrollments: true } },
-        sessions: { where: { status: 'OPEN' }, select: { id: true, title: true }, take: 1 },
+        sessions: { orderBy: { createdAt: 'desc' }, take: 1, select: { id: true, title: true, status: true, createdAt: true } },
       },
     })
     res.json({ success: true, data: { classes } })

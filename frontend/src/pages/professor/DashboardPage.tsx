@@ -10,8 +10,7 @@ import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
 import CodeChip from '@/components/ui/CodeChip'
 import Empty from '@/components/ui/Empty'
-import LiveDot from '@/components/ui/LiveDot'
-import { Plus, BookOpen, Users, X, Radio } from 'lucide-react'
+import { Plus, BookOpen, X } from 'lucide-react'
 import type { ClassWithCounts } from 'shared'
 import { apiError } from '@/lib/errors'
 
@@ -20,6 +19,16 @@ const schema = z.object({
   description: z.string().optional(),
 })
 type FormData = z.infer<typeof schema>
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  return `${days}d ago`
+}
 
 export default function DashboardPage() {
   const qc = useQueryClient()
@@ -52,46 +61,60 @@ export default function DashboardPage() {
     createMutation.mutate(data)
   }
 
-  const liveClasses = data?.filter((c) => c.sessions.length > 0) ?? []
+  // Most recent session per class; live = status OPEN
+  const liveItems = (data ?? [])
+    .map((cls) => ({ cls, session: cls.sessions[0] }))
+    .filter(({ session }) => session?.status === 'OPEN')
+
+  const activeCount = (data ?? []).length
 
   return (
     <ProfessorLayout>
-      {/* Live session alert banner */}
-      {liveClasses.length > 0 && (
-        <div className="mb-6 bg-signal-soft border border-signal/20 rounded-[14px] px-5 py-4">
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-2 shrink-0">
-              <LiveDot />
-              <span className="text-sm font-bold text-signal">
-                {liveClasses.length === 1
-                  ? `${liveClasses[0].sessions[0].title} is live`
-                  : `${liveClasses.length} sessions live now`}
-              </span>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              {liveClasses.map((c) => (
+      {/* ── Live session banner ─────────────────────────────────────────── */}
+      {liveItems.length > 0 && (
+        <div className="mb-6 bg-signal rounded-[14px] px-6 py-5 text-white">
+          <p className="text-xs font-bold uppercase tracking-widest opacity-80 mb-1.5">● Live now</p>
+          {liveItems.map(({ cls, session }) => (
+            <div key={session.id} className="flex items-center justify-between gap-4 flex-wrap">
+              <div>
+                <p className="text-xl font-bold leading-snug">
+                  {session.title} — {cls.name}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
                 <Link
-                  key={c.sessions[0].id}
-                  to={`/professor/sessions/${c.sessions[0].id}`}
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-signal hover:bg-[var(--signal-bright)] px-3 py-1.5 rounded-sm transition-colors"
+                  to={`/professor/sessions/${session.id}`}
+                  className="inline-flex items-center gap-1.5 text-sm font-bold text-white border border-white/40 hover:border-white/80 px-4 py-2 rounded-sm transition-colors"
                 >
-                  <Radio size={12} />
-                  {liveClasses.length > 1 ? c.name : 'Open monitor'}
+                  End
                 </Link>
-              ))}
+                <Link
+                  to={`/professor/sessions/${session.id}`}
+                  className="inline-flex items-center gap-1.5 text-sm font-bold text-signal bg-white hover:bg-white/90 px-4 py-2 rounded-sm transition-colors"
+                >
+                  Open monitor ▸
+                </Link>
+              </div>
             </div>
-          </div>
+          ))}
         </div>
       )}
 
+      {/* ── Page header ─────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between mb-8">
-        <h1 className="text-2xl font-bold text-ink">Classes</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-ink">Classes</h1>
+          {activeCount > 0 && (
+            <p className="text-sm text-muted mt-0.5">{activeCount} active</p>
+          )}
+        </div>
         <Button variant="primary" onClick={() => setShowModal(true)}>
           <Plus size={16} />
           New class
         </Button>
       </div>
 
+      {/* ── Class grid ──────────────────────────────────────────────────── */}
       {isLoading ? (
         <Empty icon={BookOpen} message="Loading classes…" />
       ) : data?.length === 0 ? (
@@ -99,29 +122,43 @@ export default function DashboardPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {data?.map((cls) => {
-            const isLive = cls.sessions.length > 0
+            const lastSession = cls.sessions[0]
+            const isLive = lastSession?.status === 'OPEN'
             return (
               <Link key={cls.id} to={`/professor/classes/${cls.id}`}>
                 <Card className={`p-6 hover:shadow-pop transition-shadow cursor-pointer h-full flex flex-col gap-4 ${isLive ? 'border-signal/30' : ''}`}>
-                  <div className="flex items-start justify-between gap-2">
-                    <h2 className="font-semibold text-ink leading-snug">{cls.name}</h2>
-                    {isLive && <LiveDot className="shrink-0 mt-1" />}
+                  {/* Title row */}
+                  <div>
+                    <p className="font-semibold text-ink leading-snug">{cls.name}</p>
+                    {cls.description && (
+                      <p className="text-xs text-muted mt-0.5 line-clamp-1">{cls.description}</p>
+                    )}
                   </div>
-                  {cls.description && (
-                    <p className="text-sm text-muted line-clamp-1 -mt-2">{cls.description}</p>
-                  )}
-                  <div className="flex items-center gap-4 text-xs text-muted mt-auto">
-                    <span className="flex items-center gap-1">
-                      <BookOpen size={12} />
-                      {cls._count.sessions} session{cls._count.sessions !== 1 ? 's' : ''}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Users size={12} />
-                      {cls._count.enrollments} student{cls._count.enrollments !== 1 ? 's' : ''}
-                    </span>
+
+                  {/* Stats row */}
+                  <div className="flex items-end gap-5 mt-auto">
+                    <div>
+                      <p className="text-xl font-bold font-mono text-ink leading-none">{cls._count.enrollments}</p>
+                      <p className="text-xs text-muted mt-0.5">students</p>
+                    </div>
+                    <div>
+                      <p className="text-xl font-bold font-mono text-ink leading-none">{cls._count.sessions}</p>
+                      <p className="text-xs text-muted mt-0.5">sessions</p>
+                    </div>
                   </div>
-                  <div className="pt-3 border-t border-hairline">
+
+                  {/* Footer: join code + recency */}
+                  <div className="pt-3 border-t border-hairline flex items-center justify-between gap-2">
                     <CodeChip>{cls.joinCode}</CodeChip>
+                    {lastSession && (
+                      <span className="text-xs text-muted">
+                        {isLive ? (
+                          <span className="text-signal font-semibold">Live now</span>
+                        ) : (
+                          `opener ${timeAgo(lastSession.createdAt)}`
+                        )}
+                      </span>
+                    )}
                   </div>
                 </Card>
               </Link>
@@ -130,7 +167,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Create class modal */}
+      {/* ── Create class modal ───────────────────────────────────────────── */}
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
           <Card className="w-full max-w-md p-6 shadow-pop">
