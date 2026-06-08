@@ -105,19 +105,33 @@ export default function StudentClassPage() {
   const { data: assignmentData } = useQuery<{ assignments: AssignmentRow[] }>({
     queryKey: ['student-assignments', classId],
     queryFn: () => api.get(`/student/classes/${classId}/assignments`).then((r) => r.data.data),
-    enabled: !!classId && tab === 'homework',
+    enabled: !!classId,
   })
 
   const { data: gradesData } = useQuery<{ sessions: GradeSession[]; totalEarned: number; totalMax: number }>({
     queryKey: ['student-grades', classId],
     queryFn: () => api.get(`/student/classes/${classId}/grades`).then((r) => r.data.data),
-    enabled: !!classId && tab === 'gradebook',
+    enabled: !!classId,
   })
 
   const liveSessions = cls?.sessions ?? []
   const assignments = assignmentData?.assignments ?? []
   const openAssignments = assignments.filter((a) => a.status === 'OPEN')
   const pastAssignments = assignments.filter((a) => a.status === 'CLOSED' || a.status === 'ARCHIVED')
+
+  // "Up next" = open assignment with the soonest deadline (or first without one)
+  const upNext = openAssignments
+    .filter((a) => a.deadline)
+    .sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime())[0]
+    ?? openAssignments[0]
+
+  // Standing breakdown by type
+  const inClassSessions = gradesData?.sessions.filter((s) => s.type === 'IN_CLASS') ?? []
+  const hwSessions = gradesData?.sessions.filter((s) => s.type === 'HOMEWORK') ?? []
+  const inClassEarned = inClassSessions.reduce((sum, s) => sum + s.earned, 0)
+  const inClassMax = inClassSessions.reduce((sum, s) => sum + s.max, 0)
+  const hwEarned = hwSessions.reduce((sum, s) => sum + s.earned, 0)
+  const hwMax = hwSessions.reduce((sum, s) => sum + s.max, 0)
 
   if (enrollments && !enrollment) {
     return (
@@ -186,11 +200,10 @@ export default function StudentClassPage() {
 
         {/* Live Sessions tab */}
         {tab === 'sessions' && (
-          liveSessions.length === 0 ? (
-            <Empty icon={BookOpen} message="No live session right now — your professor will start one in class." />
-          ) : (
-            <div className="space-y-3">
-              {liveSessions.map((s) => (
+          <div className="space-y-4">
+            {/* Live now */}
+            {liveSessions.length > 0 ? (
+              liveSessions.map((s) => (
                 <div key={s.id} className="flex items-center justify-between bg-signal-soft border border-signal/20 rounded-[14px] p-5">
                   <div>
                     <div className="flex items-center gap-2 mb-0.5">
@@ -203,12 +216,74 @@ export default function StudentClassPage() {
                     to="/student/enter-code"
                     className="inline-flex items-center gap-2 bg-signal text-white px-4 py-2 rounded-sm text-sm font-bold hover:bg-[var(--signal-bright)] transition-colors shrink-0"
                   >
-                    Enter code
+                    Answer ▸
                   </Link>
                 </div>
-              ))}
-            </div>
-          )
+              ))
+            ) : (
+              <p className="text-sm text-muted">No live session right now — your professor will start one in class.</p>
+            )}
+
+            {/* Up next */}
+            {upNext && (() => {
+              const isPastDue = upNext.deadline && new Date(upNext.deadline) < new Date()
+              const pct = upNext.questionCount > 0
+                ? Math.round((upNext.submittedCount / upNext.questionCount) * 100)
+                : 0
+              return (
+                <Link to={`/student/assignments/${upNext.id}`} className="block bg-surface border border-hairline rounded-[14px] p-5 hover:shadow-card transition-shadow">
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <p className="text-sm font-semibold text-ink">Up next · {upNext.title}</p>
+                    {upNext.deadline && (
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${
+                        isPastDue
+                          ? 'bg-red-50 text-red-600 border-red-200'
+                          : 'bg-warn-soft text-warn border-warn/20'
+                      }`}>
+                        {isPastDue ? 'Past due' : `Due ${new Date(upNext.deadline).toLocaleDateString()}`}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted mb-1.5">
+                    <span>{upNext.submittedCount} of {upNext.questionCount} answered</span>
+                    <span className="font-mono font-medium text-ink">{pct}%</span>
+                  </div>
+                  <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden">
+                    <div className="h-full bg-signal rounded-full transition-all" style={{ width: `${pct}%` }} />
+                  </div>
+                </Link>
+              )
+            })()}
+
+            {/* Your standing */}
+            {gradesData && gradesData.totalMax > 0 && (() => {
+              const pct = Math.round((gradesData.totalEarned / gradesData.totalMax) * 100)
+              const barColor = pct >= 70 ? 'bg-good' : pct >= 50 ? 'bg-warn' : 'bg-red-500'
+              return (
+                <div className="bg-surface border border-hairline rounded-[14px] p-5">
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <p className="text-sm font-semibold text-ink">Your standing</p>
+                    <span className={`text-lg font-bold font-mono ${pct >= 70 ? 'text-good' : pct >= 50 ? 'text-warn' : 'text-red-500'}`}>
+                      {gradesData.totalEarned}<span className="text-muted font-normal text-sm"> / {gradesData.totalMax}</span>
+                    </span>
+                  </div>
+                  <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden mb-3">
+                    <div className={`h-full ${barColor} rounded-full transition-all`} style={{ width: `${pct}%` }} />
+                  </div>
+                  <p className="text-xs text-muted">
+                    {inClassMax > 0 && `Openers ${inClassEarned}/${inClassMax}`}
+                    {inClassMax > 0 && hwMax > 0 && ' · '}
+                    {hwMax > 0 && `Homework ${hwEarned}/${hwMax}`}
+                  </p>
+                </div>
+              )
+            })()}
+
+            {/* Pure empty state — nothing live, no open HW, no grades yet */}
+            {liveSessions.length === 0 && !upNext && (!gradesData || gradesData.totalMax === 0) && (
+              <Empty icon={BookOpen} message="No live session right now — your professor will start one in class." />
+            )}
+          </div>
         )}
 
         {/* Homework tab */}
@@ -260,8 +335,6 @@ export default function StudentClassPage() {
           ) : gradesData.sessions.length === 0 ? (
             <Empty message="No graded sessions yet." />
           ) : (() => {
-            const inClassSessions = gradesData.sessions.filter((s) => s.type === 'IN_CLASS')
-            const hwSessions = gradesData.sessions.filter((s) => s.type === 'HOMEWORK')
             const pct = gradesData.totalMax > 0
               ? Math.round((gradesData.totalEarned / gradesData.totalMax) * 100)
               : null

@@ -474,9 +474,15 @@ export default function ClassPage() {
                   <div className="flex items-center gap-2 shrink-0">
                     <Link
                       to={`/professor/sessions/${s.id}`}
-                      className="inline-flex items-center gap-1.5 text-sm font-bold text-white bg-signal hover:bg-[var(--signal-bright)] px-4 py-2 rounded-sm transition-colors"
+                      className="inline-flex items-center gap-1.5 text-sm font-medium text-ink-2 bg-surface border border-hairline-strong px-4 py-2 rounded-sm hover:bg-surface-2 transition-colors"
                     >
                       Open monitor
+                    </Link>
+                    <Link
+                      to={`/professor/sessions/${s.id}`}
+                      className="inline-flex items-center gap-1.5 text-sm font-bold text-white bg-signal hover:bg-[var(--signal-bright)] px-4 py-2 rounded-sm transition-colors"
+                    >
+                      Resume ▸
                     </Link>
                   </div>
                 </div>
