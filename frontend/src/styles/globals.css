@@ -115,6 +115,12 @@
   vertical-align: middle;
 }
 
+/* MathJax display math (arrays, block equations) — center via margin */
+.textbook-prose p.math-display mjx-container {
+  display: block !important;
+  margin: 0 auto;
+}
+
 /* MathJax display math — rehype-mathjax SVG output never emits display="true",
    so the backend marks <p> elements that contain only a math container. */
 .textbook-prose p.math-display {
