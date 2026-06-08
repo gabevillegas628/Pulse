@@ -12,7 +12,6 @@ import { io } from 'socket.io-client'
 import type { SessionDetail, QuestionWithResponses, ResponseWithStudent, SummaryCategory } from 'shared'
 import { SessionStatus } from 'shared'
 import ResultsSummary from '@/components/ResultsSummary'
-import PipDisplay from '@/components/PipDisplay'
 import LiveMonitorPanel from '@/components/LiveMonitorPanel'
 import { apiError } from '@/lib/errors'
 
@@ -141,7 +140,7 @@ export default function SessionPage() {
 
   const [pipActiveTab, setPipActiveTab] = useState<number | null>(null)
   const [pipContainer, setPipContainer] = useState<HTMLElement | null>(null)
-  const [showMonitor, setShowMonitor] = useState(true)
+  const pipWindowRef = useRef<Window | null>(null)
   const seenQuestionIdsRef = useRef<Set<string>>(new Set())
   const pipInitializedRef = useRef(false)
 
@@ -335,8 +334,12 @@ export default function SessionPage() {
       pip.document.body.style.margin = '0'
       const container = pip.document.createElement('div')
       pip.document.body.appendChild(container)
+      pipWindowRef.current = pip
       setPipContainer(container)
-      pip.addEventListener('pagehide', () => setPipContainer(null))
+      pip.addEventListener('pagehide', () => {
+        setPipContainer(null)
+        pipWindowRef.current = null
+      })
     } catch (err) {
       console.error('PiP failed:', err)
     }
@@ -346,8 +349,6 @@ export default function SessionPage() {
 
   const totalResponses = data.questions.reduce((sum, q) => sum + q.responses.length, 0)
   const activeQuestion = data.questions[activeTab] as QuestionWithResponses | undefined
-  const isOpen = data.status === SessionStatus.OPEN
-  const monitorVisible = isOpen && showMonitor
 
   return (
     <ProfessorLayout>
@@ -377,15 +378,14 @@ export default function SessionPage() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {data.status === SessionStatus.OPEN && (
-              <Button
-                variant="ghost"
-                onClick={() => setShowMonitor((v) => !v)}
-                title={showMonitor ? 'Hide live monitor' : 'Show live monitor'}
-              >
-                <PictureInPicture2 size={14} /> {showMonitor ? 'Hide monitor' : 'Monitor'}
-              </Button>
-            )}
+            <Button
+              variant="ghost"
+              onClick={openPip}
+              disabled={!!pipContainer}
+              title={pipContainer ? 'Results window is open' : 'Pop out live results'}
+            >
+              <PictureInPicture2 size={14} /> {pipContainer ? 'Live' : 'Pop out'}
+            </Button>
             <a
               href={`/api/sessions/${sessionId}/export`}
               className="inline-flex items-center gap-1.5 bg-surface border border-hairline-strong text-ink-2 rounded-sm px-4 py-2 text-sm font-bold hover:bg-surface-2 transition-colors"
@@ -443,10 +443,6 @@ export default function SessionPage() {
           </div>
         </div>
       </div>
-
-      {/* Main content + live monitor side-by-side */}
-      <div className={monitorVisible ? 'flex items-start gap-6' : undefined}>
-      <div className="flex-1 min-w-0">
 
       {/* Question tabs */}
       <div className="flex items-center gap-1 mb-6 border-b border-hairline">
@@ -890,31 +886,23 @@ export default function SessionPage() {
         )
       })()}
 
-      </div>{/* end flex-1 main content */}
-
-      {/* Live monitor panel */}
-      {monitorVisible && (
-        <LiveMonitorPanel
-          question={activeQuestion}
-          enrolledCount={data.enrolledCount ?? 0}
-          summary={summary}
-          summaryQuestionId={summaryQuestionId}
-          isSummarizing={summarizeMutation.isPending}
-          onSummarize={() => activeQuestion && summarizeMutation.mutate(activeQuestion.id)}
-          onOpenPip={openPip}
-          onClose={() => setShowMonitor(false)}
-        />
-      )}
-      </div>{/* end flex wrapper */}
-
       {/* PiP portal */}
       {pipContainer && data && pipActiveTab !== null &&
         createPortal(
-          <PipDisplay
+          <LiveMonitorPanel
             question={data.questions[pipActiveTab] as QuestionWithResponses}
             questionNumber={pipActiveTab + 1}
             totalQuestions={data.questions.length}
             sessionTitle={data.title}
+            enrolledCount={data.enrolledCount ?? 0}
+            summary={summary}
+            summaryQuestionId={summaryQuestionId}
+            isSummarizing={summarizeMutation.isPending}
+            onSummarize={() => {
+              const q = data.questions[pipActiveTab]
+              if (q) summarizeMutation.mutate(q.id)
+            }}
+            onClose={() => pipWindowRef.current?.close()}
           />,
           pipContainer
         )
