@@ -145,7 +145,25 @@ export default function DashboardPage() {
                       <p className="text-xl font-bold font-mono text-ink leading-none">{cls._count.sessions}</p>
                       <p className="text-xs text-muted mt-0.5">sessions</p>
                     </div>
+                    {cls.participationRate != null && (
+                      <div>
+                        <p className={`text-xl font-bold font-mono leading-none ${cls.participationRate >= 0.75 ? 'text-signal' : cls.participationRate >= 0.5 ? 'text-warn' : 'text-muted'}`}>
+                          {Math.round(cls.participationRate * 100)}%
+                        </p>
+                        <p className="text-xs text-muted mt-0.5">participation</p>
+                      </div>
+                    )}
                   </div>
+
+                  {/* Participation bar */}
+                  {cls.participationRate != null && (
+                    <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden -mb-1">
+                      <div
+                        className={`h-full rounded-full ${cls.participationRate >= 0.75 ? 'bg-signal' : cls.participationRate >= 0.5 ? 'bg-warn' : 'bg-muted'}`}
+                        style={{ width: `${Math.round(cls.participationRate * 100)}%` }}
+                      />
+                    </div>
+                  )}
 
                   {/* Footer: join code + recency */}
                   <div className="pt-3 border-t border-hairline flex items-center justify-between gap-2">

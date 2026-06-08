@@ -135,11 +135,14 @@ export default function ClassPage() {
     queryFn: () => api.get(`/classes/${classId}/sections`).then((r) => r.data.data.sections),
   })
 
-  const { data: sessionsData } = useQuery<{ id: string; title: string; status: string; questions: Array<{ id: string }>; createdAt: string; targetSection?: { id: string; name: string } | null }[]>({
+  type SessionRow = { id: string; title: string; status: string; questions: Array<{ id: string }>; createdAt: string; targetSection?: { id: string; name: string } | null; respondentCount: number }
+  const { data: sessionsResult } = useQuery<{ sessions: SessionRow[]; enrolledCount: number }>({
     queryKey: ['sessions', classId],
-    queryFn: () => api.get(`/classes/${classId}/sessions?type=IN_CLASS`).then((r) => r.data.data.sessions),
+    queryFn: () => api.get(`/classes/${classId}/sessions?type=IN_CLASS`).then((r) => r.data.data),
     enabled: tab === 'sessions',
   })
+  const sessionsData = sessionsResult?.sessions
+  const enrolledCount = sessionsResult?.enrolledCount ?? 0
 
   const { data: assignmentsData } = useQuery<Assignment[]>({
     queryKey: ['assignments', classId],
@@ -420,7 +423,7 @@ export default function ClassPage() {
         ) : (() => {
           const openSessions = sessionsData.filter((s) => s.status === 'OPEN')
           const otherSessions = sessionsData.filter((s) => s.status !== 'OPEN')
-          const renderSessionRow = (s: typeof sessionsData[0]) => (
+          const renderSessionRow = (s: SessionRow) => (
             <div key={s.id} className="group relative flex items-center bg-surface border border-hairline rounded-[14px] hover:shadow-card transition-shadow">
               <Link
                 to={`/professor/sessions/${s.id}`}
@@ -433,7 +436,12 @@ export default function ClassPage() {
                     {new Date(s.createdAt).toLocaleDateString()}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
+                  {s.status === 'CLOSED' && enrolledCount > 0 && (
+                    <span className="text-xs font-mono text-muted">
+                      {s.respondentCount}/{enrolledCount} · {Math.round((s.respondentCount / enrolledCount) * 100)}%
+                    </span>
+                  )}
                   {s.targetSection && (
                     <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-surface-2 text-ink-2">
                       §{s.targetSection.name}

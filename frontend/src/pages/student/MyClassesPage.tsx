@@ -7,8 +7,9 @@ import StudentLayout from '@/components/layout/StudentLayout'
 import Pill from '@/components/ui/Pill'
 import LiveDot from '@/components/ui/LiveDot'
 import Empty from '@/components/ui/Empty'
-import { BookOpen, LogOut, KeyRound } from 'lucide-react'
+import { BookOpen, LogOut, KeyRound, Clock } from 'lucide-react'
 import PasswordChangeModal from '@/components/PasswordChangeModal'
+import type { UpcomingAssignment } from 'shared'
 
 interface ClassInfo {
   id: string
@@ -33,13 +34,35 @@ export default function MyClassesPage() {
     queryFn: () => api.get('/student/classes').then((r) => r.data.data.enrollments),
   })
 
+  const { data: upcomingData } = useQuery<{ assignments: UpcomingAssignment[] }>({
+    queryKey: ['student-upcoming-assignments'],
+    queryFn: () => api.get('/student/upcoming-assignments').then((r) => r.data.data),
+  })
+
   function handleLogout() {
     logout()
     navigate('/student/login')
   }
 
+  const upcoming = upcomingData?.assignments ?? []
   const liveEnrollments = data?.filter((e) => e.class.sessions.length > 0) ?? []
   const hasLive = liveEnrollments.length > 0
+
+  // Count due assignments per class for per-card badge
+  const dueCountByClass: Record<string, number> = {}
+  for (const a of upcoming) {
+    dueCountByClass[a.classId] = (dueCountByClass[a.classId] ?? 0) + 1
+  }
+
+  function formatDeadline(iso: string): string {
+    const d = new Date(iso)
+    const now = new Date()
+    const diffDays = Math.round((d.getTime() - now.getTime()) / 86400000)
+    if (diffDays === 0) return 'Due today'
+    if (diffDays === 1) return 'Due tomorrow'
+    if (diffDays <= 6) return `Due ${d.toLocaleDateString('en-US', { weekday: 'long' })}`
+    return `Due ${d.toLocaleDateString()}`
+  }
 
   return (
     <StudentLayout>
@@ -104,6 +127,34 @@ export default function MyClassesPage() {
         </button>
       )}
 
+      {/* Due soon strip */}
+      {upcoming.length > 0 && (
+        <div className="mb-5 space-y-2">
+          {upcoming.map((a) => {
+            const pct = a.questionCount > 0 ? Math.round((a.submittedCount / a.questionCount) * 100) : 0
+            return (
+              <Link
+                key={a.id}
+                to={`/student/assignments/${a.id}`}
+                className="flex items-center justify-between bg-warn-soft border border-warn/20 rounded-[14px] px-4 py-3 hover:shadow-card transition-shadow"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Clock size={13} className="text-warn shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-ink truncate">{a.title}</p>
+                    <p className="text-xs text-muted">{a.className}</p>
+                  </div>
+                </div>
+                <div className="shrink-0 text-right ml-3">
+                  <p className="text-xs font-medium text-warn">{formatDeadline(a.deadline)}</p>
+                  <p className="text-xs text-muted font-mono">{pct}% done</p>
+                </div>
+              </Link>
+            )
+          })}
+        </div>
+      )}
+
       {/* Class list */}
       {isLoading ? (
         <Empty icon={BookOpen} message="Loading classes…" />
@@ -114,6 +165,7 @@ export default function MyClassesPage() {
           {data?.map((enrollment) => {
             const { class: cls, section } = enrollment
             const isLive = cls.sessions.length > 0
+            const dueCount = dueCountByClass[cls.id] ?? 0
             return (
               <Link
                 key={cls.id}
@@ -128,7 +180,12 @@ export default function MyClassesPage() {
                       {section && <span> · Section {section.name}</span>}
                     </p>
                   </div>
-                  {isLive && <Pill variant="live" dot>Live</Pill>}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {isLive && <Pill variant="live" dot>Live</Pill>}
+                    {!isLive && dueCount > 0 && (
+                      <Pill variant="warn">{dueCount} due</Pill>
+                    )}
+                  </div>
                 </div>
               </Link>
             )

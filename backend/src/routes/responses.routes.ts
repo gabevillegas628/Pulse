@@ -386,6 +386,59 @@ router.get('/student/classes', requireStudent, async (req: Request, res: Respons
   }
 })
 
+// Student: upcoming open assignments (with deadlines) across all enrolled classes
+router.get('/student/upcoming-assignments', requireStudent, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const student = (req as StudentRequest).student
+
+    const enrollments = await prisma.enrollment.findMany({
+      where: { studentId: student.id },
+      select: { classId: true },
+    })
+    const classIds = enrollments.map((e) => e.classId)
+
+    if (classIds.length === 0) {
+      return res.json({ success: true, data: { assignments: [] } })
+    }
+
+    const sessions = await prisma.session.findMany({
+      where: {
+        classId: { in: classIds },
+        type: 'HOMEWORK',
+        status: 'OPEN',
+        deadline: { gte: new Date() },
+      } as object,
+      orderBy: { deadline: 'asc' } as object,
+      take: 5,
+      include: {
+        class: { select: { id: true, name: true } },
+        questions: {
+          include: {
+            responses: {
+              where: { studentId: student.id },
+              select: { id: true },
+            },
+          },
+        },
+      },
+    })
+
+    const assignments = sessions.map((s) => ({
+      id: s.id,
+      title: s.title,
+      classId: s.classId,
+      className: s.class.name,
+      deadline: s.deadline,
+      questionCount: s.questions.length,
+      submittedCount: s.questions.filter((q) => q.responses.length > 0).length,
+    }))
+
+    res.json({ success: true, data: { assignments } })
+  } catch (err) {
+    next(err)
+  }
+})
+
 // Student: enroll in a class (or section) by joinCode
 router.post('/student/enroll', requireStudent, async (req: Request, res: Response, next: NextFunction) => {
   try {

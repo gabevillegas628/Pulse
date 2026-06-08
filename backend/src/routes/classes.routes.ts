@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
 import bcrypt from 'bcryptjs'
 import { customAlphabet } from 'nanoid'
+import { Prisma } from '@prisma/client'
 import { prisma } from '../db/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
@@ -60,7 +61,41 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
         sessions: { orderBy: { createdAt: 'desc' }, take: 1, select: { id: true, title: true, status: true, createdAt: true } },
       },
     })
-    res.json({ success: true, data: { classes } })
+
+    // Participation rate: avg of (distinct responders / enrolled) per closed IN_CLASS session
+    const classIds = classes.map((c) => c.id)
+    let participationMap: Record<string, number | null> = {}
+    if (classIds.length > 0) {
+      const rows = await prisma.$queryRaw<Array<{ classId: string; participationRate: number | null }>>(
+        Prisma.sql`
+          SELECT sub."classId",
+            AVG(sub.respondents::float / NULLIF(sub.enrolled, 0)) AS "participationRate"
+          FROM (
+            SELECT s.id, s."classId",
+              COUNT(DISTINCT r."studentId") AS respondents,
+              (SELECT COUNT(*) FROM "Enrollment" e WHERE e."classId" = s."classId") AS enrolled
+            FROM "Session" s
+            LEFT JOIN "Question" q ON q."sessionId" = s.id
+            LEFT JOIN "Response" r ON r."questionId" = q.id
+            WHERE s.status = 'CLOSED'
+              AND s.type = 'IN_CLASS'
+              AND s."classId" IN (${Prisma.join(classIds)})
+            GROUP BY s.id, s."classId"
+          ) sub
+          GROUP BY sub."classId"
+        `
+      )
+      for (const row of rows) {
+        participationMap[row.classId] = row.participationRate != null ? Number(row.participationRate) : null
+      }
+    }
+
+    const result = classes.map((c) => ({
+      ...c,
+      participationRate: participationMap[c.id] ?? null,
+    }))
+
+    res.json({ success: true, data: { classes: result } })
   } catch (err) {
     next(err)
   }

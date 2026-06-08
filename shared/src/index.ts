@@ -200,6 +200,17 @@ export interface SessionWithCounts extends Session {
 export interface ClassWithCounts extends Class {
   _count: { sessions: number; enrollments: number }
   sessions: Array<{ id: string; title: string; status: string; createdAt: string }>
+  participationRate: number | null
+}
+
+export interface UpcomingAssignment {
+  id: string
+  title: string
+  classId: string
+  className: string
+  deadline: string
+  questionCount: number
+  submittedCount: number
 }
 
 export interface ResponseWithStudent extends Response {

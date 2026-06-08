@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
 import { customAlphabet } from 'nanoid'
+import { Prisma } from '@prisma/client'
 import { prisma } from '../db/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
@@ -88,6 +89,7 @@ router.get('/classes/:classId/sessions', requireProfessor, async (req: Request, 
     const professor = (req as ProfessorRequest).professor
     const cls = await prisma.class.findFirst({
       where: { id: p(req.params.classId), professorId: professor.id },
+      include: { _count: { select: { enrollments: true } } },
     })
     if (!cls) throw new AppError('Class not found', 404)
 
@@ -101,9 +103,35 @@ router.get('/classes/:classId/sessions', requireProfessor, async (req: Request, 
       include: {
         questions: { orderBy: { order: 'asc' } },
         _count: { select: { questions: true } },
+        targetSection: { select: { id: true, name: true } },
       },
     })
-    res.json({ success: true, data: { sessions } })
+
+    // Distinct responder count per session via raw SQL
+    const sessionIds = sessions.map((s) => s.id)
+    let respondentMap: Record<string, number> = {}
+    if (sessionIds.length > 0) {
+      const rows = await prisma.$queryRaw<Array<{ sessionId: string; respondentCount: bigint }>>(
+        Prisma.sql`
+          SELECT s.id AS "sessionId", COUNT(DISTINCT r."studentId") AS "respondentCount"
+          FROM "Session" s
+          LEFT JOIN "Question" q ON q."sessionId" = s.id
+          LEFT JOIN "Response" r ON r."questionId" = q.id
+          WHERE s.id IN (${Prisma.join(sessionIds)})
+          GROUP BY s.id
+        `
+      )
+      for (const row of rows) {
+        respondentMap[row.sessionId] = Number(row.respondentCount)
+      }
+    }
+
+    const result = sessions.map((s) => ({
+      ...s,
+      respondentCount: respondentMap[s.id] ?? 0,
+    }))
+
+    res.json({ success: true, data: { sessions: result, enrolledCount: cls._count.enrollments } })
   } catch (err) {
     next(err)
   }
