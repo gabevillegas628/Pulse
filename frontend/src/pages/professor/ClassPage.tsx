@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useForm, useFieldArray } from 'react-hook-form'
+import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { api } from '@/api/client'
@@ -13,7 +13,7 @@ import Pill from '@/components/ui/Pill'
 import CodeChip from '@/components/ui/CodeChip'
 import Empty from '@/components/ui/Empty'
 import { Plus, Trash2, X, ChevronLeft, ChevronDown, Download, KeyRound, Copy, Users, BookOpen, Settings, RefreshCw } from 'lucide-react'
-import type { QuestionType, StudentStats, ActivitySession, GradebookSession, GradebookStudentRow } from 'shared'
+import type { StudentStats, ActivitySession, GradebookSession, GradebookStudentRow } from 'shared'
 import TextbookPage from '@/pages/shared/TextbookPage'
 import GradebookTable from '@/components/GradebookTable'
 import StudentSessionModal from '@/components/StudentSessionModal'
@@ -30,11 +30,10 @@ interface Assignment {
   questionCount?: number
 }
 
-const questionSchema = z.object({
-  text: z.string().min(1, 'Question text required'),
-  type: z.enum(['FREE_TEXT', 'MULTIPLE_CHOICE', 'MULTI_SELECT', 'RATING', 'YES_NO', 'NUMERIC', 'ORDERING', 'STRUCTURE']),
-  options: z.array(z.string()).optional(),
+const sessionCreateSchema = z.object({
+  title: z.string().min(1, 'Title required'),
 })
+type SessionCreateData = z.infer<typeof sessionCreateSchema>
 
 const assignmentSchema = z.object({
   title: z.string().min(1, 'Title required'),
@@ -42,22 +41,7 @@ const assignmentSchema = z.object({
 })
 type AssignmentFormData = z.infer<typeof assignmentSchema>
 
-const sessionSchema = z.object({
-  title: z.string().min(1, 'Title required'),
-  questions: z.array(questionSchema).min(1, 'Add at least one question'),
-})
-type SessionFormData = z.infer<typeof sessionSchema>
 
-const TYPE_LABELS: Record<QuestionType, string> = {
-  FREE_TEXT: 'Free text',
-  MULTIPLE_CHOICE: 'Multiple choice',
-  MULTI_SELECT: 'Multi-select',
-  ORDERING: 'Ordering',
-  STRUCTURE: 'Structure drawing',
-  RATING: 'Rating (1–5)',
-  YES_NO: 'Yes / No',
-  NUMERIC: 'Numeric',
-}
 
 interface Student {
   id: string
@@ -193,23 +177,18 @@ export default function ClassPage() {
     onSuccess: () => qc.removeQueries({ queryKey: ['textbook-chapter'] }),
   })
 
-  const { register, control, handleSubmit, reset, watch, setValue, formState: { errors, isSubmitting } } = useForm<SessionFormData>({
-    resolver: zodResolver(sessionSchema),
-    defaultValues: { title: '', questions: [{ text: '', type: 'FREE_TEXT', options: [] }] },
+  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<SessionCreateData>({
+    resolver: zodResolver(sessionCreateSchema),
+    defaultValues: { title: '' },
   })
 
-  const { fields, append, remove } = useFieldArray({ control, name: 'questions' })
-
   const createMutation = useMutation({
-    mutationFn: (body: SessionFormData) =>
-      api.post(`/classes/${classId}/sessions`, {
-        title: body.title,
-        questions: body.questions.map((q, i) => ({ ...q, order: i })),
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['class', classId] })
+    mutationFn: (body: SessionCreateData) =>
+      api.post(`/classes/${classId}/sessions`, { title: body.title }),
+    onSuccess: (res) => {
       setShowModal(false)
       reset()
+      navigate(`/professor/sessions/${res.data.data.session.id}`)
     },
     onError: (e: unknown) => {
       setCreateError(apiError(e, 'Failed to create session'))
@@ -309,8 +288,6 @@ export default function ClassPage() {
       setDupLoading(false)
     }
   }
-
-  const watchedQuestions = watch('questions')
 
   async function saveTextbook(e: React.FormEvent) {
     e.preventDefault()
@@ -855,96 +832,29 @@ export default function ClassPage() {
 
       {/* Create session modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-start justify-center z-50 px-4 py-8 overflow-y-auto">
-          <Card flat className="w-full max-w-lg p-6 shadow-pop my-auto">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+          <Card flat className="w-full max-w-sm p-6 shadow-pop">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-semibold text-ink">New session</h2>
+              <h2 className="text-base font-semibold text-ink">New session</h2>
               <button onClick={() => { setShowModal(false); reset() }} className="text-muted hover:text-ink-2 transition-colors">
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
-
-            <form onSubmit={handleSubmit((d) => { setCreateError(''); createMutation.mutate(d) })} className="space-y-5">
-              <div>
-                <label className="block text-sm font-medium text-ink-2 mb-1">Session title</label>
-                <input
-                  {...register('title')}
-                  placeholder="Week 3 Opener"
-                  className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
-                  autoFocus
-                />
-                {errors.title && <p className="text-red-500 text-xs mt-1">{errors.title.message}</p>}
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-sm font-medium text-ink-2">Questions</label>
-                  <button
-                    type="button"
-                    onClick={() => append({ text: '', type: 'FREE_TEXT', options: [] })}
-                    className="text-xs text-signal hover:text-[var(--signal-bright)] flex items-center gap-1 transition-colors"
-                  >
-                    <Plus size={13} /> Add question
-                  </button>
-                </div>
-
-                <div className="space-y-4">
-                  {fields.map((field, idx) => (
-                    <div key={field.id} className="border border-hairline rounded-[14px] p-4 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium text-muted">Question {idx + 1}</span>
-                        {fields.length > 1 && (
-                          <button type="button" onClick={() => remove(idx)} className="text-hairline-strong hover:text-red-400 transition-colors">
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </div>
-
-                      <input
-                        {...register(`questions.${idx}.text`)}
-                        placeholder="Enter question text…"
-                        className="w-full border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
-                      />
-                      {errors.questions?.[idx]?.text && (
-                        <p className="text-red-500 text-xs">{errors.questions[idx]?.text?.message}</p>
-                      )}
-
-                      <select
-                        {...register(`questions.${idx}.type`)}
-                        className="w-full border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
-                      >
-                        {Object.entries(TYPE_LABELS).map(([val, label]) => (
-                          <option key={val} value={val}>{label}</option>
-                        ))}
-                      </select>
-
-                      {watchedQuestions[idx]?.type === 'MULTIPLE_CHOICE' && (
-                        <div className="space-y-2">
-                          <p className="text-xs text-muted">Options (one per line)</p>
-                          <textarea
-                            rows={3}
-                            placeholder={"Option A\nOption B\nOption C"}
-                            className="w-full border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal resize-none"
-                            onChange={(e) => {
-                              const opts = e.target.value.split('\n').map((s) => s.trim()).filter(Boolean)
-                              setValue(`questions.${idx}.options`, opts)
-                            }}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
+            <form onSubmit={handleSubmit((d) => { setCreateError(''); createMutation.mutate(d) })} className="space-y-4">
+              <input
+                {...register('title')}
+                placeholder="Week 3 Opener"
+                className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
+                autoFocus
+              />
+              {errors.title && <p className="text-red-500 text-xs">{errors.title.message}</p>}
               {createError && <p className="text-red-500 text-sm">{createError}</p>}
-
-              <div className="flex justify-end gap-3 pt-2">
+              <div className="flex justify-end gap-3">
                 <button type="button" onClick={() => { setShowModal(false); reset() }} className="px-4 py-2 text-sm text-muted hover:text-ink transition-colors">
                   Cancel
                 </button>
                 <Button type="submit" variant="primary" disabled={isSubmitting}>
-                  {isSubmitting ? 'Creating…' : 'Create session'}
+                  {isSubmitting ? 'Creating…' : 'Create & open'}
                 </Button>
               </div>
             </form>
