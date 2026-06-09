@@ -122,7 +122,7 @@ export default function ClassPage() {
   })
 
   type SessionRun = { id: string; status: string; sectionId: string | null; openedAt: string; closedAt: string | null; section?: { id: string; name: string } | null }
-  type SessionRow = { id: string; title: string; status: string; isLive: boolean; runs: SessionRun[]; questions: Array<{ id: string }>; createdAt: string; respondentCount: number }
+  type SessionRow = { id: string; title: string; status: string; isLive: boolean; runs: SessionRun[]; _count: { questions: number }; createdAt: string; respondentCount: number }
   const { data: sessionsResult } = useQuery<{ sessions: SessionRow[]; enrolledCount: number }>({
     queryKey: ['sessions', classId],
     queryFn: () => api.get(`/classes/${classId}/sessions`).then((r) => r.data.data),
@@ -439,7 +439,7 @@ export default function ClassPage() {
                     <Pill variant="live" dot>Live</Pill>
                     <p className="font-semibold text-ink mt-1">{s.title}</p>
                     <p className="text-xs text-muted mt-0.5">
-                      {s.questions?.length ?? 0} question{(s.questions?.length ?? 0) !== 1 ? 's' : ''}
+                      {s._count?.questions ?? 0} question{(s._count?.questions ?? 0) !== 1 ? 's' : ''}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -463,7 +463,7 @@ export default function ClassPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {otherSessions.map((s) => {
                   const { label, date } = sessionDate(s)
-                  const qCount = s.questions?.length ?? 0
+                  const qCount = s._count?.questions ?? 0
                   const pct = enrolledCount > 0 ? Math.round((s.respondentCount / enrolledCount) * 100) : null
                   return (
                     <div key={s.id} className="group relative bg-surface border border-hairline rounded-[14px] hover:shadow-card transition-shadow flex flex-col">

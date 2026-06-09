@@ -58,7 +58,13 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       orderBy: { createdAt: 'desc' },
       include: {
         _count: { select: { sessions: true, enrollments: true } },
-        sessions: { orderBy: { createdAt: 'desc' }, take: 1, select: { id: true, title: true, status: true, createdAt: true } },
+        sessions: {
+          orderBy: { createdAt: 'desc' }, take: 1,
+          select: {
+            id: true, title: true, status: true, createdAt: true,
+            runs: { where: { status: 'OPEN' }, select: { id: true }, take: 1 },
+          },
+        },
       },
     })
 
@@ -91,6 +97,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     const result = classes.map((c) => ({
       ...c,
       participationRate: participationMap[c.id] ?? null,
+      sessions: c.sessions.map(({ runs, ...s }) => ({ ...s, isLive: runs.length > 0 })),
     }))
 
     res.json({ success: true, data: { classes: result } })
