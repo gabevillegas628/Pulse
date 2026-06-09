@@ -31,31 +31,47 @@ export default function SessionPage() {
   const [copiedQrId, setCopiedQrId] = useState<string | null>(null)
   const [rubricDraft, setRubricDraft] = useState<Record<string, string>>({})
 
-  async function copyQrWithCode(qrDataUrl: string, accessCode: string) {
-    const H = 200
-    const accent = 7
-    const pad = 20
-    const radius = 14
-    const shadowPad = 24
-    const qrSize = H - pad * 2
+  async function copyQrWithCode(qrDataUrl: string, accessCode: string, questionText: string) {
+    const accent = 7, pad = 20, radius = 14, shadowPad = 24
+    const qrSize = 140, rightWidth = 260, maxCardH = 300
+    const codeFont = 'bold 22px "Courier New", monospace'
+    const qTextFont = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    const lineH = 28
 
     const img = new Image()
     img.src = qrDataUrl
     await new Promise((resolve) => { img.onload = resolve })
 
-    const titleFont = 'bold 17px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
-    const subFont = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
-    const codeFont = 'bold 56px "Courier New", monospace'
-
-    const measure = document.createElement('canvas').getContext('2d')!
-    measure.font = titleFont;  const titleW = measure.measureText('Scan to respond').width + 16
-    measure.font = subFont;    const subW = measure.measureText('or enter code at pulse.app').width
-    measure.font = codeFont;   const codeW = measure.measureText(accessCode).width
-    const rightW = Math.max(titleW, subW, codeW)
-
     const divX = accent + pad + qrSize + pad
     const tx = divX + pad
-    const W = tx + rightW + pad
+    const W = tx + rightWidth + pad
+
+    // Word-wrap helper
+    const m = document.createElement('canvas').getContext('2d')!
+    function wrapText(text: string, maxW: number, font: string): string[] {
+      m.font = font
+      const lines: string[] = []
+      let line = ''
+      for (const word of text.split(' ')) {
+        const test = line ? line + ' ' + word : word
+        if (m.measureText(test).width > maxW && line) { lines.push(line); line = word }
+        else line = test
+      }
+      if (line) lines.push(line)
+      return lines
+    }
+
+    const qLines = wrapText(questionText, rightWidth, qTextFont)
+    const leftH = pad + qrSize + 8 + 26 + pad
+    const rightH = pad + qLines.length * lineH + pad
+    const H = Math.min(Math.max(leftH, rightH), maxCardH)
+
+    // Clip question lines to available height
+    const availH = H - pad - pad
+    const maxLines = Math.floor(availH / lineH)
+    const visibleLines = qLines.slice(0, maxLines)
+    if (visibleLines.length < qLines.length && visibleLines.length > 0)
+      visibleLines[visibleLines.length - 1] = visibleLines[visibleLines.length - 1].replace(/.{1,3}$/, '…')
 
     const canvas = document.createElement('canvas')
     canvas.width = W + shadowPad * 2
@@ -65,72 +81,57 @@ export default function SessionPage() {
 
     function roundedRect(x: number, y: number, w: number, h: number, r: number) {
       ctx.beginPath()
-      ctx.moveTo(x + r, y)
-      ctx.lineTo(x + w - r, y)
-      ctx.arcTo(x + w, y, x + w, y + r, r)
-      ctx.lineTo(x + w, y + h - r)
-      ctx.arcTo(x + w, y + h, x + w - r, y + h, r)
-      ctx.lineTo(x + r, y + h)
-      ctx.arcTo(x, y + h, x, y + h - r, r)
-      ctx.lineTo(x, y + r)
-      ctx.arcTo(x, y, x + r, y, r)
-      ctx.closePath()
+      ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y)
+      ctx.arcTo(x + w, y, x + w, y + r, r); ctx.lineTo(x + w, y + h - r)
+      ctx.arcTo(x + w, y + h, x + w - r, y + h, r); ctx.lineTo(x + r, y + h)
+      ctx.arcTo(x, y + h, x, y + h - r, r); ctx.lineTo(x, y + r)
+      ctx.arcTo(x, y, x + r, y, r); ctx.closePath()
     }
 
-    // Draw white card with shadow — shadow bleeds outside, card interior is white
+    // White card + shadow
     ctx.save()
-    ctx.shadowColor = 'rgba(0,0,0,0.18)'
-    ctx.shadowBlur = 18
-    ctx.shadowOffsetY = 5
+    ctx.shadowColor = 'rgba(0,0,0,0.15)'; ctx.shadowBlur = 18; ctx.shadowOffsetY = 5
     ctx.fillStyle = 'white'
-    roundedRect(ox, oy, W, H, radius)
-    ctx.fill()
+    roundedRect(ox, oy, W, H, radius); ctx.fill()
     ctx.restore()
 
-    // Clip all content to rounded card shape
+    // Border
     ctx.save()
-    roundedRect(ox, oy, W, H, radius)
-    ctx.clip()
+    ctx.strokeStyle = '#d1d5db'; ctx.lineWidth = 2
+    roundedRect(ox, oy, W, H, radius); ctx.stroke()
+    ctx.restore()
 
-    // Red left accent bar
+    // Clip content
+    ctx.save()
+    roundedRect(ox, oy, W, H, radius); ctx.clip()
+
+    // Red accent bar
     ctx.fillStyle = '#ee4d2e'
     ctx.fillRect(ox, oy, accent, H)
 
-    // QR code
-    ctx.drawImage(img, ox + accent + pad, oy + pad, qrSize, qrSize)
+    // QR — vertically centered for QR+code block
+    const blockH = qrSize + 8 + 26
+    const qrY = oy + (H - blockH) / 2
+    ctx.drawImage(img, ox + accent + pad, qrY, qrSize, qrSize)
+
+    // Access code centered below QR
+    ctx.fillStyle = '#111827'; ctx.font = codeFont
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top'
+    ctx.fillText(accessCode, ox + accent + pad + qrSize / 2, qrY + qrSize + 8)
 
     // Divider
-    ctx.strokeStyle = '#e5e7eb'
-    ctx.lineWidth = 1
+    ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 1
     ctx.beginPath()
-    ctx.moveTo(ox + divX, oy + pad)
-    ctx.lineTo(ox + divX, oy + H - pad)
+    ctx.moveTo(ox + divX, oy + pad); ctx.lineTo(ox + divX, oy + H - pad)
     ctx.stroke()
 
-    const midY = oy + H / 2
+    // Right side — question text, vertically centered
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top'
+    const textBlockH = visibleLines.length * lineH
+    let ry = oy + (H - textBlockH) / 2
 
-    // Pulse dot
-    ctx.fillStyle = '#ee4d2e'
-    ctx.beginPath()
-    ctx.arc(ox + tx + 6, midY - 38, 5, 0, Math.PI * 2)
-    ctx.fill()
-
-    // "Scan to respond"
-    ctx.fillStyle = '#ee4d2e'
-    ctx.font = titleFont
-    ctx.textAlign = 'left'
-    ctx.textBaseline = 'middle'
-    ctx.fillText('Scan to respond', ox + tx + 16, midY - 38)
-
-    // Subtitle
-    ctx.fillStyle = '#9ca3af'
-    ctx.font = subFont
-    ctx.fillText('or enter code at pulse.app', ox + tx, midY - 14)
-
-    // Access code
-    ctx.fillStyle = '#111827'
-    ctx.font = codeFont
-    ctx.fillText(accessCode, ox + tx, midY + 30)
+    ctx.fillStyle = '#111827'; ctx.font = qTextFont
+    for (const line of visibleLines) { ctx.fillText(line, ox + tx, ry); ry += lineH }
 
     ctx.restore()
 
@@ -709,7 +710,8 @@ export default function SessionPage() {
                       onClick={async () => {
                         await copyQrWithCode(
                           (activeQuestion as QuestionWithResponses & { qrDataUrl: string }).qrDataUrl,
-                          activeQuestion.accessCode
+                          activeQuestion.accessCode,
+                          activeQuestion.text
                         )
                         setCopiedQrId(activeQuestion.id)
                         setTimeout(() => setCopiedQrId(null), 2000)
