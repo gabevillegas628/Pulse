@@ -7,17 +7,17 @@ import { p } from '../utils/params.js'
 
 const router = Router()
 
-// List deadline extensions for a session
-router.get('/sessions/:id/extensions', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+// List deadline extensions for an assignment
+router.get('/assignments/:id/extensions', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
-    const session = await prisma.session.findFirst({
+    const assignment = await prisma.assignment.findFirst({
       where: { id: p(req.params.id), class: { professorId: professor.id } },
     })
-    if (!session) throw new AppError('Session not found', 404)
+    if (!assignment) throw new AppError('Assignment not found', 404)
 
     const extensions = await prisma.deadlineExtension.findMany({
-      where: { sessionId: session.id },
+      where: { assignmentId: assignment.id },
       include: { student: { select: { id: true, netId: true } } },
       orderBy: { createdAt: 'asc' },
     })
@@ -28,7 +28,7 @@ router.get('/sessions/:id/extensions', requireProfessor, async (req: Request, re
 })
 
 // Grant or update a deadline extension for a student
-router.post('/sessions/:id/extensions', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/assignments/:id/extensions', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
     const { studentId, deadline } = z.object({
@@ -36,19 +36,19 @@ router.post('/sessions/:id/extensions', requireProfessor, async (req: Request, r
       deadline: z.string().datetime(),
     }).parse(req.body)
 
-    const session = await prisma.session.findFirst({
+    const assignment = await prisma.assignment.findFirst({
       where: { id: p(req.params.id), class: { professorId: professor.id } },
     })
-    if (!session) throw new AppError('Session not found', 404)
+    if (!assignment) throw new AppError('Assignment not found', 404)
 
     const enrollment = await prisma.enrollment.findUnique({
-      where: { studentId_classId: { studentId, classId: session.classId } },
+      where: { studentId_classId: { studentId, classId: assignment.classId } },
     })
     if (!enrollment) throw new AppError('Student is not enrolled in this class', 400)
 
     const extension = await prisma.deadlineExtension.upsert({
-      where: { sessionId_studentId: { sessionId: session.id, studentId } },
-      create: { sessionId: session.id, studentId, deadline: new Date(deadline) },
+      where: { assignmentId_studentId: { assignmentId: assignment.id, studentId } },
+      create: { assignmentId: assignment.id, studentId, deadline: new Date(deadline) },
       update: { deadline: new Date(deadline) },
       include: { student: { select: { id: true, netId: true } } },
     })
@@ -59,16 +59,16 @@ router.post('/sessions/:id/extensions', requireProfessor, async (req: Request, r
 })
 
 // Remove a deadline extension
-router.delete('/sessions/:id/extensions/:studentId', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/assignments/:id/extensions/:studentId', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
-    const session = await prisma.session.findFirst({
+    const assignment = await prisma.assignment.findFirst({
       where: { id: p(req.params.id), class: { professorId: professor.id } },
     })
-    if (!session) throw new AppError('Session not found', 404)
+    if (!assignment) throw new AppError('Assignment not found', 404)
 
     await prisma.deadlineExtension.deleteMany({
-      where: { sessionId: session.id, studentId: p(req.params.studentId) },
+      where: { assignmentId: assignment.id, studentId: p(req.params.studentId) },
     })
     res.json({ success: true })
   } catch (err) {

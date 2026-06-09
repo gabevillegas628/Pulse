@@ -45,12 +45,12 @@ export default function QuestionPanel({
   async function handleMakeMultiPart() {
     setConverting(true)
     try {
-      const groupRes = await api.post(`/sessions/${assignmentId}/groups`, {
+      const groupRes = await api.post(`/assignments/${assignmentId}/groups`, {
         title: questionPreview(q.text),
       })
       const newGroupId: string = groupRes.data.data.group.id
-      await api.patch(`/sessions/${assignmentId}/questions/${q.id}`, { groupId: newGroupId })
-      await api.post(`/sessions/${assignmentId}/questions`, { text: '', type: 'FREE_TEXT', groupId: newGroupId })
+      await api.patch(`/assignments/${assignmentId}/questions/${q.id}`, { groupId: newGroupId })
+      await api.post(`/assignments/${assignmentId}/questions`, { text: '', type: 'FREE_TEXT', groupId: newGroupId })
       await qc.invalidateQueries({ queryKey: ['assignment', assignmentId] })
       onConverted(newGroupId)
     } catch {
@@ -118,7 +118,7 @@ export default function QuestionPanel({
           <button
             onClick={async () => {
               if (!confirm('Delete this question? This cannot be undone.')) return
-              await api.delete(`/sessions/${assignmentId}/questions/${q.id}`)
+              await api.delete(`/assignments/${assignmentId}/questions/${q.id}`)
               await qc.invalidateQueries({ queryKey: ['assignment', assignmentId] })
               onDeleted()
             }}

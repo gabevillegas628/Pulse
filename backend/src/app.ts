@@ -12,6 +12,7 @@ import rateLimit from 'express-rate-limit'
 import authRoutes from './routes/auth.routes.js'
 import classRoutes from './routes/classes.routes.js'
 import sessionRoutes from './routes/sessions.routes.js'
+import assignmentRoutes from './routes/assignments.routes.js'
 import questionRoutes from './routes/questions.routes.js'
 import gradingRoutes from './routes/grading.routes.js'
 import extensionRoutes from './routes/extensions.routes.js'
@@ -92,6 +93,7 @@ app.use('/uploads', express.static(uploadDir))
 app.use('/api/auth', authRoutes)
 app.use('/api/classes', classRoutes)
 app.use('/api', sessionRoutes)
+app.use('/api', assignmentRoutes)
 app.use('/api', questionRoutes)
 app.use('/api', gradingRoutes)
 app.use('/api', extensionRoutes)

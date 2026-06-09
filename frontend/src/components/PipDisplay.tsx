@@ -12,22 +12,22 @@ export default function PipDisplay({ question, questionNumber, totalQuestions, s
   const total = question.responses.length
 
   return (
-    <div className="p-4 bg-white min-h-screen">
+    <div className="p-4 bg-surface min-h-screen">
       <div className="mb-3">
-        <p className="text-xs text-gray-400 uppercase tracking-wide truncate mb-1">{sessionTitle}</p>
+        <p className="text-xs text-muted uppercase tracking-wide truncate mb-1">{sessionTitle}</p>
         <div className="flex items-center gap-2 mb-2">
-          <span className="text-xs font-bold text-primary-700 bg-primary-100 px-2 py-0.5 rounded-full">
+          <span className="text-xs font-bold text-signal bg-signal-soft px-2 py-0.5 rounded-full">
             Q{questionNumber}{totalQuestions > 1 ? ` of ${totalQuestions}` : ''}
           </span>
-          <span className="text-xs text-gray-400">{total} response{total !== 1 ? 's' : ''}</span>
+          <span className="text-xs text-muted font-mono">{total} response{total !== 1 ? 's' : ''}</span>
         </div>
-        <p className="text-sm font-semibold text-gray-800 leading-snug">{question.text}</p>
+        <p className="text-sm font-semibold text-ink leading-snug">{question.text}</p>
       </div>
 
       <ResultsSummary question={question} />
 
       {total === 0 && (
-        <p className="text-sm text-gray-400 text-center py-10">Waiting for responses…</p>
+        <p className="text-sm text-muted text-center py-10">Waiting for responses…</p>
       )}
     </div>
   )

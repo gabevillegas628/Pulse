@@ -11,19 +11,19 @@ interface TextbookLayoutProps {
 
 export default function TextbookLayout({ children, backHref, backLabel, className }: TextbookLayoutProps) {
   return (
-    <div className={`min-h-screen bg-gray-50 flex flex-col ${className ?? ''}`}>
+    <div className={`min-h-screen bg-canvas flex flex-col ${className ?? ''}`}>
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 shrink-0">
+      <header className="bg-surface border-b border-hairline shrink-0">
         <div className="max-w-screen-xl mx-auto px-4 h-14 flex items-center gap-3">
           <Link
             to={backHref}
-            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
+            className="flex items-center gap-1.5 text-sm text-muted hover:text-ink transition-colors"
           >
             <ArrowLeft size={15} />
             {backLabel}
           </Link>
-          <span className="text-gray-300">|</span>
-          <div className="flex items-center gap-1.5 text-sm font-semibold text-primary-700">
+          <span className="text-hairline-strong">|</span>
+          <div className="flex items-center gap-1.5 text-sm font-semibold text-ink-2">
             <BookOpen size={15} />
             Textbook
           </div>

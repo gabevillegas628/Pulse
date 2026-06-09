@@ -30,23 +30,23 @@ export default function StudentLoginPage() {
       await login(data.credential, data.password)
       navigate(next, { replace: true })
     } catch (e: unknown) {
-            setError(apiError(e, 'Login failed'))
+      setError(apiError(e, 'Login failed'))
     }
   }
 
   return (
     <StudentLayout>
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
-        <h1 className="text-2xl font-bold text-gray-900 mb-1">Sign in</h1>
-        <p className="text-sm text-gray-500 mb-6">Use your NetID or Rutgers email</p>
+      <div className="bg-surface rounded-[14px] shadow-card border border-hairline p-8">
+        <h1 className="text-2xl font-bold text-ink mb-1">Sign in</h1>
+        <p className="text-sm text-muted mb-6">Use your NetID or Rutgers email</p>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">NetID or Email</label>
+            <label className="block text-sm font-medium text-ink-2 mb-1">NetID or Email</label>
             <input
               {...register('credential')}
               placeholder="abc123 or abc123@rutgers.edu"
-              className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full border border-hairline rounded-[14px] px-3 py-3 text-base bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
               autoCapitalize="none"
               autoCorrect="off"
             />
@@ -54,38 +54,38 @@ export default function StudentLoginPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <label className="block text-sm font-medium text-ink-2 mb-1">Password</label>
             <input
               {...register('password')}
               type="password"
-              className="w-full border border-gray-300 rounded-lg px-3 py-3 text-base focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full border border-hairline rounded-[14px] px-3 py-3 text-base bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
             />
             {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password.message}</p>}
           </div>
 
-          {error && <p className="text-red-500 text-sm bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+          {error && <p className="text-red-500 text-sm bg-red-50 rounded-sm px-3 py-2">{error}</p>}
 
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full bg-primary-600 text-white rounded-lg py-3 text-base font-medium hover:bg-primary-700 disabled:opacity-50 transition-colors"
+            className="w-full bg-signal text-white rounded-sm py-3 text-base font-bold hover:bg-[var(--signal-bright)] disabled:opacity-50 transition-colors"
           >
             {isSubmitting ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
 
-        <p className="text-center text-sm text-gray-500 mt-6">
+        <p className="text-center text-sm text-muted mt-6">
           New here?{' '}
-          <Link to={`/student/register${next !== '/student' ? `?next=${next}` : ''}`} className="text-primary-600 font-medium">
+          <Link to={`/student/register${next !== '/student' ? `?next=${next}` : ''}`} className="text-signal font-medium">
             Create account
           </Link>
         </p>
       </div>
 
       <div className="mt-6 text-center">
-        <p className="text-sm text-gray-400">
+        <p className="text-sm text-muted">
           Have a 4-digit class code?{' '}
-          <Link to="/student/code" className="text-primary-600">Enter it here</Link>
+          <Link to="/student/code" className="text-signal">Enter it here</Link>
         </p>
       </div>
     </StudentLayout>

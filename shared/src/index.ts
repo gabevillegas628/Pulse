@@ -57,7 +57,8 @@ export interface Enrollment {
 
 export interface QuestionGroup {
   id: string
-  sessionId: string
+  sessionId: string | null
+  assignmentId: string | null
   title: string
   text: string | null
   order: number
@@ -66,7 +67,8 @@ export interface QuestionGroup {
 
 export interface Question {
   id: string
-  sessionId: string
+  sessionId: string | null
+  assignmentId: string | null
   groupId: string | null
   text: string
   type: QuestionType
@@ -78,22 +80,48 @@ export interface Question {
   unit: string | null
 }
 
+/** One class meeting — the event entity for IN_CLASS sessions */
+export interface SessionRun {
+  id: string
+  sessionId: string
+  sectionId: string | null
+  status: SessionStatus
+  openedAt: string
+  closedAt: string | null
+  createdAt: string
+  section?: { id: string; name: string } | null
+}
+
+/** IN_CLASS question set — authoring entity */
 export interface Session {
   id: string
   classId: string
   title: string
   accessCode: string
+  /** DRAFT = being built; OPEN = has been run; ARCHIVED = done */
   status: SessionStatus
   createdAt: string
   updatedAt: string
-  closedAt: string | null
+  runs?: SessionRun[]
   questions?: Question[]
+}
+
+/** Homework assignment */
+export interface Assignment {
+  id: string
+  classId: string
+  title: string
+  status: SessionStatus
+  deadline: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 export interface Response {
   id: string
   questionId: string
   studentId: string
+  runId: string | null
   responseText: string
   wordCount: number
   isFlagged: boolean
@@ -174,32 +202,33 @@ export interface SubmitResponseRequest {
 // Student question view (enriched)
 export interface StudentQuestion {
   id: string
-  sessionId: string
+  sessionId: string | null
+  assignmentId: string | null
   text: string
   type: QuestionType
   options: string[] | null
   order: number
   accessCode: string
   unit: string | null
-  session: {
+  /** Set when this is a session question */
+  session?: {
     id: string
     title: string
     status: SessionStatus
+    class: { name: string }
+  }
+  /** Set when this is an assignment question */
+  assignment?: {
+    id: string
+    title: string
+    status: SessionStatus
+    deadline: string | null
     class: { name: string }
   }
   alreadyAnswered: boolean
 }
 
 // Dashboard types (enriched)
-
-export interface SessionWithCounts extends Session {
-  _count: { responses: number }
-  questions: Question[]
-}
-
-export interface ClassWithCounts extends Class {
-  _count: { sessions: number; enrollments: number }
-}
 
 export interface ResponseWithStudent extends Response {
   student: Pick<Student, 'id' | 'netId'>
@@ -213,7 +242,29 @@ export interface SessionDetail extends Session {
   questions: QuestionWithResponses[]
   groups: QuestionGroup[]
   class: Pick<Class, 'id' | 'name'>
-  qrDataUrl: string
+  runs: SessionRun[]
+  enrolledCount: number
+}
+
+export interface ClassWithCounts extends Class {
+  _count: { sessions: number; enrollments: number }
+  sessions: Array<{ id: string; title: string; status: string; createdAt: string }>
+  participationRate: number | null
+}
+
+export interface UpcomingAssignment {
+  id: string
+  title: string
+  classId: string
+  className: string
+  deadline: string
+  questionCount: number
+  submittedCount: number
+}
+
+export interface SessionWithCounts extends Session {
+  _count: { responses: number }
+  questions: Question[]
 }
 
 // ─── View model types (used by frontend pages) ────────────────────────────────
@@ -241,9 +292,13 @@ export interface ActivityQuestion {
   number: number
   correctAnswer: string | null
   response: { responseText: string; wordCount: number; isFlagged: boolean; submittedAt: string; aiScore: number | null } | null
+  /** Score computed by gradeSession (null for open/unscored sessions) */
+  score: number | null
+  /** Whether this question was graded and counts toward earned/max */
+  counted: boolean
 }
 
-/** A session with its questions, as returned by the student activity endpoint */
+/** A session or assignment as returned by the student activity endpoint */
 export interface ActivitySession {
   id: string
   title: string
@@ -265,7 +320,7 @@ export interface AssignmentRow {
   maxScore: number | null
 }
 
-/** A graded session entry in a student's grade summary */
+/** A graded session/assignment entry in a student's grade summary */
 export interface GradeSession {
   id: string
   title: string
@@ -275,7 +330,7 @@ export interface GradeSession {
   max: number
 }
 
-/** A single question entry in a student's session grade detail */
+/** A single question entry in a student's session/assignment grade detail */
 export interface GradeQuestion {
   id: string
   text: string
@@ -285,9 +340,11 @@ export interface GradeQuestion {
   correctAnswer: string | null
   response: { responseText: string; aiScore: number | null; submittedAt: string } | null
   score: number
+  /** Whether this question was graded and counts toward earned/max */
+  counted: boolean
 }
 
-/** Full question-level breakdown for one closed session */
+/** Full question-level breakdown for one closed session or assignment */
 export interface GradeSessionDetail {
   id: string
   title: string
@@ -297,7 +354,7 @@ export interface GradeSessionDetail {
   max: number
 }
 
-/** A session column descriptor for the professor gradebook */
+/** A session/assignment column descriptor for the professor gradebook */
 export interface GradebookSession {
   id: string
   title: string

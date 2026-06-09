@@ -8,18 +8,22 @@ export function startScheduler() {
   setInterval(async () => {
     try {
       const cutoff = new Date(Date.now() - SESSION_TIMEOUT_MS)
-      const expired = await prisma.session.findMany({
-        where: { status: 'OPEN', type: 'IN_CLASS', openedAt: { lte: cutoff } },
-        select: { id: true, title: true },
+      const expiredRuns = await prisma.sessionRun.findMany({
+        where: { status: 'OPEN', openedAt: { lte: cutoff } },
+        select: { id: true, sessionId: true, sectionId: true, session: { select: { title: true } } },
       })
 
-      for (const session of expired) {
-        await prisma.session.update({
-          where: { id: session.id },
+      for (const run of expiredRuns) {
+        await prisma.sessionRun.update({
+          where: { id: run.id },
           data: { status: 'CLOSED', closedAt: new Date() },
         })
-        getIo().to(session.id).emit('session_status', { status: 'CLOSED' })
-        logger.info(`Auto-closed session "${session.title}" (${session.id}) after 100 minutes`)
+        getIo().to(run.sessionId).emit('run_status', {
+          runId: run.id,
+          status: 'CLOSED',
+          sectionId: run.sectionId,
+        })
+        logger.info(`Auto-closed run "${run.id}" for session "${run.session.title}" (${run.sessionId}) after 100 minutes`)
       }
     } catch (err) {
       logger.error('Scheduler error:', err)

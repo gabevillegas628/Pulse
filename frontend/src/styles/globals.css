@@ -2,6 +2,88 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  :root {
+    --font-ui: 'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+    --signal: #ee4d2e;
+    --signal-bright: #ff5a36;
+    --signal-soft: #fdece7;
+
+    --canvas: #faf8f4;
+    --surface: #ffffff;
+    --surface-2: #f3f0ea;
+    --ink: #1b1814;
+    --ink-2: #4a453d;
+    --muted: #847d72;
+    --hairline: #e8e3da;
+    --hairline-strong: #d8d2c6;
+
+    --good: #1f8a5b;
+    --good-soft: #e7f4ee;
+    --warn: #b9791b;
+    --warn-soft: #f8f0df;
+
+    --radius: 14px;
+    --radius-sm: 9px;
+    --shadow-card: 0 1px 2px rgba(27,24,20,.04), 0 6px 20px -8px rgba(27,24,20,.10);
+    --shadow-pop: 0 18px 50px -12px rgba(27,24,20,.45);
+  }
+
+  .pulse-dark {
+    --canvas: #15120f;
+    --surface: #1f1b16;
+    --surface-2: #272019;
+    --ink: #f5f1ea;
+    --ink-2: #d9d2c6;
+    --muted: #968d7f;
+    --hairline: rgba(255,255,255,.09);
+    --hairline-strong: rgba(255,255,255,.16);
+    --signal-soft: rgba(255,90,54,.14);
+    --good-soft: rgba(31,138,91,.16);
+    --warn-soft: rgba(185,121,27,.18);
+    --shadow-card: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px -10px rgba(0,0,0,.6);
+  }
+
+  ::selection {
+    background: var(--signal);
+    color: #fff;
+  }
+}
+
+@keyframes live-dot {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .5; }
+}
+
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes count-pop {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.14); }
+  100% { transform: scale(1); }
+}
+
+@keyframes bar-grow {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .001ms !important; }
+}
+
+.rise-in  { animation: rise-in 0.42s cubic-bezier(.2,.7,.2,1) both; }
+.live-dot { animation: live-dot 1.4s ease-in-out infinite; }
+
+.pulse-scroll::-webkit-scrollbar        { width: 8px; height: 8px; }
+.pulse-scroll::-webkit-scrollbar-thumb  { background: var(--hairline-strong); border-radius: 99px; }
+.pulse-scroll::-webkit-scrollbar-track  { background: transparent; }
+
 /* ── Textbook prose ───────────────────────────────────────────────────────── */
 .textbook-prose {
   @apply prose prose-slate max-w-none;

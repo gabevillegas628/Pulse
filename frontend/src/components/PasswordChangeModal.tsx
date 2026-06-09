@@ -39,16 +39,18 @@ export default function PasswordChangeModal({ endpoint, open, onClose }: Props) 
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+      <div className="bg-surface rounded-[14px] shadow-pop border border-hairline w-full max-w-sm p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold">Change password</h2>
-          <button onClick={handleClose}><X size={18} className="text-gray-400" /></button>
+          <h2 className="text-base font-semibold text-ink">Change password</h2>
+          <button onClick={handleClose} className="text-muted hover:text-ink-2 transition-colors">
+            <X size={18} />
+          </button>
         </div>
 
         {success ? (
           <div className="text-center py-4">
-            <p className="text-green-600 font-medium mb-1">Password updated</p>
-            <button onClick={handleClose} className="text-sm text-primary-600 hover:underline mt-4 block mx-auto">Close</button>
+            <p className="text-good font-medium mb-1">Password updated</p>
+            <button onClick={handleClose} className="text-sm text-signal hover:underline mt-4 block mx-auto">Close</button>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-3">
@@ -57,7 +59,7 @@ export default function PasswordChangeModal({ endpoint, open, onClose }: Props) 
               value={currentPw}
               onChange={(e) => setCurrentPw(e.target.value)}
               placeholder="Current password"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
               autoFocus
             />
             <input
@@ -65,15 +67,15 @@ export default function PasswordChangeModal({ endpoint, open, onClose }: Props) 
               value={newPw}
               onChange={(e) => setNewPw(e.target.value)}
               placeholder="New password (min 8 chars)"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
             />
             {error && <p className="text-red-500 text-xs">{error}</p>}
             <div className="flex justify-end gap-3 pt-1">
-              <button type="button" onClick={handleClose} className="px-4 py-2 text-sm text-gray-600">Cancel</button>
+              <button type="button" onClick={handleClose} className="px-4 py-2 text-sm text-muted hover:text-ink transition-colors">Cancel</button>
               <button
                 type="submit"
                 disabled={!currentPw || newPw.length < 8 || loading}
-                className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
+                className="px-4 py-2 bg-signal text-white rounded-sm text-sm font-bold hover:bg-[var(--signal-bright)] disabled:opacity-50 transition-colors"
               >
                 {loading ? 'Saving…' : 'Save'}
               </button>
