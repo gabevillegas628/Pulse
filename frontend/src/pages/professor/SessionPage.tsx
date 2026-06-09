@@ -32,23 +32,108 @@ export default function SessionPage() {
   const [rubricDraft, setRubricDraft] = useState<Record<string, string>>({})
 
   async function copyQrWithCode(qrDataUrl: string, accessCode: string) {
-    const qrSize = 400
-    const padding = 24
-    const textAreaHeight = 80
-    const canvas = document.createElement('canvas')
-    canvas.width = qrSize + padding * 2
-    canvas.height = qrSize + padding * 2 + textAreaHeight
-    const ctx = canvas.getContext('2d')!
-    ctx.fillStyle = '#ffffff'
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    const H = 200
+    const accent = 7
+    const pad = 20
+    const radius = 14
+    const shadowPad = 24
+    const qrSize = H - pad * 2
+
     const img = new Image()
     img.src = qrDataUrl
     await new Promise((resolve) => { img.onload = resolve })
-    ctx.drawImage(img, padding, padding, qrSize, qrSize)
+
+    const titleFont = 'bold 17px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    const subFont = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    const codeFont = 'bold 56px "Courier New", monospace'
+
+    const measure = document.createElement('canvas').getContext('2d')!
+    measure.font = titleFont;  const titleW = measure.measureText('Scan to respond').width + 16
+    measure.font = subFont;    const subW = measure.measureText('or enter code at pulse.app').width
+    measure.font = codeFont;   const codeW = measure.measureText(accessCode).width
+    const rightW = Math.max(titleW, subW, codeW)
+
+    const divX = accent + pad + qrSize + pad
+    const tx = divX + pad
+    const W = tx + rightW + pad
+
+    const canvas = document.createElement('canvas')
+    canvas.width = W + shadowPad * 2
+    canvas.height = H + shadowPad * 2
+    const ctx = canvas.getContext('2d')!
+    const ox = shadowPad, oy = shadowPad
+
+    function roundedRect(x: number, y: number, w: number, h: number, r: number) {
+      ctx.beginPath()
+      ctx.moveTo(x + r, y)
+      ctx.lineTo(x + w - r, y)
+      ctx.arcTo(x + w, y, x + w, y + r, r)
+      ctx.lineTo(x + w, y + h - r)
+      ctx.arcTo(x + w, y + h, x + w - r, y + h, r)
+      ctx.lineTo(x + r, y + h)
+      ctx.arcTo(x, y + h, x, y + h - r, r)
+      ctx.lineTo(x, y + r)
+      ctx.arcTo(x, y, x + r, y, r)
+      ctx.closePath()
+    }
+
+    // Draw white card with shadow — shadow bleeds outside, card interior is white
+    ctx.save()
+    ctx.shadowColor = 'rgba(0,0,0,0.18)'
+    ctx.shadowBlur = 18
+    ctx.shadowOffsetY = 5
+    ctx.fillStyle = 'white'
+    roundedRect(ox, oy, W, H, radius)
+    ctx.fill()
+    ctx.restore()
+
+    // Clip all content to rounded card shape
+    ctx.save()
+    roundedRect(ox, oy, W, H, radius)
+    ctx.clip()
+
+    // Red left accent bar
     ctx.fillStyle = '#ee4d2e'
-    ctx.font = 'bold 52px monospace'
-    ctx.textAlign = 'center'
-    ctx.fillText(accessCode, canvas.width / 2, qrSize + padding + 60)
+    ctx.fillRect(ox, oy, accent, H)
+
+    // QR code
+    ctx.drawImage(img, ox + accent + pad, oy + pad, qrSize, qrSize)
+
+    // Divider
+    ctx.strokeStyle = '#e5e7eb'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(ox + divX, oy + pad)
+    ctx.lineTo(ox + divX, oy + H - pad)
+    ctx.stroke()
+
+    const midY = oy + H / 2
+
+    // Pulse dot
+    ctx.fillStyle = '#ee4d2e'
+    ctx.beginPath()
+    ctx.arc(ox + tx + 6, midY - 38, 5, 0, Math.PI * 2)
+    ctx.fill()
+
+    // "Scan to respond"
+    ctx.fillStyle = '#ee4d2e'
+    ctx.font = titleFont
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('Scan to respond', ox + tx + 16, midY - 38)
+
+    // Subtitle
+    ctx.fillStyle = '#9ca3af'
+    ctx.font = subFont
+    ctx.fillText('or enter code at pulse.app', ox + tx, midY - 14)
+
+    // Access code
+    ctx.fillStyle = '#111827'
+    ctx.font = codeFont
+    ctx.fillText(accessCode, ox + tx, midY + 30)
+
+    ctx.restore()
+
     canvas.toBlob(async (blob) => {
       if (!blob) return
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
