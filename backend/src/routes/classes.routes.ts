@@ -506,7 +506,7 @@ router.get('/:id/students/:studentId/activity', async (req: Request, res: Respon
         .filter((r) => r.sectionId === null || r.sectionId === studentSectionId)
         .map((r) => r.id)
 
-      const gradeResult = isClosed(session.status)
+      const gradeResult = (isClosed(session.status) || relevantRunIds.length > 0)
         ? gradeSession('IN_CLASS', qs.map((q) => ({
             id: q.id,
             type: q.type,
