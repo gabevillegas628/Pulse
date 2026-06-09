@@ -186,6 +186,9 @@ export default function ClassPage() {
     mutationFn: (body: SessionCreateData) =>
       api.post(`/classes/${classId}/sessions`, { title: body.title }),
     onSuccess: (res) => {
+      // Invalidate so ClassPage and Dashboard both show fresh data on return
+      qc.invalidateQueries({ queryKey: ['sessions', classId] })
+      qc.invalidateQueries({ queryKey: ['classes'] })
       setShowModal(false)
       reset()
       navigate(`/professor/sessions/${res.data.data.session.id}`)
