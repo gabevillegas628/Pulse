@@ -14,6 +14,7 @@ import { SessionStatus } from 'shared'
 import ResultsSummary from '@/components/ResultsSummary'
 import LiveMonitorPanel from '@/components/LiveMonitorPanel'
 import { apiError } from '@/lib/errors'
+import { downloadCsv } from '@/lib/downloadCsv'
 
 type PipWindow = Window & { documentPictureInPicture?: { requestWindow: (opts: { width: number; height: number }) => Promise<Window> } }
 
@@ -453,12 +454,12 @@ export default function SessionPage() {
             >
               <PictureInPicture2 size={14} /> {pipContainer ? 'Live' : 'Pop out'}
             </Button>
-            <a
-              href={`/api/sessions/${sessionId}/export`}
+            <button
+              onClick={() => downloadCsv(`/sessions/${sessionId}/export`, `session-${sessionId}.csv`)}
               className="inline-flex items-center gap-1.5 bg-surface border border-hairline-strong text-ink-2 rounded-sm px-4 py-2 text-sm font-bold hover:bg-surface-2 transition-colors"
             >
               <Download size={14} /> Export CSV
-            </a>
+            </button>
             {data.status === SessionStatus.ARCHIVED ? (
               <span className="text-xs text-muted border border-hairline px-3 py-2 rounded-sm">Archived</span>
             ) : isLive ? (

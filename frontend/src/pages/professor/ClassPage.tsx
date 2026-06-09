@@ -19,6 +19,7 @@ import GradebookTable from '@/components/GradebookTable'
 import StudentSessionModal from '@/components/StudentSessionModal'
 import StudentReportPanel from '@/components/StudentReportPanel'
 import { apiError } from '@/lib/errors'
+import { downloadCsv } from '@/lib/downloadCsv'
 
 
 interface Assignment {
@@ -365,13 +366,13 @@ export default function ClassPage() {
             <Button variant="ghost" onClick={openDuplicate} title="Duplicate this class for a new semester">
               <Copy size={14} /> Duplicate
             </Button>
-            <a
-              href={`/api/classes/${classId}/grades`}
+            <button
+              onClick={() => downloadCsv(`/classes/${classId}/grades`, `grades-${classId}.csv`)}
               className="inline-flex items-center gap-1.5 bg-surface border border-hairline-strong text-ink-2 rounded-sm px-4 py-2 text-sm font-bold hover:bg-surface-2 transition-colors"
               title="Export class-wide grade CSV"
             >
               <Download size={14} /> Export Grades
-            </a>
+            </button>
             {tab === 'sessions' && (
               <Button variant="primary" onClick={() => setShowModal(true)}>
                 <Plus size={16} /> New session

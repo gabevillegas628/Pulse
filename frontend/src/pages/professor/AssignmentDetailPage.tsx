@@ -9,6 +9,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { api } from '@/api/client'
+import { downloadCsv } from '@/lib/downloadCsv'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import RichTextRenderer from '@/components/RichTextRenderer'
 import { ChevronLeft, Download, Plus, GripVertical, Layers, Pencil, X, UserPlus, ChevronDown, ChevronUp } from 'lucide-react'
@@ -464,10 +465,11 @@ export default function AssignmentDetailPage() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <a href={`/api/assignments/${assignmentId}/export`}
+            <button
+              onClick={() => downloadCsv(`/assignments/${assignmentId}/export`, `assignment-${assignmentId}.csv`)}
               className="inline-flex items-center gap-1.5 bg-surface border border-hairline-strong text-ink-2 rounded-sm px-3 py-2 text-sm font-bold hover:bg-surface-2 transition-colors">
               <Download size={14} /> Export CSV
-            </a>
+            </button>
             <button onClick={() => setShowPreview(true)}
               className="inline-flex items-center gap-1.5 text-sm text-ink-2 bg-surface border border-hairline-strong rounded-sm px-3 py-2 font-bold hover:bg-surface-2 transition-colors">
               Preview
