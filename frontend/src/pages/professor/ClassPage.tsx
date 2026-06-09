@@ -135,7 +135,7 @@ export default function ClassPage() {
     queryFn: () => api.get(`/classes/${classId}/sections`).then((r) => r.data.data.sections),
   })
 
-  type SessionRow = { id: string; title: string; status: string; questions: Array<{ id: string }>; createdAt: string; targetSection?: { id: string; name: string } | null; respondentCount: number }
+  type SessionRow = { id: string; title: string; status: string; questions: Array<{ id: string }>; createdAt: string; openedAt: string | null; closedAt: string | null; targetSection?: { id: string; name: string } | null; respondentCount: number }
   const { data: sessionsResult } = useQuery<{ sessions: SessionRow[]; enrolledCount: number }>({
     queryKey: ['sessions', classId],
     queryFn: () => api.get(`/classes/${classId}/sessions?type=IN_CLASS`).then((r) => r.data.data),
@@ -422,58 +422,25 @@ export default function ClassPage() {
           <Empty icon={BookOpen} message="No sessions yet — create one to start collecting responses." />
         ) : (() => {
           const openSessions = sessionsData.filter((s) => s.status === 'OPEN')
-          const otherSessions = sessionsData.filter((s) => s.status !== 'OPEN')
-          const renderSessionRow = (s: SessionRow) => (
-            <div key={s.id} className="group relative flex items-center bg-surface border border-hairline rounded-[14px] hover:shadow-card transition-shadow">
-              <Link
-                to={`/professor/sessions/${s.id}`}
-                className="flex-1 flex items-center justify-between p-5"
-              >
-                <div>
-                  <p className="font-medium text-ink">{s.title}</p>
-                  <p className="text-xs text-muted mt-0.5">
-                    {s.questions?.length ?? 0} question{(s.questions?.length ?? 0) !== 1 ? 's' : ''} ·{' '}
-                    {new Date(s.createdAt).toLocaleDateString()}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  {s.status === 'CLOSED' && enrolledCount > 0 && (
-                    <span className="text-xs font-mono text-muted">
-                      {s.respondentCount}/{enrolledCount} · {Math.round((s.respondentCount / enrolledCount) * 100)}%
-                    </span>
-                  )}
-                  {s.targetSection && (
-                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-surface-2 text-ink-2">
-                      §{s.targetSection.name}
-                    </span>
-                  )}
-                  <Pill variant={statusPill(s.status)}>
-                    {s.status.charAt(0) + s.status.slice(1).toLowerCase()}
-                  </Pill>
-                </div>
-              </Link>
-              <button
-                onClick={(e) => {
-                  e.preventDefault()
-                  if (!confirm(`Delete "${s.title}"? This will remove all responses and cannot be undone.`)) return
-                  deleteSessionMutation.mutate(s.id)
-                }}
-                disabled={deleteSessionMutation.isPending}
-                className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 px-4 py-5 text-hairline-strong hover:text-red-500 disabled:opacity-30"
-                title="Delete session"
-              >
-                <Trash2 size={15} />
-              </button>
-            </div>
-          )
+          const otherSessions = [...sessionsData.filter((s) => s.status !== 'OPEN')].sort((a, b) => {
+            const dateA = a.closedAt ?? a.openedAt ?? a.createdAt
+            const dateB = b.closedAt ?? b.openedAt ?? b.createdAt
+            return new Date(dateB).getTime() - new Date(dateA).getTime()
+          })
+
+          const sessionDate = (s: SessionRow) => {
+            if (s.closedAt) return { label: 'Closed', date: new Date(s.closedAt) }
+            if (s.openedAt) return { label: 'Opened', date: new Date(s.openedAt) }
+            return { label: 'Created', date: new Date(s.createdAt) }
+          }
+
           return (
-            <div className="space-y-3">
+            <div className="space-y-4">
+              {/* Live banners */}
               {openSessions.map((s) => (
                 <div key={s.id} className="bg-signal-soft border border-signal/20 rounded-[14px] p-5 flex items-center justify-between gap-4">
                   <div>
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <Pill variant="live" dot>Live</Pill>
-                    </div>
+                    <Pill variant="live" dot>Live</Pill>
                     <p className="font-semibold text-ink mt-1">{s.title}</p>
                     <p className="text-xs text-muted mt-0.5">
                       {s.questions?.length ?? 0} question{(s.questions?.length ?? 0) !== 1 ? 's' : ''}
@@ -495,7 +462,62 @@ export default function ClassPage() {
                   </div>
                 </div>
               ))}
-              {otherSessions.map(renderSessionRow)}
+
+              {/* Session grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {otherSessions.map((s) => {
+                  const { label, date } = sessionDate(s)
+                  const qCount = s.questions?.length ?? 0
+                  const pct = enrolledCount > 0 ? Math.round((s.respondentCount / enrolledCount) * 100) : null
+                  return (
+                    <div key={s.id} className="group relative bg-surface border border-hairline rounded-[14px] hover:shadow-card transition-shadow flex flex-col">
+                      <Link to={`/professor/sessions/${s.id}`} className="flex-1 p-5 flex flex-col gap-3">
+                        {/* Top row: status + section */}
+                        <div className="flex items-center gap-2">
+                          <Pill variant={statusPill(s.status)}>
+                            {s.status.charAt(0) + s.status.slice(1).toLowerCase()}
+                          </Pill>
+                          {s.targetSection && (
+                            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-surface-2 text-ink-2">
+                              §{s.targetSection.name}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Title */}
+                        <p className="font-semibold text-ink leading-snug">{s.title}</p>
+
+                        {/* Footer stats */}
+                        <div className="mt-auto flex items-end justify-between gap-2">
+                          <div className="text-xs text-muted space-y-0.5">
+                            <p>{qCount} question{qCount !== 1 ? 's' : ''}</p>
+                            <p className="font-mono">{label} {date.toLocaleDateString([], { month: 'short', day: 'numeric', year: date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined })}</p>
+                          </div>
+                          {pct !== null && s.status !== 'DRAFT' && (
+                            <span className="text-xs font-mono text-muted shrink-0">
+                              {s.respondentCount}/{enrolledCount} · {pct}%
+                            </span>
+                          )}
+                        </div>
+                      </Link>
+
+                      {/* Delete — hover only */}
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault()
+                          if (!confirm(`Delete "${s.title}"? This will remove all responses and cannot be undone.`)) return
+                          deleteSessionMutation.mutate(s.id)
+                        }}
+                        disabled={deleteSessionMutation.isPending}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity absolute top-3 right-3 w-7 h-7 flex items-center justify-center text-hairline-strong hover:text-red-500 hover:bg-surface-2 rounded-sm disabled:opacity-30"
+                        title="Delete session"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           )
         })()
