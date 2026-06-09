@@ -123,7 +123,7 @@ function PreviewInput({ q }: { q: QWithGroup }) {
     </div>
   )
   if (q.type === 'STRUCTURE') return (
-    <div className="h-20 border border-hairline rounded-[14px] bg-surface-2 flex items-center justify-center text-xs text-muted opacity-60">Structure drawing (JSME editor)</div>
+    <div className="h-20 border border-hairline rounded-[14px] bg-surface-2 flex items-center justify-center text-xs text-muted opacity-60">Structure drawing (Ketcher)</div>
   )
   return null
 }
@@ -474,36 +474,17 @@ export default function AssignmentDetailPage() {
               className="inline-flex items-center gap-1.5 text-sm text-ink-2 bg-surface border border-hairline-strong rounded-sm px-3 py-2 font-bold hover:bg-surface-2 transition-colors">
               Preview
             </button>
-            {data.status === SessionStatus.DRAFT ? (
-              <button onClick={() => statusMutation.mutate(SessionStatus.OPEN)} disabled={statusMutation.isPending}
-                className="bg-signal text-white px-4 py-2 rounded-sm text-sm font-bold hover:bg-[var(--signal-bright)] disabled:opacity-50 transition-colors">
-                Publish
-              </button>
-            ) : data.status === SessionStatus.OPEN ? (
-              <div className="flex gap-2">
-                <button onClick={() => statusMutation.mutate(SessionStatus.DRAFT)} disabled={statusMutation.isPending}
-                  className="text-muted border border-hairline px-4 py-2 rounded-sm text-sm hover:bg-surface-2 disabled:opacity-50 transition-colors">
-                  Back to Draft
-                </button>
-                <button onClick={() => statusMutation.mutate(SessionStatus.CLOSED)} disabled={statusMutation.isPending}
-                  className="bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-sm text-sm font-bold hover:bg-red-100 disabled:opacity-50 transition-colors">
-                  Close
-                </button>
-              </div>
-            ) : data.status === SessionStatus.CLOSED ? (
-              <div className="flex gap-2">
-                <button onClick={() => statusMutation.mutate(SessionStatus.OPEN)} disabled={statusMutation.isPending}
-                  className="bg-good-soft text-good border border-good/20 px-4 py-2 rounded-sm text-sm font-bold hover:opacity-80 disabled:opacity-50 transition-colors">
-                  Reopen
-                </button>
-                <button onClick={() => statusMutation.mutate(SessionStatus.ARCHIVED)} disabled={statusMutation.isPending}
-                  className="text-muted border border-hairline px-4 py-2 rounded-sm text-sm hover:bg-surface-2 disabled:opacity-50 transition-colors">
-                  Archive
-                </button>
-              </div>
-            ) : (
-              <span className="text-xs text-muted border border-hairline px-3 py-2 rounded-sm">Archived</span>
-            )}
+            <select
+              value={data.status}
+              onChange={(e) => statusMutation.mutate(e.target.value as SessionStatus)}
+              disabled={statusMutation.isPending}
+              className="border border-hairline-strong rounded-sm px-3 py-2 text-sm bg-surface text-ink-2 focus:outline-none focus:ring-2 focus:ring-signal disabled:opacity-50 cursor-pointer"
+            >
+              <option value={SessionStatus.DRAFT}>Draft</option>
+              <option value={SessionStatus.OPEN}>Open</option>
+              <option value={SessionStatus.CLOSED}>Closed</option>
+              <option value={SessionStatus.ARCHIVED}>Archived</option>
+            </select>
           </div>
         </div>
       </div>
@@ -568,7 +549,7 @@ export default function AssignmentDetailPage() {
             </DndContext>
 
             {/* Sidebar footer */}
-            {isDraft && (
+            {data.status !== SessionStatus.ARCHIVED && (
               <button onClick={openAddQuestion}
                 className="w-full flex items-center justify-center gap-1.5 text-xs text-signal hover:text-[var(--signal-bright)] hover:bg-signal-soft py-2.5 border-t border-hairline transition-colors">
                 <Plus size={13} /> Add question
@@ -718,6 +699,35 @@ export default function AssignmentDetailPage() {
                 </table>
               )}
             </div>
+          )}
+
+          {/* Debug panel */}
+          {resolvedActive?.kind === 'question' && activeQuestion && (
+            <details className="border border-hairline rounded-sm text-xs font-mono">
+              <summary className="px-3 py-1.5 cursor-pointer text-muted select-none">Debug</summary>
+              <div className="px-3 py-2 space-y-2 border-t border-hairline bg-surface-2 break-all">
+                <div><span className="text-muted">correct answer: </span><span className="text-ink-2">{activeQuestion.correctAnswer ?? '—'}</span></div>
+                {activeQuestion.responses.map((r) => (
+                  <div key={r.id}><span className="text-muted">{r.student.netId}: </span><span className="text-ink-2">{r.responseText}</span></div>
+                ))}
+              </div>
+            </details>
+          )}
+          {resolvedActive?.kind === 'group' && activeGroup && (
+            <details className="border border-hairline rounded-sm text-xs font-mono">
+              <summary className="px-3 py-1.5 cursor-pointer text-muted select-none">Debug</summary>
+              <div className="px-3 py-2 space-y-3 border-t border-hairline bg-surface-2 break-all">
+                {allQuestions.filter(q => q.groupId === activeGroup.id).map((q) => (
+                  <div key={q.id} className="space-y-1">
+                    <div className="text-muted">Part: <span className="text-ink-2">{questionPreview(q.text)}</span></div>
+                    <div><span className="text-muted">correct answer: </span><span className="text-ink-2">{q.correctAnswer ?? '—'}</span></div>
+                    {q.responses.map((r) => (
+                      <div key={r.id}><span className="text-muted">{r.student.netId}: </span><span className="text-ink-2">{r.responseText}</span></div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </details>
           )}
 
           {/* Empty state */}

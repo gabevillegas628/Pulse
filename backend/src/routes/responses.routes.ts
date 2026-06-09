@@ -981,6 +981,7 @@ router.get('/student/assignments/:id', requireStudent, async (req: Request, res:
       order: q.order,
       groupId: (q as typeof q & { groupId: string | null }).groupId,
       unit: (q as typeof q & { unit: string | null }).unit,
+      correctAnswer: (q as typeof q & { correctAnswer: string | null }).correctAnswer,
       existingResponse: q.responses[0] ?? null,
     }))
 

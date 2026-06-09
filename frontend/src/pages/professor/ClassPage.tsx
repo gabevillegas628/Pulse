@@ -218,6 +218,8 @@ export default function ClassPage() {
     onSuccess: (res) => {
       setShowAssignmentModal(false)
       resetHw()
+      qc.invalidateQueries({ queryKey: ['assignments', classId] })
+      qc.invalidateQueries({ queryKey: ['class', classId] })
       navigate(`/professor/classes/${classId}/assignments/${res.data.data.assignment.id}`)
     },
     onError: (e: unknown) => {

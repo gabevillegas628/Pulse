@@ -29,7 +29,7 @@ router.post('/classes/:classId/assignments', requireProfessor, async (req: Reque
       data: {
         classId: cls.id,
         title: body.title,
-        status: 'OPEN',
+        status: 'DRAFT',
         deadline: body.deadline ? new Date(body.deadline) : null,
       },
       include: { questions: { orderBy: { order: 'asc' } } },
@@ -125,7 +125,7 @@ router.patch('/assignments/:id', requireProfessor, async (req: Request, res: Res
     const body = z.object({
       title: z.string().min(1).optional(),
       deadline: z.string().datetime().nullable().optional(),
-      status: z.enum(['OPEN', 'CLOSED', 'ARCHIVED']).optional(),
+      status: z.enum(['DRAFT', 'OPEN', 'CLOSED', 'ARCHIVED']).optional(),
     }).parse(req.body)
 
     const existing = await prisma.assignment.findFirst({

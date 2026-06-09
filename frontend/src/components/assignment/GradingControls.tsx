@@ -105,8 +105,10 @@ export default function GradingControls({
                 <button
                   onClick={async () => {
                     const molfile = ketcherRef.current ? await ketcherRef.current.getMolfile() : ''
-                    setCorrectAnswerMutation.mutate({ questionId: q.id, correctAnswer: molfile || null })
-                    setEditingStructure(false)
+                    setCorrectAnswerMutation.mutate(
+                      { questionId: q.id, correctAnswer: molfile || null },
+                      { onSuccess: () => setEditingStructure(false) }
+                    )
                   }}
                   disabled={setCorrectAnswerMutation.isPending}
                   className="text-xs text-white bg-signal hover:bg-[var(--signal-bright)] px-3 py-1.5 rounded-sm disabled:opacity-50"

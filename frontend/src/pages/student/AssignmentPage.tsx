@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, lazy, Suspense } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -18,9 +18,13 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { api } from '@/api/client'
 import RichTextRenderer from '@/components/RichTextRenderer'
+import StructureRenderer from '@/components/StructureRenderer'
 import { ChevronLeft, ChevronRight, Check, Clock, GripVertical, Save, Loader2 } from 'lucide-react'
+import { Editor } from 'ketcher-react'
+import { RemoteStructServiceProvider } from 'ketcher-core'
+import type { Ketcher } from 'ketcher-core'
 
-const Jsme = lazy(() => import('@loschmidt/jsme-react').then(m => ({ default: m.Jsme })))
+const structServiceProvider = new RemoteStructServiceProvider('/api/indigo')
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,6 +43,7 @@ interface AssignmentQuestion {
   order: number
   groupId: string | null
   unit: string | null
+  correctAnswer: string | null
   existingResponse: { id: string; responseText: string; submittedAt: string } | null
 }
 
@@ -240,7 +245,7 @@ export default function AssignmentPage() {
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [currentStep, setCurrentStep] = useState(0)
   const [lastSaved, setLastSaved] = useState<Date | null>(null)
-  const jsmeInitialSmiles = useRef<Record<string, string>>({})
+  const ketcherRef = useRef<Ketcher | null>(null)
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const currentItemRef = useRef<DisplayItem | undefined>(undefined)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
@@ -303,18 +308,22 @@ export default function AssignmentPage() {
     scheduleAutoSave(questionId, value)
   }
 
-  function saveCurrentNow() {
+  async function saveCurrentNow() {
     const item = currentItemRef.current
     if (!item) return
     const qs = item.kind === 'group'
       ? item.questions.map(({ question }) => question)
       : [item.question]
-    qs.forEach((q) => {
-      const val = answers[q.id]
-      if (!val || q.existingResponse) return
+    for (const q of qs) {
+      let val = answers[q.id]
+      if (q.type === 'STRUCTURE' && ketcherRef.current) {
+        val = await ketcherRef.current.getMolfile()
+        if (val) setAnswers((prev) => ({ ...prev, [q.id]: val }))
+      }
+      if (!val) continue
       clearTimeout(saveTimers.current[q.id])
       saveMutation.mutate({ questionId: q.id, responseText: val })
-    })
+    }
   }
 
   if (isLoading || !data) {
@@ -501,14 +510,41 @@ export default function AssignmentPage() {
         })()}
 
         {q.type === 'STRUCTURE' && (
-          <Suspense fallback={<div className="h-48 bg-surface-2 rounded-[14px] animate-pulse" />}>
-            <Jsme height="420px" width="600px"
-              smiles={(jsmeInitialSmiles.current[q.id] ??= answers[q.id] ?? '')}
-              onChange={(smiles: string) => !isDisabled && setAnswer(q.id, smiles)}
-              disabled={isDisabled}
-            />
-          </Suspense>
+          isDisabled ? (
+            answers[q.id] ? (
+              <StructureRenderer inchi={answers[q.id]} width={400} height={280} />
+            ) : (
+              <div className="h-40 bg-surface-2 rounded-[14px] flex items-center justify-center text-sm text-muted">No structure submitted</div>
+            )
+          ) : (
+            <div className="h-[500px] border border-hairline rounded-[14px] overflow-hidden">
+              <Editor
+                staticResourcesUrl=""
+                structServiceProvider={structServiceProvider}
+                errorHandler={(err) => console.error('Ketcher error:', err)}
+                onInit={async (ketcher) => {
+                  ketcherRef.current = ketcher
+                  const existing = answers[q.id]
+                  if (existing) await ketcher.setMolecule(existing)
+                }}
+              />
+            </div>
+          )
         )}
+        {/* Debug panel */}
+        <details className="mt-4 border border-hairline rounded-sm text-xs font-mono">
+          <summary className="px-3 py-1.5 cursor-pointer text-muted select-none">Debug</summary>
+          <div className="px-3 py-2 space-y-2 border-t border-hairline bg-surface-2 break-all">
+            <div>
+              <span className="text-muted">stored answer: </span>
+              <span className="text-ink-2">{q.existingResponse?.responseText ?? '—'}</span>
+            </div>
+            <div>
+              <span className="text-muted">correct answer: </span>
+              <span className="text-ink-2">{q.correctAnswer ?? '—'}</span>
+            </div>
+          </div>
+        </details>
       </div>
     )
   }
@@ -601,7 +637,7 @@ export default function AssignmentPage() {
           {/* Prev / Next / Save */}
           <div className="shrink-0 flex items-center justify-between gap-3 px-4 md:px-8 py-4 border-t border-hairline bg-surface">
             <button
-              onClick={() => setCurrentStep((s) => Math.max(0, s - 1))}
+              onClick={async () => { await saveCurrentNow(); setCurrentStep((s) => Math.max(0, s - 1)) }}
               disabled={safeStep === 0}
               className="flex items-center gap-1.5 text-sm text-ink-2 border border-hairline px-4 py-2 rounded-sm hover:bg-surface-2 disabled:opacity-40 transition-colors"
             >
@@ -632,7 +668,7 @@ export default function AssignmentPage() {
             </div>
 
             <button
-              onClick={() => setCurrentStep((s) => Math.min(displayList.length - 1, s + 1))}
+              onClick={async () => { await saveCurrentNow(); setCurrentStep((s) => Math.min(displayList.length - 1, s + 1)) }}
               disabled={safeStep === displayList.length - 1}
               className="flex items-center gap-1.5 text-sm text-ink-2 border border-hairline px-4 py-2 rounded-sm hover:bg-surface-2 disabled:opacity-40 transition-colors"
             >

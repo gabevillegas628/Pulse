@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, lazy, Suspense } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useForm, Controller } from 'react-hook-form'
 import { api } from '@/api/client'
@@ -23,8 +23,11 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { GripVertical } from 'lucide-react'
+import { Editor } from 'ketcher-react'
+import { RemoteStructServiceProvider } from 'ketcher-core'
+import type { Ketcher } from 'ketcher-core'
 
-const Jsme = lazy(() => import('@loschmidt/jsme-react').then(m => ({ default: m.Jsme })))
+const structServiceProvider = new RemoteStructServiceProvider('/api/indigo')
 
 interface SessionData {
   id: string
@@ -64,8 +67,7 @@ export default function SubmitPage() {
   const [sessionClosed, setSessionClosed] = useState(false)
   const [orderedItems, setOrderedItems] = useState<Record<string, string[]>>({})
   const [multiSelectAnswers, setMultiSelectAnswers] = useState<Record<string, string[]>>({})
-  const [structureAnswers, setStructureAnswers] = useState<Record<string, string>>({})
-  const jsmeInitialSmiles = useRef<Record<string, string>>({})
+  const ketcherRefs = useRef<Record<string, Ketcher>>({})
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   const { control, handleSubmit, register, formState: { isSubmitting } } = useForm<Record<string, string>>()
@@ -125,13 +127,13 @@ export default function SubmitPage() {
     if (!session) return
     setSubmitError('')
     try {
-      const responses = session.questions.map((q) => {
+      const responses = await Promise.all(session.questions.map(async (q) => {
         let responseText = data[q.id] ?? ''
         if (q.type === 'ORDERING') responseText = JSON.stringify(orderedItems[q.id] ?? [])
         if (q.type === 'MULTI_SELECT') responseText = JSON.stringify(multiSelectAnswers[q.id] ?? [])
-        if (q.type === 'STRUCTURE') responseText = structureAnswers[q.id] ?? ''
+        if (q.type === 'STRUCTURE') responseText = ketcherRefs.current[q.id] ? await ketcherRefs.current[q.id].getMolfile() : ''
         return { questionId: q.id, responseText }
-      })
+      }))
       await api.post('/responses', { sessionId: session.id, responses })
       navigate(`/s/${session.id}/confirmation`)
     } catch (e: unknown) {
@@ -335,15 +337,14 @@ export default function SubmitPage() {
               )}
 
               {q.type === 'STRUCTURE' && (
-                <Suspense fallback={<div className="h-40 bg-surface-2 rounded-[14px] animate-pulse" />}>
-                  <Jsme
-                    height="420px"
-                    width="600px"
-                    smiles={(jsmeInitialSmiles.current[q.id] ??= '')}
-                    onChange={(s) => setStructureAnswers((prev) => ({ ...prev, [q.id]: s }))}
-                    options="oldlook"
+                <div className="h-[500px] border border-hairline rounded-[14px] overflow-hidden">
+                  <Editor
+                    staticResourcesUrl=""
+                    structServiceProvider={structServiceProvider}
+                    errorHandler={(err) => console.error('Ketcher error:', err)}
+                    onInit={(ketcher) => { ketcherRefs.current[q.id] = ketcher }}
                   />
-                </Suspense>
+                </div>
               )}
             </div>
           ))}
