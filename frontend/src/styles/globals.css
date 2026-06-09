@@ -121,3 +121,8 @@
   text-align: center;
   overflow-x: auto;
 }
+
+::highlight(textbook-search) {
+  background-color: oklch(0.95 0.15 95);
+  color: oklch(0.3 0.1 60);
+}

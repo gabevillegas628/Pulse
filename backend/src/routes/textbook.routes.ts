@@ -17,6 +17,22 @@ import rehypeStringify from 'rehype-stringify'
 
 const router = Router()
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface GitHubFile {
+  name: string
+  type: 'file' | 'dir' | 'symlink' | 'submodule'
+  download_url: string | null
+}
+
+interface SearchResult {
+  chapterName: string
+  downloadUrl: string
+  sectionId: string
+  sectionTitle: string
+  excerpt: string
+}
+
 // ─── Markdown → HTML processor ────────────────────────────────────────────────
 
 // Sanitize before rehypeMathjax: at this point math is still simple
@@ -48,6 +64,66 @@ const processor = unified()
 interface CacheEntry { html: string; cachedAt: number }
 const cache = new Map<string, CacheEntry>()
 const CACHE_TTL_MS = 60 * 60 * 1000 // 1 hour
+
+// ─── Search helpers ───────────────────────────────────────────────────────────
+
+function stripTags(html: string): string {
+  return html
+    .replace(/<(svg|mjx-container)[\s\S]*?<\/\1>/gi, ' ')  // remove math/SVG blobs before tag-stripping
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&[a-z]+;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function extractSections(html: string): Array<{ id: string; title: string; text: string }> {
+  const sections: Array<{ id: string; title: string; text: string }> = []
+  const h2Regex = /<h2[^>]*id="([^"]*)"[^>]*>([\s\S]*?)<\/h2>/g
+  let lastSection: { id: string; title: string; startIndex: number } | null = null
+
+  for (const match of html.matchAll(h2Regex)) {
+    if (lastSection) {
+      sections.push({
+        id: lastSection.id,
+        title: lastSection.title,
+        text: stripTags(html.slice(lastSection.startIndex, match.index)),
+      })
+    }
+    lastSection = {
+      id: match[1],
+      title: stripTags(match[2]),
+      startIndex: (match.index ?? 0) + match[0].length,
+    }
+  }
+  if (lastSection) {
+    sections.push({ id: lastSection.id, title: lastSection.title, text: stripTags(html.slice(lastSection.startIndex)) })
+  }
+  return sections
+}
+
+function buildExcerpt(text: string, query: string, prefix = 40, total = 220): string {
+  const idx = text.toLowerCase().indexOf(query.toLowerCase())
+  if (idx === -1) return text.slice(0, total) + (text.length > total ? '…' : '')
+  const start = Math.max(0, idx - prefix)
+  const end = Math.min(text.length, start + total)
+  return (start > 0 ? '…' : '') + text.slice(start, end) + (end < text.length ? '…' : '')
+}
+
+async function getOrRenderChapter(downloadUrl: string): Promise<string> {
+  const cached = cache.get(downloadUrl)
+  if (cached && Date.now() - cached.cachedAt < CACHE_TTL_MS) return cached.html
+
+  const upstream = await fetch(downloadUrl)
+  if (!upstream.ok) throw new Error(`GitHub returned ${upstream.status}`)
+  const markdown = await upstream.text()
+  const file = await processor.process(markdown.replace(/\\cr\b/g, '\\\\'))
+  const html = String(file).replace(
+    /<p>(<mjx-container(?:(?!<\/p>)[\s\S])*?<\/mjx-container>)<\/p>/g,
+    '<p class="math-display">$1</p>',
+  )
+  cache.set(downloadUrl, { html, cachedAt: Date.now() })
+  return html
+}
 
 // ─── Route ────────────────────────────────────────────────────────────────────
 
@@ -109,6 +185,49 @@ router.get('/textbook/render', async (req, res, next) => {
 
     cache.set(url, { html, cachedAt: Date.now() })
     res.json({ html })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ─── Search ───────────────────────────────────────────────────────────────────
+
+router.get('/textbook/search', async (req, res, next) => {
+  try {
+    const { repo, path: repoPath = '', query } = req.query as Record<string, string>
+    if (!repo) return void res.status(400).json({ error: 'repo is required' })
+    if (!query || query.trim().length < 2) return void res.status(400).json({ error: 'query must be at least 2 characters' })
+
+    const q = query.trim()
+    const segment = repoPath ? `/${repoPath}` : ''
+    const listRes = await fetch(`https://api.github.com/repos/${repo}/contents${segment}`)
+    if (!listRes.ok) return void res.status(listRes.status).json({ error: `GitHub API error ${listRes.status}` })
+
+    const files = await listRes.json() as GitHubFile[]
+    const chapters = (Array.isArray(files) ? files : [])
+      .filter(f => f.type === 'file' && f.name.endsWith('.md') && f.download_url)
+      .map(f => ({ name: f.name, downloadUrl: f.download_url! }))
+
+    const results: SearchResult[] = []
+    const qLower = q.toLowerCase()
+    await Promise.all(chapters.map(async (ch) => {
+      try {
+        const html = await getOrRenderChapter(ch.downloadUrl)
+        for (const sec of extractSections(html)) {
+          if (sec.title.toLowerCase().includes(qLower) || sec.text.toLowerCase().includes(qLower)) {
+            results.push({
+              chapterName: ch.name,
+              downloadUrl: ch.downloadUrl,
+              sectionId: sec.id,
+              sectionTitle: sec.title,
+              excerpt: buildExcerpt(sec.text, q),
+            })
+          }
+        }
+      } catch { /* skip chapters that fail to load */ }
+    }))
+
+    res.json({ data: results })
   } catch (err) {
     next(err)
   }

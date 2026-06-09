@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { BookOpen, ChevronRight, Maximize2, Menu, Minimize2, RotateCcw, X } from 'lucide-react'
+import { BookOpen, ChevronRight, Maximize2, Menu, Minimize2, RotateCcw, Search, X } from 'lucide-react'
 
 const NARROW_BREAKPOINT = 768
 
@@ -30,6 +30,41 @@ interface Chapter {
   downloadUrl: string
 }
 
+interface Section {
+  id: string
+  title: string
+}
+
+interface SearchResult {
+  chapterName: string
+  downloadUrl: string
+  sectionId: string
+  sectionTitle: string
+  excerpt: string
+}
+
+function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay)
+    return () => clearTimeout(t)
+  }, [value, delay])
+  return debounced
+}
+
+function HighlightedExcerpt({ text, query }: { text: string; query: string }) {
+  const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'))
+  return (
+    <span>
+      {parts.map((part, i) =>
+        part.toLowerCase() === query.toLowerCase()
+          ? <strong key={i} className="font-semibold text-ink">{part}</strong>
+          : part
+      )}
+    </span>
+  )
+}
+
 // ─── Chapter list sidebar ─────────────────────────────────────────────────────
 
 const FONT_SIZES = [
@@ -52,6 +87,10 @@ function ChapterSidebar({
   fontSize,
   onFontSizeChange,
   viewCounts,
+  sections,
+  repo,
+  path,
+  onScrollToSection,
 }: {
   chapters: Chapter[]
   selectedName: string | null
@@ -65,7 +104,34 @@ function ChapterSidebar({
   fontSize: FontSize
   onFontSizeChange: (s: FontSize) => void
   viewCounts?: Record<string, number>
+  sections?: Section[]
+  repo: string
+  path: string
+  onScrollToSection: (id: string, query?: string) => void
 }) {
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const debouncedQuery = useDebounce(searchQuery, 300)
+
+  const { data: searchResults, isFetching: searchFetching } = useQuery<SearchResult[]>({
+    queryKey: ['textbook-search', repo, path, debouncedQuery],
+    queryFn: () =>
+      api.get('/textbook/search', { params: { repo, path, query: debouncedQuery } })
+        .then((r) => r.data.data as SearchResult[]),
+    enabled: debouncedQuery.length >= 2,
+    staleTime: 2 * 60 * 1000,
+  })
+
+  function handleSearchResultClick(result: SearchResult) {
+    const chapter = chapters.find((c) => c.name === result.chapterName)
+    if (chapter) {
+      onSelect(chapter)
+      onScrollToSection(result.sectionId, debouncedQuery)
+    }
+  }
+
+  const showResults = debouncedQuery.length >= 2
+
   return (
     <>
       {/* Permanent w-10 strip — always in flow so content width never shifts */}
@@ -102,39 +168,101 @@ function ChapterSidebar({
               </button>
               <p className="text-xs font-semibold text-muted uppercase tracking-wider">Chapters</p>
             </div>
-            <button
-              onClick={onToggleExpand}
-              className="text-muted hover:text-ink transition-colors"
-              title={expanded ? 'Exit fullscreen' : 'Fullscreen'}
-            >
-              {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { setSearchOpen(o => !o); setSearchQuery('') }}
+                className={`transition-colors ${searchOpen ? 'text-signal' : 'text-muted hover:text-ink'}`}
+                title={searchOpen ? 'Close search' : 'Search'}
+              >
+                <Search size={14} />
+              </button>
+              <button
+                onClick={onToggleExpand}
+                className="text-muted hover:text-ink transition-colors"
+                title={expanded ? 'Exit fullscreen' : 'Fullscreen'}
+              >
+                {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              </button>
+            </div>
           </div>
+
+          {searchOpen && (
+            <div className="px-3 py-2 border-b border-hairline shrink-0">
+              <div className="relative">
+                <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+                <input
+                  autoFocus
+                  type="text"
+                  placeholder="Search textbook…"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Escape' && setSearchOpen(false)}
+                  className="w-full pl-7 pr-3 py-1.5 text-xs bg-surface-2 border border-hairline rounded-sm text-ink placeholder:text-muted focus:outline-none focus:border-signal"
+                />
+              </div>
+            </div>
+          )}
+
           <nav className="py-2 overflow-y-auto flex-1">
-            {chapters.map((ch) => {
-              const isActive = ch.name === selectedName
-              return (
-                <button
-                  key={ch.name}
-                  onClick={() => onSelect(ch)}
-                  className={`w-full text-left px-4 py-2.5 flex items-center justify-between gap-2 transition-colors ${
-                    isActive
-                      ? 'bg-signal-soft text-signal'
-                      : 'text-ink-2 hover:bg-surface-2'
-                  }`}
-                >
-                  <span className="text-sm leading-snug flex-1">{filenameToTitle(ch.name)}</span>
-                  <span className="shrink-0 flex items-center gap-1">
-                    {viewCounts && (
-                      <span className="text-[10px] font-medium text-muted tabular-nums font-mono">
-                        {viewCounts[ch.name] ?? 0}
-                      </span>
-                    )}
-                    {isActive && <ChevronRight size={13} className="text-signal" />}
-                  </span>
-                </button>
+            {showResults ? (
+              searchFetching ? (
+                <p className="px-4 py-3 text-xs text-muted">Searching…</p>
+              ) : !searchResults || searchResults.length === 0 ? (
+                <p className="px-4 py-3 text-xs text-muted">No results for "{debouncedQuery}"</p>
+              ) : (
+                searchResults.map((result, i) => (
+                  <button
+                    key={`${result.chapterName}-${result.sectionId}-${i}`}
+                    onClick={() => handleSearchResultClick(result)}
+                    className="w-full text-left px-4 py-2.5 hover:bg-surface-2 transition-colors border-b border-hairline last:border-0"
+                  >
+                    <p className="text-xs font-medium text-signal truncate">{result.sectionTitle}</p>
+                    <p className="text-[10px] text-muted mt-0.5 truncate">{filenameToTitle(result.chapterName)}</p>
+                    <p className="text-xs text-ink-2 mt-1 line-clamp-3 leading-relaxed"><HighlightedExcerpt text={result.excerpt} query={debouncedQuery} /></p>
+                  </button>
+                ))
               )
-            })}
+            ) : (
+              chapters.map((ch) => {
+                const isActive = ch.name === selectedName
+                return (
+                  <div key={ch.name}>
+                    <button
+                      onClick={() => onSelect(ch)}
+                      className={`w-full text-left px-4 py-2.5 flex items-center justify-between gap-2 transition-colors ${
+                        isActive
+                          ? 'bg-signal-soft text-signal'
+                          : 'text-ink-2 hover:bg-surface-2'
+                      }`}
+                    >
+                      <span className="text-sm leading-snug flex-1">{filenameToTitle(ch.name)}</span>
+                      <span className="shrink-0 flex items-center gap-1">
+                        {viewCounts && (
+                          <span className="text-[10px] font-medium text-muted tabular-nums font-mono">
+                            {viewCounts[ch.name] ?? 0}
+                          </span>
+                        )}
+                        {isActive && <ChevronRight size={13} className="text-signal" />}
+                      </span>
+                    </button>
+                    {isActive && sections && sections.length > 0 && (
+                      <div className="pb-1">
+                        {sections.map((sec) => (
+                          <button
+                            key={sec.id}
+                            onClick={() => document.getElementById(sec.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                            className="w-full text-left pl-7 pr-4 py-1 text-xs text-ink-3 hover:text-signal hover:bg-surface-2 transition-colors flex items-center gap-2"
+                          >
+                            <span className="w-1 h-1 rounded-full bg-hairline-strong shrink-0 mt-px" />
+                            <span className="truncate">{sec.title}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+            )}
           </nav>
           {/* Width + font size controls */}
           <div className="px-4 py-3 border-t border-hairline shrink-0 space-y-3">
@@ -187,6 +315,10 @@ function ChapterContent({
   expanded,
   onToggleExpand,
   classId,
+  onSectionsLoaded,
+  scrollToSection,
+  highlightQuery,
+  onScrolled,
 }: {
   name: string
   downloadUrl: string
@@ -195,6 +327,10 @@ function ChapterContent({
   expanded: boolean
   onToggleExpand: () => void
   classId?: string
+  onSectionsLoaded?: (sections: Section[]) => void
+  scrollToSection?: string | null
+  highlightQuery?: string | null
+  onScrolled?: () => void
 }) {
   const { data: html, isLoading, isError } = useQuery<string>({
     queryKey: ['textbook-chapter', downloadUrl],
@@ -203,6 +339,89 @@ function ChapterContent({
         .then((r) => r.data.html as string),
     staleTime: 5 * 60 * 1000,
   })
+
+  useEffect(() => {
+    if (!html || !onSectionsLoaded) return
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const sections = Array.from(doc.querySelectorAll('h2'))
+      .map((h) => ({ id: h.id, title: h.textContent?.trim() ?? '' }))
+      .filter((s) => s.id && s.title)
+    onSectionsLoaded(sections)
+  }, [html]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const contentRef = useRef<HTMLDivElement>(null)
+
+  // Scroll to search result
+  useEffect(() => {
+    if (!html || !scrollToSection) return
+    requestAnimationFrame(() => {
+      let target: Element | null = null
+
+      if (highlightQuery && contentRef.current) {
+        const sectionEl = document.getElementById(scrollToSection)
+        const q = highlightQuery.toLowerCase()
+        const walker = document.createTreeWalker(contentRef.current, NodeFilter.SHOW_TEXT)
+        let node: Node | null
+        while ((node = walker.nextNode())) {
+          if (!node.textContent?.toLowerCase().includes(q)) continue
+          if (sectionEl && !(sectionEl.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING)) continue
+          let ancestor: Element | null = node.parentElement
+          let inMath = false
+          while (ancestor) {
+            const tag = ancestor.nodeName.toLowerCase()
+            if (tag === 'svg' || tag === 'mjx-container') { inMath = true; break }
+            ancestor = ancestor.parentElement
+          }
+          if (inMath) continue
+          let el: Element | null = node.parentElement
+          while (el && getComputedStyle(el).display.startsWith('inline')) el = el.parentElement
+          target = el
+          break
+        }
+      }
+
+      ;(target ?? document.getElementById(scrollToSection))?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      onScrolled?.()
+    })
+  }, [html, scrollToSection]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Highlight all occurrences of search term via CSS Custom Highlight API
+  useEffect(() => {
+    CSS.highlights.delete('textbook-search')
+    if (!highlightQuery || !contentRef.current || !html) return
+
+    const q = highlightQuery.toLowerCase()
+    const ranges: Range[] = []
+    const walker = document.createTreeWalker(contentRef.current, NodeFilter.SHOW_TEXT)
+    let node: Node | null
+
+    while ((node = walker.nextNode())) {
+      let ancestor: Element | null = node.parentElement
+      let inMath = false
+      while (ancestor) {
+        const tag = ancestor.nodeName.toLowerCase()
+        if (tag === 'svg' || tag === 'mjx-container') { inMath = true; break }
+        ancestor = ancestor.parentElement
+      }
+      if (inMath) continue
+
+      const text = node.textContent ?? ''
+      const textLower = text.toLowerCase()
+      let offset = 0
+      while (true) {
+        const idx = textLower.indexOf(q, offset)
+        if (idx === -1) break
+        const range = new Range()
+        range.setStart(node, idx)
+        range.setEnd(node, idx + q.length)
+        ranges.push(range)
+        offset = idx + 1
+      }
+    }
+
+    if (ranges.length > 0) CSS.highlights.set('textbook-search', new Highlight(...ranges))
+    return () => { CSS.highlights.delete('textbook-search') }
+  }, [html, highlightQuery])
 
   if (isLoading) {
     return (
@@ -237,6 +456,7 @@ function ChapterContent({
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto px-8 py-10" style={{ maxWidth: contentWidth }}>
           <div
+            ref={contentRef}
             className="textbook-prose"
             style={{ fontSize }}
             dangerouslySetInnerHTML={{ __html: html }}
@@ -276,6 +496,8 @@ function Reader({
   onFontSizeChange,
   classId,
   viewCounts,
+  repo,
+  path,
 }: {
   chapters: Chapter[]
   selectedName: string | null
@@ -290,7 +512,14 @@ function Reader({
   onFontSizeChange: (s: FontSize) => void
   classId?: string
   viewCounts?: Record<string, number>
+  repo: string
+  path: string
 }) {
+  const [sections, setSections] = useState<Section[]>([])
+  const [pendingSection, setPendingSection] = useState<string | null>(null)
+  const [highlightQuery, setHighlightQuery] = useState<string | null>(null)
+  useEffect(() => { setSections([]); setHighlightQuery(null) }, [selectedName])
+
   const selectedChapter = chapters.find((c) => c.name === selectedName) ?? null
   return (
     <div className="relative flex flex-1 overflow-hidden">
@@ -307,12 +536,28 @@ function Reader({
         fontSize={fontSize}
         onFontSizeChange={onFontSizeChange}
         viewCounts={viewCounts}
+        sections={sections}
+        repo={repo}
+        path={path}
+        onScrollToSection={(id, query) => { setPendingSection(id); setHighlightQuery(query ?? null) }}
       />
       {!collapsed && (
         <div className="absolute inset-0 left-64 z-[9]" onClick={onToggleCollapse} />
       )}
       {selectedChapter ? (
-        <ChapterContent name={selectedChapter.name} downloadUrl={selectedChapter.downloadUrl} contentWidth={contentWidth} fontSize={fontSize} expanded={expanded} onToggleExpand={onToggleExpand} classId={classId} />
+        <ChapterContent
+          name={selectedChapter.name}
+          downloadUrl={selectedChapter.downloadUrl}
+          contentWidth={contentWidth}
+          fontSize={fontSize}
+          expanded={expanded}
+          onToggleExpand={onToggleExpand}
+          classId={classId}
+          onSectionsLoaded={setSections}
+          scrollToSection={pendingSection}
+          highlightQuery={highlightQuery}
+          onScrolled={() => setPendingSection(null)}
+        />
       ) : (
         <EmptyState />
       )}
@@ -411,6 +656,8 @@ export default function TextbookPage({ repo, path, classId, viewCounts }: Textbo
         onFontSizeChange={setFontSize}
         classId={classId}
         viewCounts={viewCounts}
+        repo={repo}
+        path={path}
       />
 
       {/* Fullscreen overlay */}
@@ -447,6 +694,8 @@ export default function TextbookPage({ repo, path, classId, viewCounts }: Textbo
               onFontSizeChange={setFontSize}
               classId={classId}
               viewCounts={viewCounts}
+              repo={repo}
+              path={path}
             />
           </div>
         </div>
