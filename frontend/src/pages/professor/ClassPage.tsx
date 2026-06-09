@@ -26,7 +26,8 @@ interface Assignment {
   title: string
   status: string
   deadline: string | null
-  _count: { questions: number }
+  _count?: { questions: number }
+  questionCount?: number
 }
 
 const questionSchema = z.object({
@@ -135,10 +136,11 @@ export default function ClassPage() {
     queryFn: () => api.get(`/classes/${classId}/sections`).then((r) => r.data.data.sections),
   })
 
-  type SessionRow = { id: string; title: string; status: string; questions: Array<{ id: string }>; createdAt: string; openedAt: string | null; closedAt: string | null; targetSection?: { id: string; name: string } | null; respondentCount: number }
+  type SessionRun = { id: string; status: string; sectionId: string | null; openedAt: string; closedAt: string | null; section?: { id: string; name: string } | null }
+  type SessionRow = { id: string; title: string; status: string; isLive: boolean; runs: SessionRun[]; questions: Array<{ id: string }>; createdAt: string; respondentCount: number }
   const { data: sessionsResult } = useQuery<{ sessions: SessionRow[]; enrolledCount: number }>({
     queryKey: ['sessions', classId],
-    queryFn: () => api.get(`/classes/${classId}/sessions?type=IN_CLASS`).then((r) => r.data.data),
+    queryFn: () => api.get(`/classes/${classId}/sessions`).then((r) => r.data.data),
     enabled: tab === 'sessions',
   })
   const sessionsData = sessionsResult?.sessions
@@ -146,7 +148,7 @@ export default function ClassPage() {
 
   const { data: assignmentsData } = useQuery<Assignment[]>({
     queryKey: ['assignments', classId],
-    queryFn: () => api.get(`/classes/${classId}/sessions?type=HOMEWORK`).then((r) => r.data.data.sessions),
+    queryFn: () => api.get(`/classes/${classId}/assignments`).then((r) => r.data.data.assignments),
     enabled: tab === 'assignments',
   })
 
@@ -226,16 +228,14 @@ export default function ClassPage() {
 
   const createAssignmentMutation = useMutation({
     mutationFn: (body: AssignmentFormData) =>
-      api.post(`/classes/${classId}/sessions`, {
-        type: 'HOMEWORK',
+      api.post(`/classes/${classId}/assignments`, {
         title: body.title,
         deadline: new Date(body.deadline).toISOString(),
-        questions: [],
       }),
     onSuccess: (res) => {
       setShowAssignmentModal(false)
       resetHw()
-      navigate(`/professor/classes/${classId}/assignments/${res.data.data.session.id}`)
+      navigate(`/professor/classes/${classId}/assignments/${res.data.data.assignment.id}`)
     },
     onError: (e: unknown) => {
       setAssignmentError(apiError(e, 'Failed to create assignment'))
@@ -251,7 +251,7 @@ export default function ClassPage() {
   })
 
   const deleteAssignmentMutation = useMutation({
-    mutationFn: (assignmentId: string) => api.delete(`/sessions/${assignmentId}`),
+    mutationFn: (assignmentId: string) => api.delete(`/assignments/${assignmentId}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['assignments', classId] })
       qc.invalidateQueries({ queryKey: ['class', classId] })
@@ -421,17 +421,30 @@ export default function ClassPage() {
         ) : sessionsData.length === 0 ? (
           <Empty icon={BookOpen} message="No sessions yet — create one to start collecting responses." />
         ) : (() => {
-          const openSessions = sessionsData.filter((s) => s.status === 'OPEN')
-          const otherSessions = [...sessionsData.filter((s) => s.status !== 'OPEN')].sort((a, b) => {
-            const dateA = a.closedAt ?? a.openedAt ?? a.createdAt
-            const dateB = b.closedAt ?? b.openedAt ?? b.createdAt
-            return new Date(dateB).getTime() - new Date(dateA).getTime()
+          const openSessions = sessionsData.filter((s) => s.isLive)
+          const otherSessions = [...sessionsData.filter((s) => !s.isLive)].sort((a, b) => {
+            const latestRun = (s: SessionRow) => {
+              if (s.runs.length === 0) return s.createdAt
+              const sorted = [...s.runs].sort((r1, r2) => new Date(r2.openedAt).getTime() - new Date(r1.openedAt).getTime())
+              return sorted[0].closedAt ?? sorted[0].openedAt
+            }
+            return new Date(latestRun(b)).getTime() - new Date(latestRun(a)).getTime()
           })
 
           const sessionDate = (s: SessionRow) => {
-            if (s.closedAt) return { label: 'Closed', date: new Date(s.closedAt) }
-            if (s.openedAt) return { label: 'Opened', date: new Date(s.openedAt) }
-            return { label: 'Created', date: new Date(s.createdAt) }
+            if (s.runs.length === 0) return { label: 'Created', date: new Date(s.createdAt) }
+            const sorted = [...s.runs].sort((r1, r2) => new Date(r2.openedAt).getTime() - new Date(r1.openedAt).getTime())
+            const latest = sorted[0]
+            if (latest.closedAt) return { label: 'Closed', date: new Date(latest.closedAt) }
+            return { label: 'Opened', date: new Date(latest.openedAt) }
+          }
+
+          // Derive display status for non-live sessions
+          const sessionDisplayStatus = (s: SessionRow): string => {
+            if (s.status === 'DRAFT') return 'DRAFT'
+            if (s.status === 'ARCHIVED') return 'ARCHIVED'
+            if (s.runs.length > 0) return 'CLOSED'
+            return 'DRAFT'
           }
 
           return (
@@ -472,16 +485,16 @@ export default function ClassPage() {
                   return (
                     <div key={s.id} className="group relative bg-surface border border-hairline rounded-[14px] hover:shadow-card transition-shadow flex flex-col">
                       <Link to={`/professor/sessions/${s.id}`} className="flex-1 p-5 flex flex-col gap-3">
-                        {/* Top row: status + section */}
+                        {/* Top row: status */}
                         <div className="flex items-center gap-2">
-                          <Pill variant={statusPill(s.status)}>
-                            {s.status.charAt(0) + s.status.slice(1).toLowerCase()}
-                          </Pill>
-                          {s.targetSection && (
-                            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-surface-2 text-ink-2">
-                              §{s.targetSection.name}
-                            </span>
-                          )}
+                          {(() => {
+                            const displayStatus = sessionDisplayStatus(s)
+                            return (
+                              <Pill variant={statusPill(displayStatus)}>
+                                {displayStatus.charAt(0) + displayStatus.slice(1).toLowerCase()}
+                              </Pill>
+                            )
+                          })()}
                         </div>
 
                         {/* Title */}
@@ -493,7 +506,7 @@ export default function ClassPage() {
                             <p>{qCount} question{qCount !== 1 ? 's' : ''}</p>
                             <p className="font-mono">{label} {date.toLocaleDateString([], { month: 'short', day: 'numeric', year: date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined })}</p>
                           </div>
-                          {pct !== null && s.status !== 'DRAFT' && (
+                          {pct !== null && sessionDisplayStatus(s) !== 'DRAFT' && (
                             <span className="text-xs font-mono text-muted shrink-0">
                               {s.respondentCount}/{enrolledCount} · {pct}%
                             </span>
@@ -540,7 +553,7 @@ export default function ClassPage() {
                   <div>
                     <p className="font-medium text-ink">{a.title}</p>
                     <p className="text-xs text-muted mt-0.5">
-                      {a._count.questions} question{a._count.questions !== 1 ? 's' : ''}{a.deadline ? ` · Due ${new Date(a.deadline).toLocaleDateString()}` : ''}
+                      {(a._count?.questions ?? a.questionCount ?? 0)} question{(a._count?.questions ?? a.questionCount ?? 0) !== 1 ? 's' : ''}{a.deadline ? ` · Due ${new Date(a.deadline).toLocaleDateString()}` : ''}
                     </p>
                   </div>
                   <Pill variant={statusPill(a.status)}>

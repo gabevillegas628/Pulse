@@ -75,7 +75,8 @@ export default function QuestionPage() {
       .then((r) => {
         const q: StudentQuestion = r.data.data.question
         setQuestion(q)
-        if (q.session.status !== 'OPEN') setSessionClosed(true)
+        // Only pre-close if the session is archived; live status comes via run_status socket
+        if (q.session?.status === 'ARCHIVED') setSessionClosed(true)
         if (q.type === 'ORDERING' && q.options) {
           setOrderedItems([...q.options].sort(() => Math.random() - 0.5))
         }
@@ -90,9 +91,10 @@ export default function QuestionPage() {
   useEffect(() => {
     if (!question) return
     const socket = io({ path: '/socket.io' })
+    if (!question.session) return
     socket.emit('join_session', question.session.id)
-    socket.on('session_status', ({ status }: { status: string }) => {
-      if (status !== 'OPEN') setSessionClosed(true)
+    socket.on('run_status', ({ status }: { runId: string; status: string; sectionId: string | null }) => {
+      if (status === 'CLOSED' || status === 'ARCHIVED') setSessionClosed(true)
     })
     return () => { socket.disconnect() }
   }, [question])
@@ -170,8 +172,8 @@ export default function QuestionPage() {
     <StudentLayout>
       <div className="bg-surface rounded-[14px] shadow-card border border-hairline overflow-hidden">
         <div className="bg-signal px-6 py-4">
-          <p className="text-white/70 text-xs font-medium uppercase tracking-wide">{q.session.class.name}</p>
-          <h1 className="text-white text-base font-semibold mt-0.5">{q.session.title}</h1>
+          <p className="text-white/70 text-xs font-medium uppercase tracking-wide">{q.session?.class.name}</p>
+          <h1 className="text-white text-base font-semibold mt-0.5">{q.session?.title}</h1>
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-6">

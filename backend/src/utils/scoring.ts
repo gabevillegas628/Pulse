@@ -7,6 +7,12 @@ export interface QuestionGradeInput {
   tolerance?: number | null
   /** Total responses across ALL students — used for the IN_CLASS "was it presented?" check */
   totalResponseCount: number
+  /**
+   * Responses from students in the same section across their relevant runs.
+   * When provided, this replaces totalResponseCount for the "was it presented?" check,
+   * preventing cross-section contamination in multi-section sessions.
+   */
+  sectionResponseCount?: number
   /** True if ANY student's response has a non-null aiScore — signals the professor ran grading */
   hasAnyAiScore: boolean
   /** This particular student's response, or null if they didn't answer */
@@ -130,8 +136,9 @@ export function gradeSession(
 ): SessionGradeResult {
   const results: QuestionGradeResult[] = questions.map((q) => {
     const graded = isGraded(q.type, q.correctAnswer, q.hasAnyAiScore)
-    // IN_CLASS: a question with zero total responses was never shown to students
-    const wasPresented = sessionType !== 'IN_CLASS' || q.totalResponseCount > 0
+    // IN_CLASS: use section-scoped count when available to avoid cross-section contamination
+    const presentedCount = q.sectionResponseCount ?? q.totalResponseCount
+    const wasPresented = sessionType !== 'IN_CLASS' || presentedCount > 0
     const counted = graded && wasPresented
     const score = counted
       ? scoreResponse(q.type, q.correctAnswer, q.studentResponse, q.tolerance)

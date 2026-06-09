@@ -65,9 +65,13 @@ function QuestionBlock({ q, index }: { q: GradeQuestion; index: number }) {
 
 
 export default function SessionGradeSheet({ session, onClose }: Props) {
+  const gradeUrl = session.type === 'HOMEWORK'
+    ? `/student/assignments/${session.id}/grades`
+    : `/student/sessions/${session.id}/grades`
+
   const { data, isLoading } = useQuery<GradeSessionDetail>({
-    queryKey: ['student-session-grades', session.id],
-    queryFn: () => api.get(`/student/sessions/${session.id}/grades`).then((r) => r.data.data.session),
+    queryKey: ['student-session-grades', session.id, session.type],
+    queryFn: () => api.get(gradeUrl).then((r) => r.data.data.session),
   })
 
   const touchStartY = useRef(0)

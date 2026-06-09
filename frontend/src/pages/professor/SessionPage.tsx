@@ -294,23 +294,26 @@ export default function SessionPage() {
     return null
   }
 
+  // Archive-only status mutation (PATCH /sessions/:id { status: 'ARCHIVED' })
   const statusMutation = useMutation({
     mutationFn: (status: SessionStatus) => api.patch(`/sessions/${sessionId}`, { status }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['session', sessionId] }),
   })
 
-  const openSessionMutation = useMutation({
-    mutationFn: (targetSectionId: string | null) =>
-      api.patch(`/sessions/${sessionId}`, { status: SessionStatus.OPEN, targetSectionId }),
+  // Open a new run (POST /sessions/:id/runs { sectionId? })
+  const openRunMutation = useMutation({
+    mutationFn: (sectionId: string | null) =>
+      api.post(`/sessions/${sessionId}/runs`, sectionId ? { sectionId } : {}),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['session', sessionId] })
       setShowSectionModal(false)
     },
   })
 
-  const sectionMutation = useMutation({
-    mutationFn: (targetSectionId: string | null) =>
-      api.patch(`/sessions/${sessionId}`, { targetSectionId }),
+  // Close the current OPEN run (PATCH /sessions/:id/runs/:runId { status: 'CLOSED' })
+  const closeRunMutation = useMutation({
+    mutationFn: (runId: string) =>
+      api.patch(`/sessions/${sessionId}/runs/${runId}`, { status: 'CLOSED' }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['session', sessionId] }),
   })
 
@@ -355,10 +358,21 @@ export default function SessionPage() {
       })
     })
 
-    socket.on('session_status', ({ status }: { status: SessionStatus }) => {
-      qc.setQueryData<SessionDetail>(['session', sessionId], (prev) =>
-        prev ? { ...prev, status } : prev
-      )
+    socket.on('run_status', ({ runId, status, sectionId }: { runId: string; status: SessionStatus; sectionId: string | null }) => {
+      qc.setQueryData<SessionDetail>(['session', sessionId], (prev) => {
+        if (!prev) return prev
+        const runs = prev.runs.map((r) =>
+          r.id === runId ? { ...r, status, sectionId } : r
+        )
+        // If no matching run exists yet, append it
+        const updated = runs.some((r) => r.id === runId)
+          ? runs
+          : [...runs, { id: runId, sessionId: sessionId!, sectionId, status, openedAt: new Date().toISOString(), closedAt: null, createdAt: new Date().toISOString() }]
+        // Derive top-level session status: OPEN if any run is OPEN
+        const isLive = updated.some((r) => r.status === SessionStatus.OPEN)
+        const newSessionStatus = isLive ? SessionStatus.OPEN : prev.status
+        return { ...prev, runs: updated, status: newSessionStatus }
+      })
     })
 
     return () => { socket.disconnect() }
@@ -406,6 +420,11 @@ export default function SessionPage() {
   const totalResponses = data.questions.reduce((sum, q) => sum + q.responses.length, 0)
   const activeQuestion = data.questions[activeTab] as QuestionWithResponses | undefined
 
+  // Derive live state from runs
+  const openRun = data.runs.find((r) => r.status === SessionStatus.OPEN) ?? null
+  const isLive = openRun !== null
+  const hasBeenRun = data.runs.length > 0
+
   return (
     <ProfessorLayout>
       {/* Header */}
@@ -417,18 +436,10 @@ export default function SessionPage() {
           <div>
             <h1 className="text-2xl font-bold text-ink">{data.title}</h1>
             <p className="text-sm text-muted mt-1 font-mono">{totalResponses} response{totalResponses !== 1 ? 's' : ''}</p>
-            {sectionsData && sectionsData.length > 0 && (data.status === SessionStatus.DRAFT || data.status === SessionStatus.CLOSED) && (
+            {openRun?.section && (
               <div className="flex items-center gap-2 mt-2">
-                <span className="text-xs text-muted">Section:</span>
-                <select
-                  value={(data as unknown as { targetSection?: { id: string } }).targetSection?.id ?? ''}
-                  onChange={(e) => sectionMutation.mutate(e.target.value || null)}
-                  disabled={sectionMutation.isPending}
-                  className="text-xs border border-hairline rounded px-2 py-1 bg-surface text-ink-2 focus:outline-none focus:ring-1 focus:ring-signal"
-                >
-                  <option value="">All sections</option>
-                  {sectionsData.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
+                <span className="text-xs text-muted">Live for:</span>
+                <span className="text-xs font-medium text-ink-2">Section {openRun.section.name}</span>
               </div>
             )}
           </div>
@@ -448,39 +459,27 @@ export default function SessionPage() {
             >
               <Download size={14} /> Export CSV
             </a>
-            {data.status === SessionStatus.DRAFT ? (
-              <Button
-                variant="primary"
-                onClick={() => {
-                  if (sectionsData && sectionsData.length > 1) {
-                    setShowSectionModal(true)
-                  } else {
-                    statusMutation.mutate(SessionStatus.OPEN)
-                  }
-                }}
-                disabled={statusMutation.isPending}
-              >
-                Open session
-              </Button>
-            ) : data.status === SessionStatus.OPEN ? (
+            {data.status === SessionStatus.ARCHIVED ? (
+              <span className="text-xs text-muted border border-hairline px-3 py-2 rounded-sm">Archived</span>
+            ) : isLive ? (
               <button
-                onClick={() => statusMutation.mutate(SessionStatus.CLOSED)}
-                disabled={statusMutation.isPending}
+                onClick={() => openRun && closeRunMutation.mutate(openRun.id)}
+                disabled={closeRunMutation.isPending}
                 className="bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-sm text-sm font-bold hover:bg-red-100 disabled:opacity-50 transition-colors"
               >
                 Close session
               </button>
-            ) : data.status === SessionStatus.CLOSED ? (
+            ) : hasBeenRun ? (
               <div className="flex gap-2">
                 <button
                   onClick={() => {
                     if (sectionsData && sectionsData.length > 1) {
                       setShowSectionModal(true)
                     } else {
-                      statusMutation.mutate(SessionStatus.OPEN)
+                      openRunMutation.mutate(null)
                     }
                   }}
-                  disabled={statusMutation.isPending || openSessionMutation.isPending}
+                  disabled={openRunMutation.isPending}
                   className="bg-good-soft text-good border border-good/20 px-4 py-2 rounded-sm text-sm font-bold hover:opacity-80 disabled:opacity-50 transition-colors"
                 >
                   Reopen
@@ -494,7 +493,19 @@ export default function SessionPage() {
                 </button>
               </div>
             ) : (
-              <span className="text-xs text-muted border border-hairline px-3 py-2 rounded-sm">Archived</span>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  if (sectionsData && sectionsData.length > 1) {
+                    setShowSectionModal(true)
+                  } else {
+                    openRunMutation.mutate(null)
+                  }
+                }}
+                disabled={openRunMutation.isPending}
+              >
+                Open session
+              </Button>
             )}
           </div>
         </div>
@@ -540,7 +551,7 @@ export default function SessionPage() {
                 <span className={`text-[10px] font-mono leading-none mt-0.5 ${countColor}`}>{n}</span>
               )}
             </button>
-            {data.status === SessionStatus.DRAFT && (
+            {!hasBeenRun && data.status !== SessionStatus.ARCHIVED && (
               <button
                 onClick={() => {
                   if (!confirm(`Delete Q${i + 1}? This cannot be undone.`)) return
@@ -578,7 +589,7 @@ export default function SessionPage() {
                   </span>
                 </div>
                 <p className="text-ink font-medium">{activeQuestion.text}</p>
-                {(data.status === SessionStatus.DRAFT || data.status === SessionStatus.OPEN) && (
+                {data.status !== SessionStatus.ARCHIVED && (
                   <button
                     onClick={() => openEditQuestion(activeQuestion)}
                     className="mt-1.5 flex items-center gap-1 text-xs text-muted hover:text-signal transition-colors"
@@ -630,8 +641,8 @@ export default function SessionPage() {
               </div>
             </div>
 
-            {/* Rubric hint — FREE_TEXT, closed sessions only */}
-            {(data.status === SessionStatus.CLOSED || data.status === SessionStatus.ARCHIVED) &&
+            {/* Rubric hint — FREE_TEXT, after at least one run */}
+            {(hasBeenRun || data.status === SessionStatus.ARCHIVED) &&
               activeQuestion.type === 'FREE_TEXT' && (
               <div className="mt-3 pt-3 border-t border-hairline">
                 <p className="text-xs text-muted font-medium mb-1.5">What were you looking for? <span className="font-normal">(optional — helps AI grade more accurately)</span></p>
@@ -651,8 +662,8 @@ export default function SessionPage() {
               </div>
             )}
 
-            {/* Mark correct answer — MCQ / YES_NO, closed sessions only */}
-            {(data.status === SessionStatus.CLOSED || data.status === SessionStatus.ARCHIVED) &&
+            {/* Mark correct answer — MCQ / YES_NO, after at least one run */}
+            {(hasBeenRun || data.status === SessionStatus.ARCHIVED) &&
               (activeQuestion.type === 'MULTIPLE_CHOICE' || activeQuestion.type === 'YES_NO') && (
               <div className="mt-3 pt-3 border-t border-hairline">
                 <p className="text-xs text-muted font-medium mb-2">Correct answer</p>
@@ -758,7 +769,7 @@ export default function SessionPage() {
           {/* AI summary + grade buttons for free text */}
           {activeQuestion.type === 'FREE_TEXT' && activeQuestion.responses.length > 0 && (
             <div className="mb-5">
-              {(data.status === SessionStatus.CLOSED || data.status === SessionStatus.ARCHIVED) && (
+              {(hasBeenRun || data.status === SessionStatus.ARCHIVED) && (
                 <button
                   onClick={() => {
                     const alreadyGraded = activeQuestion.responses.filter(r => r.aiScore !== null).length
@@ -1072,7 +1083,6 @@ export default function SessionPage() {
 
       {/* Section picker modal */}
       {showSectionModal && sectionsData && (() => {
-        const currentSectionId = (data as unknown as { targetSection?: { id: string } }).targetSection?.id ?? null
         return (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
             <Card flat className="w-full max-w-sm p-6 shadow-pop">
@@ -1086,35 +1096,22 @@ export default function SessionPage() {
                 Only students in the selected section will be able to respond.
               </p>
               <div className="space-y-2">
-                {sectionsData.map((s) => {
-                  const isCurrent = s.id === currentSectionId
-                  return (
-                    <button
-                      key={s.id}
-                      onClick={() => openSessionMutation.mutate(s.id)}
-                      disabled={openSessionMutation.isPending}
-                      className={`w-full text-left px-4 py-3 rounded-[14px] border transition-colors text-sm font-medium disabled:opacity-50 ${
-                        isCurrent
-                          ? 'border-signal bg-signal-soft text-ink'
-                          : 'border-hairline hover:border-signal hover:bg-signal-soft text-ink'
-                      }`}
-                    >
-                      Section {s.name}
-                      {isCurrent && <span className="ml-2 text-xs font-normal text-signal">current</span>}
-                    </button>
-                  )
-                })}
+                {sectionsData.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => openRunMutation.mutate(s.id)}
+                    disabled={openRunMutation.isPending}
+                    className="w-full text-left px-4 py-3 rounded-[14px] border border-hairline hover:border-signal hover:bg-signal-soft text-ink transition-colors text-sm font-medium disabled:opacity-50"
+                  >
+                    Section {s.name}
+                  </button>
+                ))}
                 <button
-                  onClick={() => openSessionMutation.mutate(null)}
-                  disabled={openSessionMutation.isPending}
-                  className={`w-full text-left px-4 py-3 rounded-[14px] border transition-colors text-sm disabled:opacity-50 ${
-                    currentSectionId === null
-                      ? 'border-hairline-strong bg-surface-2 text-ink-2'
-                      : 'border-hairline hover:border-hairline-strong hover:bg-surface-2 text-muted'
-                  }`}
+                  onClick={() => openRunMutation.mutate(null)}
+                  disabled={openRunMutation.isPending}
+                  className="w-full text-left px-4 py-3 rounded-[14px] border border-hairline hover:border-hairline-strong hover:bg-surface-2 text-muted transition-colors text-sm disabled:opacity-50"
                 >
                   All sections
-                  {currentSectionId === null && <span className="ml-2 text-xs font-normal text-muted">current</span>}
                 </button>
               </div>
             </Card>

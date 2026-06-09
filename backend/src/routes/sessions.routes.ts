@@ -6,7 +6,6 @@ import { prisma } from '../db/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
 import { getIo } from '../socket.js'
-import { SessionStatus } from 'shared'
 import { gradeSession } from '../utils/scoring.js'
 import { generateUniqueCode } from '../utils/codes.js'
 import { attachQuestionQrs } from '../utils/qr.js'
@@ -14,30 +13,22 @@ import { p } from '../utils/params.js'
 
 const nanoidDigits = customAlphabet('0123456789', 4)
 
-const generateUniqueQuestionCode = () =>
+const generateUniqueSessionCode = () =>
   generateUniqueCode(
     nanoidDigits,
-    (code) => prisma.question.findUnique({ where: { accessCode: code } }).then(Boolean),
+    (code) => prisma.session.findUnique({ where: { accessCode: code } }).then(Boolean),
     20
   )
 
-const questionInputSchema = z.object({
-  text: z.string().min(1),
-  type: z.enum(['FREE_TEXT', 'MULTIPLE_CHOICE', 'RATING', 'YES_NO', 'NUMERIC', 'MULTI_SELECT', 'ORDERING', 'STRUCTURE']),
-  options: z.array(z.string()).optional(),
-  order: z.number().int().min(0),
-})
-
 const createSessionSchema = z.object({
   title: z.string().min(1),
-  type: z.enum(['IN_CLASS', 'HOMEWORK']).optional().default('IN_CLASS'),
-  deadline: z.string().datetime().optional(),
-  questions: z.array(questionInputSchema).default([]),
 })
 
 const router = Router()
 
-// Create a session (with optional initial questions)
+// ─── Session CRUD ─────────────────────────────────────────────────────────────
+
+// Create a Session (IN_CLASS question set)
 router.post('/classes/:classId/sessions', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
@@ -48,42 +39,25 @@ router.post('/classes/:classId/sessions', requireProfessor, async (req: Request,
     })
     if (!cls) throw new AppError('Class not found', 404)
 
-    const accessCode = await generateUniqueCode(
-      nanoidDigits,
-      (code) => prisma.session.findUnique({ where: { accessCode: code } }).then(Boolean),
-      20
-    )
-
-    const questionCodes = await Promise.all(body.questions.map(() => generateUniqueQuestionCode()))
+    const accessCode = await generateUniqueSessionCode()
 
     const session = await prisma.session.create({
       data: {
         classId: cls.id,
         title: body.title,
-        type: body.type,
-        deadline: body.deadline ? new Date(body.deadline) : undefined,
         accessCode,
-        questions: {
-          create: body.questions.map((q, i) => ({
-            text: q.text,
-            type: q.type as import('@prisma/client').QuestionType,
-            options: q.options && q.options.length > 0 ? q.options : undefined,
-            order: q.order,
-            accessCode: questionCodes[i],
-          })),
-        },
+        status: 'DRAFT',
       },
-      include: { questions: { orderBy: { order: 'asc' } } },
+      include: { questions: { orderBy: { order: 'asc' } }, runs: true },
     })
 
-    const questionsWithQr = await attachQuestionQrs(session.questions as { id: string; accessCode: string; [key: string]: unknown }[])
-    res.status(201).json({ success: true, data: { session: { ...session, questions: questionsWithQr } } })
+    res.status(201).json({ success: true, data: { session } })
   } catch (err) {
     next(err)
   }
 })
 
-// List sessions for a class
+// List Sessions for a class
 router.get('/classes/:classId/sessions', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
@@ -93,21 +67,19 @@ router.get('/classes/:classId/sessions', requireProfessor, async (req: Request, 
     })
     if (!cls) throw new AppError('Class not found', 404)
 
-    const typeFilter = req.query.type as string | undefined
     const sessions = await prisma.session.findMany({
-      where: {
-        classId: cls.id,
-        ...(typeFilter === 'IN_CLASS' || typeFilter === 'HOMEWORK' ? { type: typeFilter } : {}),
-      },
+      where: { classId: cls.id },
       orderBy: { createdAt: 'desc' },
       include: {
-        questions: { orderBy: { order: 'asc' } },
         _count: { select: { questions: true } },
-        targetSection: { select: { id: true, name: true } },
+        runs: {
+          orderBy: { openedAt: 'desc' },
+          select: { id: true, sectionId: true, status: true, openedAt: true, closedAt: true, section: { select: { name: true } } },
+        },
       },
     })
 
-    // Distinct responder count per session via raw SQL
+    // Distinct respondent count per session (across all runs)
     const sessionIds = sessions.map((s) => s.id)
     let respondentMap: Record<string, number> = {}
     if (sessionIds.length > 0) {
@@ -115,8 +87,8 @@ router.get('/classes/:classId/sessions', requireProfessor, async (req: Request, 
         Prisma.sql`
           SELECT s.id AS "sessionId", COUNT(DISTINCT r."studentId") AS "respondentCount"
           FROM "Session" s
-          LEFT JOIN "Question" q ON q."sessionId" = s.id
-          LEFT JOIN "Response" r ON r."questionId" = q.id
+          LEFT JOIN "SessionRun" sr ON sr."sessionId" = s.id
+          LEFT JOIN "Response" r ON r."runId" = sr.id
           WHERE s.id IN (${Prisma.join(sessionIds)})
           GROUP BY s.id
         `
@@ -128,6 +100,7 @@ router.get('/classes/:classId/sessions', requireProfessor, async (req: Request, 
 
     const result = sessions.map((s) => ({
       ...s,
+      isLive: s.runs.some((r) => r.status === 'OPEN'),
       respondentCount: respondentMap[s.id] ?? 0,
     }))
 
@@ -137,7 +110,7 @@ router.get('/classes/:classId/sessions', requireProfessor, async (req: Request, 
   }
 })
 
-// Get a single session with questions and responses
+// Get a single session with questions, responses, and runs
 router.get('/sessions/:id', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
@@ -145,8 +118,11 @@ router.get('/sessions/:id', requireProfessor, async (req: Request, res: Response
       where: { id: p(req.params.id), class: { professorId: professor.id } },
       include: {
         class: { select: { id: true, name: true, _count: { select: { enrollments: true } } } },
-        targetSection: { select: { id: true, name: true } },
         groups: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] },
+        runs: {
+          orderBy: { openedAt: 'desc' },
+          select: { id: true, sectionId: true, status: true, openedAt: true, closedAt: true, section: { select: { name: true } } },
+        },
         questions: {
           orderBy: { order: 'asc' },
           include: {
@@ -170,64 +146,45 @@ router.get('/sessions/:id', requireProfessor, async (req: Request, res: Response
   }
 })
 
-// Update session status, section targeting, or deadline
+// Update session (title or DRAFT→ARCHIVED)
 router.patch('/sessions/:id', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
     const body = z.object({
-      status: z.nativeEnum(SessionStatus).optional(),
-      targetSectionId: z.string().nullable().optional(),
-      deadline: z.string().datetime().nullable().optional(),
+      title: z.string().min(1).optional(),
+      status: z.enum(['ARCHIVED']).optional(),
     }).parse(req.body)
 
     const existing = await prisma.session.findFirst({
       where: { id: p(req.params.id), class: { professorId: professor.id } },
-      include: { class: { select: { id: true } } },
     })
     if (!existing) throw new AppError('Session not found', 404)
 
-    if (body.targetSectionId !== undefined && existing.status === SessionStatus.OPEN) {
-      throw new AppError('Cannot change target section while session is open', 400)
-    }
-    if (body.targetSectionId) {
-      const section = await prisma.section.findFirst({
-        where: { id: body.targetSectionId, classId: existing.class.id },
-      })
-      if (!section) throw new AppError('Section not found in this class', 404)
-    }
-
-    const { status } = body
     const updated = await prisma.session.update({
       where: { id: p(req.params.id) },
       data: {
-        ...(status !== undefined && {
-          status,
-          openedAt: status === SessionStatus.OPEN ? new Date() : existing.openedAt,
-          closedAt: status === SessionStatus.CLOSED && !existing.closedAt ? new Date() : existing.closedAt,
-        }),
-        ...(body.targetSectionId !== undefined && { targetSectionId: body.targetSectionId }),
-        ...(body.deadline !== undefined && { deadline: body.deadline ? new Date(body.deadline) : null }),
+        ...(body.title !== undefined && { title: body.title }),
+        ...(body.status !== undefined && { status: body.status }),
       },
-      include: { targetSection: { select: { id: true, name: true } } },
     })
 
-    if (status !== undefined) {
-      getIo().to(p(req.params.id)).emit('session_status', { status })
-    }
     res.json({ success: true, data: { session: updated } })
   } catch (err) {
     next(err)
   }
 })
 
-// Delete a session
+// Delete a session (DRAFT only — no runs)
 router.delete('/sessions/:id', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
     const existing = await prisma.session.findFirst({
       where: { id: p(req.params.id), class: { professorId: professor.id } },
+      include: { _count: { select: { runs: true } } },
     })
     if (!existing) throw new AppError('Session not found', 404)
+    if (existing.status !== 'DRAFT') throw new AppError('Can only delete DRAFT sessions', 400)
+    if ((existing._count as { runs: number }).runs > 0) throw new AppError('Cannot delete a session that has runs', 400)
     await prisma.session.delete({ where: { id: p(req.params.id) } })
     res.json({ success: true, data: null })
   } catch (err) {
@@ -235,51 +192,75 @@ router.delete('/sessions/:id', requireProfessor, async (req: Request, res: Respo
   }
 })
 
-// CSV grade export — all enrolled students with per-question scores
+// CSV grade export — section-aware, per-run
 router.get('/sessions/:id/export', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
     const session = await prisma.session.findFirst({
       where: { id: p(req.params.id), class: { professorId: professor.id } },
       include: {
-        class: { include: { enrollments: { include: { student: { select: { id: true, netId: true } } } } } },
+        class: {
+          include: {
+            enrollments: {
+              include: {
+                student: { select: { id: true, netId: true } },
+                section: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
+        runs: { select: { id: true, sectionId: true, status: true } },
         questions: {
           orderBy: { order: 'asc' },
           include: {
-            responses: { select: { studentId: true, responseText: true, wordCount: true, aiScore: true } },
+            responses: { select: { studentId: true, responseText: true, wordCount: true, aiScore: true, runId: true } },
           },
         },
       },
     })
     if (!session) throw new AppError('Session not found', 404)
 
-    const students = session.class.enrollments.map((e) => e.student)
+    const students = session.class.enrollments.map((e) => ({
+      student: e.student,
+      sectionId: e.section?.id ?? null,
+    }))
 
-    const rows = students.map((s) => {
-      const gradeResult = gradeSession(session.type as string, session.questions.map(q => ({
-        id: q.id,
-        type: q.type,
-        correctAnswer: q.correctAnswer,
-        tolerance: q.tolerance,
-        totalResponseCount: q.responses.length,
-        hasAnyAiScore: q.responses.some(r => r.aiScore !== null),
-        studentResponse: q.responses.find(r => r.studentId === s.id) ?? null,
-      })))
-      return { netId: s.netId, gradeResult }
+    const runIds = session.runs.map((r) => r.id)
+
+    const rows = students.map(({ student, sectionId }) => {
+      // Relevant runs for this student's section
+      const relevantRunIds = session.runs
+        .filter((r) => r.sectionId === null || r.sectionId === sectionId)
+        .map((r) => r.id)
+
+      const gradeResult = gradeSession('IN_CLASS', session.questions.map((q) => {
+        const sectionResponses = q.responses.filter((r) => relevantRunIds.includes(r.runId ?? ''))
+        return {
+          id: q.id,
+          type: q.type,
+          correctAnswer: q.correctAnswer,
+          tolerance: q.tolerance,
+          totalResponseCount: q.responses.filter((r) => runIds.includes(r.runId ?? '')).length,
+          sectionResponseCount: sectionResponses.length,
+          hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
+          studentResponse: q.responses.find((r) => r.studentId === student.id) ?? null,
+        }
+      }))
+
+      return { netId: student.netId, gradeResult }
     })
 
-    // Use the first student's result (or an empty grade) to determine column headers
-    const sampleResult = rows[0]?.gradeResult ?? gradeSession(session.type as string, [])
+    const sampleResult = rows[0]?.gradeResult ?? gradeSession('IN_CLASS', [])
     const grandMax = sampleResult.max
 
     const qHeaders = session.questions.map((q, i) => {
-      const qr = sampleResult.questions.find(r => r.id === q.id)
+      const qr = sampleResult.questions.find((r) => r.id === q.id)
       return qr?.counted ? `Q${i + 1}` : `Q${i + 1} (ungraded)`
     })
     const header = ['NetID', ...qHeaders, 'Total', `Max (${grandMax})`].join(',')
     const csvRows = rows.map(({ netId, gradeResult: gr }) => {
-      const scores = session.questions.map(q => {
-        const qr = gr.questions.find(r => r.id === q.id)!
+      const scores = session.questions.map((q) => {
+        const qr = gr.questions.find((r) => r.id === q.id)!
         return qr.counted ? qr.score.toFixed(1) : '—'
       })
       return [netId, ...scores, gr.earned.toFixed(1), grandMax.toFixed(1)].join(',')
@@ -289,6 +270,117 @@ router.get('/sessions/:id/export', requireProfessor, async (req: Request, res: R
     res.setHeader('Content-Type', 'text/csv')
     res.setHeader('Content-Disposition', `attachment; filename="session-${session.id}-grades.csv"`)
     res.send(csv)
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ─── SessionRun routes ────────────────────────────────────────────────────────
+
+// Open a new SessionRun
+router.post('/sessions/:id/runs', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+    const body = z.object({
+      sectionId: z.string().optional(),
+    }).parse(req.body)
+
+    const session = await prisma.session.findFirst({
+      where: { id: p(req.params.id), class: { professorId: professor.id } },
+      include: { runs: true },
+    })
+    if (!session) throw new AppError('Session not found', 404)
+
+    const hasOpenRun = session.runs.some((r) => r.status === 'OPEN')
+    if (hasOpenRun) throw new AppError('A run is already open for this session', 409)
+
+    if (body.sectionId) {
+      const section = await prisma.section.findFirst({
+        where: { id: body.sectionId, classId: session.classId },
+      })
+      if (!section) throw new AppError('Section not found in this class', 404)
+    }
+
+    const [run] = await prisma.$transaction([
+      prisma.sessionRun.create({
+        data: {
+          sessionId: session.id,
+          sectionId: body.sectionId ?? null,
+          status: 'OPEN',
+          openedAt: new Date(),
+        },
+        include: { section: { select: { id: true, name: true } } },
+      }),
+      // Transition session from DRAFT to OPEN on first run
+      prisma.session.update({
+        where: { id: session.id },
+        data: {
+          status: session.status === 'DRAFT' ? 'OPEN' : session.status,
+        },
+      }),
+    ])
+
+    getIo().to(session.id).emit('run_status', {
+      runId: run.id,
+      status: run.status,
+      sectionId: run.sectionId,
+    })
+
+    res.status(201).json({ success: true, data: { run } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Update a SessionRun status (OPEN → CLOSED → ARCHIVED)
+router.patch('/sessions/:id/runs/:runId', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+    const body = z.object({
+      status: z.enum(['CLOSED', 'ARCHIVED']),
+    }).parse(req.body)
+
+    const session = await prisma.session.findFirst({
+      where: { id: p(req.params.id), class: { professorId: professor.id } },
+      include: { runs: true },
+    })
+    if (!session) throw new AppError('Session not found', 404)
+
+    const existingRun = session.runs.find((r) => r.id === p(req.params.runId))
+    if (!existingRun) throw new AppError('Run not found', 404)
+
+    const updateData: { status: 'CLOSED' | 'ARCHIVED'; closedAt?: Date } = { status: body.status }
+    if (body.status === 'CLOSED' && !existingRun.closedAt) {
+      updateData.closedAt = new Date()
+    }
+
+    const updatedRun = await prisma.sessionRun.update({
+      where: { id: existingRun.id },
+      data: updateData,
+      include: { section: { select: { id: true, name: true } } },
+    })
+
+    // If archiving a run, check if all runs are archived — if so, archive the session too
+    if (body.status === 'ARCHIVED') {
+      const allRuns = session.runs.map((r) =>
+        r.id === existingRun.id ? { ...r, status: 'ARCHIVED' as const } : r
+      )
+      const allArchived = allRuns.length > 0 && allRuns.every((r) => r.status === 'ARCHIVED')
+      if (allArchived) {
+        await prisma.session.update({
+          where: { id: session.id },
+          data: { status: 'ARCHIVED' },
+        })
+      }
+    }
+
+    getIo().to(session.id).emit('run_status', {
+      runId: updatedRun.id,
+      status: updatedRun.status,
+      sectionId: updatedRun.sectionId,
+    })
+
+    res.json({ success: true, data: { run: updatedRun } })
   } catch (err) {
     next(err)
   }

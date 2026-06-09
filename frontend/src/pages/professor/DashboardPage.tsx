@@ -61,10 +61,14 @@ export default function DashboardPage() {
     createMutation.mutate(data)
   }
 
-  // Most recent session per class; live = status OPEN
-  const liveItems = (data ?? [])
-    .map((cls) => ({ cls, session: cls.sessions[0] }))
-    .filter(({ session }) => session?.status === 'OPEN')
+  // Most recent session per class; live = isLive flag (or fallback to status OPEN for older data)
+  const liveItems = (data ?? []).flatMap((cls) => {
+    const session = cls.sessions[0] as (typeof cls.sessions[0] & { isLive?: boolean }) | undefined
+    if (!session) return []
+    const live = session.isLive === true || (!('isLive' in session) && session.status === 'OPEN')
+    if (!live) return []
+    return [{ cls, session }]
+  })
 
   const activeCount = (data ?? []).length
 
@@ -122,8 +126,8 @@ export default function DashboardPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {data?.map((cls) => {
-            const lastSession = cls.sessions[0]
-            const isLive = lastSession?.status === 'OPEN'
+            const lastSession = cls.sessions[0] as (typeof cls.sessions[0] & { isLive?: boolean }) | undefined
+            const isLive = lastSession != null && (lastSession.isLive === true || (!('isLive' in lastSession) && lastSession.status === 'OPEN'))
             return (
               <Link key={cls.id} to={`/professor/classes/${cls.id}`}>
                 <Card className={`p-6 hover:shadow-pop transition-shadow cursor-pointer h-full flex flex-col gap-4 ${isLive ? 'border-signal/30' : ''}`}>

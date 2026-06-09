@@ -62,7 +62,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       },
     })
 
-    // Participation rate: avg of (distinct responders / enrolled) per closed IN_CLASS session
+    // Participation rate: avg of (distinct responders / enrolled) per session with closed runs
     const classIds = classes.map((c) => c.id)
     let participationMap: Record<string, number | null> = {}
     if (classIds.length > 0) {
@@ -75,11 +75,9 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
               COUNT(DISTINCT r."studentId") AS respondents,
               (SELECT COUNT(*) FROM "Enrollment" e WHERE e."classId" = s."classId") AS enrolled
             FROM "Session" s
-            LEFT JOIN "Question" q ON q."sessionId" = s.id
-            LEFT JOIN "Response" r ON r."questionId" = q.id
-            WHERE s.status = 'CLOSED'
-              AND s.type = 'IN_CLASS'
-              AND s."classId" IN (${Prisma.join(classIds)})
+            JOIN "SessionRun" sr ON sr."sessionId" = s.id AND sr.status IN ('CLOSED', 'ARCHIVED')
+            LEFT JOIN "Response" r ON r."runId" = sr.id
+            WHERE s."classId" IN (${Prisma.join(classIds)})
             GROUP BY s.id, s."classId"
           ) sub
           GROUP BY sub."classId"
@@ -114,7 +112,16 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
           include: {
             _count: { select: { questions: true } },
             questions: { orderBy: { order: 'asc' } },
-            targetSection: { select: { id: true, name: true } },
+            runs: {
+              orderBy: { openedAt: 'desc' },
+              select: { id: true, sectionId: true, status: true, openedAt: true, closedAt: true },
+            },
+          },
+        },
+        assignments: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            _count: { select: { questions: true } },
           },
         },
       },
@@ -168,9 +175,6 @@ router.post('/:id/duplicate', async (req: Request, res: Response, next: NextFunc
     })
     if (!source) throw new AppError('Class not found', 404)
 
-    // Pre-generate all codes needed before the transaction.
-    // Session and question codes go into separate tables so we track uniqueness separately.
-
     const joinCode = await generateUniqueCode(
       nanoid,
       (code) => prisma.class.findUnique({ where: { joinCode: code } }).then(Boolean)
@@ -195,8 +199,6 @@ router.post('/:id/duplicate', async (req: Request, res: Response, next: NextFunc
     const newSessionCodes: string[] = []
     for (const _ of source.sessions) newSessionCodes.push(await uniqueSessionCode())
 
-    // newQuestionCodes[i][j] = fresh code for session i, question j
-    // tempQuestionCodes[i][j] = temp placeholder used during the 3-step swap
     const newQuestionCodes: string[][] = []
     const tempQuestionCodes: string[][] = []
     for (const session of source.sessions) {
@@ -249,7 +251,6 @@ router.post('/:id/duplicate', async (req: Request, res: Response, next: NextFunc
             const oldCode = srcQuestions[j].accessCode
             const newCode = newQuestionCodes[i][j]
             const tempCode = tempQuestionCodes[i][j]
-            // 3-step swap to satisfy the unique constraint at each statement
             await tx.question.update({ where: { id: srcQuestions[j].id }, data: { accessCode: tempCode } })
             await tx.question.update({ where: { id: newQuestions[j].id }, data: { accessCode: oldCode } })
             await tx.question.update({ where: { id: srcQuestions[j].id }, data: { accessCode: newCode } })
@@ -269,7 +270,7 @@ router.post('/:id/duplicate', async (req: Request, res: Response, next: NextFunc
   }
 })
 
-// --- Section routes ---
+// ─── Section routes ───────────────────────────────────────────────────────────
 
 router.post('/:id/sections', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -352,7 +353,7 @@ router.get('/:id/enrollments', async (req: Request, res: Response, next: NextFun
     const cls = await prisma.class.findFirst({ where: { id: classId, professorId: professor.id } })
     if (!cls) throw new AppError('Class not found', 404)
 
-    const [enrollments, allResponses, totalClosedSessions] = await Promise.all([
+    const [enrollments, allSessionResponses, allAssignmentResponses, totalClosedSessionRuns] = await Promise.all([
       prisma.enrollment.findMany({
         where: { classId },
         include: {
@@ -361,6 +362,7 @@ router.get('/:id/enrollments', async (req: Request, res: Response, next: NextFun
         },
         orderBy: { enrolledAt: 'desc' },
       }),
+      // Responses via session runs
       prisma.response.findMany({
         where: { question: { session: { classId } } },
         select: {
@@ -369,15 +371,35 @@ router.get('/:id/enrollments', async (req: Request, res: Response, next: NextFun
           question: { select: { sessionId: true, type: true } },
         },
       }),
-      prisma.session.count({ where: { classId, status: { in: ['CLOSED', 'ARCHIVED'] } } }),
+      // Responses via assignments
+      prisma.response.findMany({
+        where: { question: { assignment: { classId } } },
+        select: {
+          studentId: true,
+          wordCount: true,
+          question: { select: { assignmentId: true, type: true } },
+        },
+      }),
+      // Count sessions that have at least one closed run
+      prisma.session.count({
+        where: { classId, runs: { some: { status: { in: ['CLOSED', 'ARCHIVED'] } } } },
+      }),
     ])
 
     type StatsAgg = { totalResponses: number; sessionIds: Set<string>; totalWordCount: number; freeTextCount: number }
     const byStudent = new Map<string, StatsAgg>()
-    for (const r of allResponses) {
+
+    for (const r of allSessionResponses) {
       const s = byStudent.get(r.studentId) ?? { totalResponses: 0, sessionIds: new Set<string>(), totalWordCount: 0, freeTextCount: 0 }
       s.totalResponses++
-      s.sessionIds.add(r.question.sessionId)
+      if (r.question.sessionId) s.sessionIds.add(r.question.sessionId)
+      if (r.question.type === 'FREE_TEXT') { s.totalWordCount += r.wordCount; s.freeTextCount++ }
+      byStudent.set(r.studentId, s)
+    }
+
+    for (const r of allAssignmentResponses) {
+      const s = byStudent.get(r.studentId) ?? { totalResponses: 0, sessionIds: new Set<string>(), totalWordCount: 0, freeTextCount: 0 }
+      s.totalResponses++
       if (r.question.type === 'FREE_TEXT') { s.totalWordCount += r.wordCount; s.freeTextCount++ }
       byStudent.set(r.studentId, s)
     }
@@ -389,7 +411,7 @@ router.get('/:id/enrollments', async (req: Request, res: Response, next: NextFun
         stats: {
           totalResponses: s?.totalResponses ?? 0,
           sessionsParticipated: s?.sessionIds.size ?? 0,
-          totalClosedSessions,
+          totalClosedSessions: totalClosedSessionRuns,
           averageWordCount: s && s.freeTextCount > 0 ? Math.round(s.totalWordCount / s.freeTextCount) : 0,
         },
       }
@@ -410,44 +432,81 @@ router.get('/:id/students/:studentId/activity', async (req: Request, res: Respon
     const cls = await prisma.class.findFirst({ where: { id: classId, professorId: professor.id } })
     if (!cls) throw new AppError('Class not found', 404)
 
-    const sessions = await prisma.session.findMany({
-      where: { classId, NOT: { status: 'DRAFT' } },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        questions: {
-          orderBy: { order: 'asc' },
-          include: {
-            responses: {
-              where: { studentId },
-              select: { responseText: true, wordCount: true, isFlagged: true, submittedAt: true, aiScore: true },
+    // Get student's section for run filtering
+    const enrollment = await prisma.enrollment.findUnique({
+      where: { studentId_classId: { studentId, classId } },
+      select: { sectionId: true },
+    })
+    const studentSectionId = enrollment?.sectionId ?? null
+
+    const [sessions, assignments] = await Promise.all([
+      prisma.session.findMany({
+        where: { classId, status: { not: 'DRAFT' } },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          runs: {
+            where: { status: { in: ['CLOSED', 'ARCHIVED'] } },
+            select: { id: true, sectionId: true },
+          },
+          questions: {
+            orderBy: { order: 'asc' },
+            include: {
+              responses: {
+                where: { studentId },
+                select: { responseText: true, wordCount: true, isFlagged: true, submittedAt: true, aiScore: true },
+              },
+              _count: { select: { responses: true } },
             },
-            _count: { select: { responses: true } },
           },
         },
-      },
-    })
+      }),
+      prisma.assignment.findMany({
+        where: { classId, status: { not: 'DRAFT' } },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          questions: {
+            orderBy: { order: 'asc' },
+            include: {
+              responses: {
+                where: { studentId },
+                select: { responseText: true, wordCount: true, isFlagged: true, submittedAt: true, aiScore: true },
+              },
+              _count: { select: { responses: true } },
+            },
+          },
+        },
+      }),
+    ])
 
-    const allQuestionIds = sessions.flatMap(s => s.questions.map(q => q.id))
+    const allSessionQuestionIds = sessions.flatMap((s) => s.questions.map((q) => q.id))
+    const allAssignmentQuestionIds = assignments.flatMap((a) => a.questions.map((q) => q.id))
+    const allQuestionIds = [...allSessionQuestionIds, ...allAssignmentQuestionIds]
+
     const aiGradedQuestionIds = new Set(
       (await prisma.response.groupBy({
         by: ['questionId'],
         where: { questionId: { in: allQuestionIds }, aiScore: { not: null } },
-      })).map(r => r.questionId)
+      })).map((r) => r.questionId)
     )
 
     const isClosed = (status: string) => status === 'CLOSED' || status === 'ARCHIVED'
 
-    const result = sessions.map((session) => {
+    const sessionResults = sessions.map((session) => {
       const qs = session.questions as Array<typeof session.questions[number] & { _count: { responses: number } }>
 
-      // Only compute grades for closed sessions; open sessions haven't been graded yet
+      // Section-aware: only count responses in relevant runs for this student's section
+      const relevantRunIds = session.runs
+        .filter((r) => r.sectionId === null || r.sectionId === studentSectionId)
+        .map((r) => r.id)
+
       const gradeResult = isClosed(session.status)
-        ? gradeSession(session.type as string, qs.map(q => ({
+        ? gradeSession('IN_CLASS', qs.map((q) => ({
             id: q.id,
             type: q.type,
             correctAnswer: q.correctAnswer,
             tolerance: q.tolerance,
             totalResponseCount: q._count.responses,
+            sectionResponseCount: relevantRunIds.length > 0 ? q._count.responses : 0,
             hasAnyAiScore: aiGradedQuestionIds.has(q.id),
             studentResponse: q.responses[0] ?? null,
           })))
@@ -456,11 +515,11 @@ router.get('/:id/students/:studentId/activity', async (req: Request, res: Respon
       return {
         id: session.id,
         title: session.title,
-        type: session.type as 'IN_CLASS' | 'HOMEWORK',
+        type: 'IN_CLASS' as const,
         status: session.status,
         createdAt: session.createdAt,
         questions: qs.map((q, i) => {
-          const qResult = gradeResult?.questions.find(r => r.id === q.id)
+          const qResult = gradeResult?.questions.find((r) => r.id === q.id)
           return {
             id: q.id,
             text: q.text,
@@ -474,6 +533,47 @@ router.get('/:id/students/:studentId/activity', async (req: Request, res: Respon
         }),
       }
     })
+
+    const assignmentResults = assignments.map((assignment) => {
+      const qs = assignment.questions as Array<typeof assignment.questions[number] & { _count: { responses: number } }>
+
+      const gradeResult = isClosed(assignment.status)
+        ? gradeSession('HOMEWORK', qs.map((q) => ({
+            id: q.id,
+            type: q.type,
+            correctAnswer: q.correctAnswer,
+            tolerance: q.tolerance,
+            totalResponseCount: 1,
+            hasAnyAiScore: aiGradedQuestionIds.has(q.id),
+            studentResponse: q.responses[0] ?? null,
+          })))
+        : null
+
+      return {
+        id: assignment.id,
+        title: assignment.title,
+        type: 'HOMEWORK' as const,
+        status: assignment.status,
+        createdAt: assignment.createdAt,
+        questions: qs.map((q, i) => {
+          const qResult = gradeResult?.questions.find((r) => r.id === q.id)
+          return {
+            id: q.id,
+            text: q.text,
+            type: q.type,
+            number: i + 1,
+            correctAnswer: q.correctAnswer,
+            response: q.responses[0] ?? null,
+            score: qResult?.counted ? qResult.score : null,
+            counted: qResult?.counted ?? false,
+          }
+        }),
+      }
+    })
+
+    const result = [...sessionResults, ...assignmentResults].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    )
 
     res.json({ success: true, data: { sessions: result } })
   } catch (err) {
@@ -508,6 +608,7 @@ router.post('/:id/students/:studentId/reset-password', async (req: Request, res:
   }
 })
 
+// ─── Gradebook types ──────────────────────────────────────────────────────────
 
 type GradeQuestion = {
   id: string
@@ -516,18 +617,22 @@ type GradeQuestion = {
   tolerance: number | null
   responses: { studentId: string; responseText: string; aiScore: number | null }[]
 }
-type GradeSession = {
+
+type GradebookItem = {
   id: string
   title: string
-  type: string
+  type: 'IN_CLASS' | 'HOMEWORK'
   questions: GradeQuestion[]
-}
-type GradeEnrollment = {
-  student: { id: string; netId: string; name: string }
-  section: { name: string } | null
+  // For sessions: runs for section-aware grading
+  runs?: Array<{ id: string; sectionId: string | null }>
 }
 
-// Class-wide grades JSON — same data as CSV export but as structured JSON for in-app gradebook
+type GradeEnrollment = {
+  student: { id: string; netId: string; name: string }
+  section: { id: string; name: string } | null
+}
+
+// Class-wide grades JSON
 router.get('/:id/grades/json', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
@@ -539,10 +644,26 @@ router.get('/:id/grades/json', async (req: Request, res: Response, next: NextFun
         enrollments: {
           include: {
             student: { select: { id: true, netId: true } },
-            section: { select: { name: true } },
+            section: { select: { id: true, name: true } },
           },
         },
         sessions: {
+          where: { status: { in: ['OPEN' as const, 'CLOSED' as const, 'ARCHIVED' as const] } },
+          orderBy: { createdAt: 'asc' },
+          include: {
+            runs: {
+              where: { status: { in: ['CLOSED' as const, 'ARCHIVED' as const] } },
+              select: { id: true, sectionId: true },
+            },
+            questions: {
+              orderBy: { order: 'asc' },
+              include: {
+                responses: { select: { studentId: true, responseText: true, aiScore: true } },
+              },
+            },
+          },
+        },
+        assignments: {
           where: { status: { in: ['CLOSED' as const, 'ARCHIVED' as const] } },
           orderBy: { createdAt: 'asc' },
           include: {
@@ -558,54 +679,80 @@ router.get('/:id/grades/json', async (req: Request, res: Response, next: NextFun
     })
     if (!cls) throw new AppError('Class not found', 404)
 
-    const allSessions = cls.sessions as unknown as GradeSession[]
+    const sessions = cls.sessions as unknown as Array<GradebookItem & { runs: Array<{ id: string; sectionId: string | null }> }>
+    const assignments = cls.assignments as unknown as GradebookItem[]
     const enrollments = cls.enrollments as unknown as GradeEnrollment[]
 
-    const participationSessions = allSessions.filter((s) => s.type !== 'HOMEWORK')
-    const homeworkSessions = allSessions.filter((s) => s.type === 'HOMEWORK')
+    const allSessions: GradebookItem[] = [
+      ...sessions.map((s) => ({ ...s, type: 'IN_CLASS' as const })),
+      ...assignments.map((a) => ({ ...a, type: 'HOMEWORK' as const })),
+    ]
+
+    const participationSessions = sessions
+    const homeworkSessions = assignments
 
     const participationMax = participationSessions.reduce((sum, s) => {
-      return sum + gradeSession('IN_CLASS', s.questions.map(q => ({
+      return sum + gradeSession('IN_CLASS', s.questions.map((q) => ({
         id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
         totalResponseCount: q.responses.length,
-        hasAnyAiScore: q.responses.some(r => r.aiScore !== null),
-        studentResponse: null,
-      }))).max
-    }, 0)
-    const hwMax = homeworkSessions.reduce((sum, s) => {
-      return sum + gradeSession('HOMEWORK', s.questions.map(q => ({
-        id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
-        totalResponseCount: q.responses.length,
-        hasAnyAiScore: q.responses.some(r => r.aiScore !== null),
+        hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
         studentResponse: null,
       }))).max
     }, 0)
 
-    const sessions = allSessions.map((s) => ({
+    const hwMax = homeworkSessions.reduce((sum, a) => {
+      return sum + gradeSession('HOMEWORK', a.questions.map((q) => ({
+        id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
+        totalResponseCount: a.questions.length,
+        hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
+        studentResponse: null,
+      }))).max
+    }, 0)
+
+    const gradebookSessions = allSessions.map((s) => ({
       id: s.id,
       title: s.title,
-      type: s.type as 'IN_CLASS' | 'HOMEWORK',
+      type: s.type,
       questionCount: s.questions.length,
     }))
 
     const students = enrollments.map((enrollment) => {
       const student = enrollment.student
-      const scores = allSessions.map((session) => {
-        const result = gradeSession(session.type, session.questions.map(q => ({
-          id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
-          totalResponseCount: q.responses.length,
-          hasAnyAiScore: q.responses.some(r => r.aiScore !== null),
-          studentResponse: q.responses.find(r => r.studentId === student.id) ?? null,
-        })))
-        return { sessionId: session.id, earned: result.earned, max: result.max }
+      const studentSectionId = (enrollment.section as { id: string; name: string } | null)?.id ?? null
+
+      const scores = allSessions.map((item) => {
+        if (item.type === 'IN_CLASS') {
+          const sess = item as GradebookItem & { runs: Array<{ id: string; sectionId: string | null }> }
+          const relevantRunIds = new Set(
+            (sess.runs ?? [])
+              .filter((r) => r.sectionId === null || r.sectionId === studentSectionId)
+              .map((r) => r.id)
+          )
+          const result = gradeSession('IN_CLASS', sess.questions.map((q) => ({
+            id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
+            totalResponseCount: q.responses.length,
+            sectionResponseCount: relevantRunIds.size > 0 ? q.responses.length : 0,
+            hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
+            studentResponse: q.responses.find((r) => r.studentId === student.id) ?? null,
+          })))
+          return { sessionId: item.id, earned: result.earned, max: result.max }
+        } else {
+          const result = gradeSession('HOMEWORK', item.questions.map((q) => ({
+            id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
+            totalResponseCount: 1,
+            hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
+            studentResponse: q.responses.find((r) => r.studentId === student.id) ?? null,
+          })))
+          return { sessionId: item.id, earned: result.earned, max: result.max }
+        }
       })
 
       const participationTotal = participationSessions.reduce((sum, s) => {
         const score = scores.find((sc) => sc.sessionId === s.id)
         return sum + (score?.earned ?? 0)
       }, 0)
-      const hwTotal = homeworkSessions.reduce((sum, s) => {
-        const score = scores.find((sc) => sc.sessionId === s.id)
+      const hwTotal = homeworkSessions.reduce((sum, a) => {
+        const score = scores.find((sc) => sc.sessionId === a.id)
         return sum + (score?.earned ?? 0)
       }, 0)
 
@@ -621,13 +768,13 @@ router.get('/:id/grades/json', async (req: Request, res: Response, next: NextFun
       }
     })
 
-    res.json({ success: true, data: { sessions, students } })
+    res.json({ success: true, data: { sessions: gradebookSessions, students } })
   } catch (err) {
     next(err)
   }
 })
 
-// Class-wide grades export — participation columns + homework columns, one row per student
+// Class-wide grades CSV export
 router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
@@ -639,10 +786,26 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
         enrollments: {
           include: {
             student: { select: { id: true, netId: true } },
-            section: { select: { name: true } },
+            section: { select: { id: true, name: true } },
           },
         },
         sessions: {
+          where: { status: { in: ['OPEN' as const, 'CLOSED' as const, 'ARCHIVED' as const] } },
+          orderBy: { createdAt: 'asc' },
+          include: {
+            runs: {
+              where: { status: { in: ['CLOSED' as const, 'ARCHIVED' as const] } },
+              select: { id: true, sectionId: true },
+            },
+            questions: {
+              orderBy: { order: 'asc' },
+              include: {
+                responses: { select: { studentId: true, responseText: true, aiScore: true } },
+              },
+            },
+          },
+        },
+        assignments: {
           where: { status: { in: ['CLOSED' as const, 'ARCHIVED' as const] } },
           orderBy: { createdAt: 'asc' },
           include: {
@@ -658,31 +821,30 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
     })
     if (!cls) throw new AppError('Class not found', 404)
 
-    const allSessions = cls.sessions as unknown as GradeSession[]
-    const enrollments = cls.enrollments as unknown as GradeEnrollment[]
+    const sessions = cls.sessions as unknown as Array<GradebookItem & { runs: Array<{ id: string; sectionId: string | null }> }>
+    const assignments = cls.assignments as unknown as GradebookItem[]
+    const enrollments = cls.enrollments as unknown as Array<GradeEnrollment & { section: { id: string; name: string } | null }>
 
-    const participationSessions = allSessions.filter((s) => s.type !== 'HOMEWORK')
-    const homeworkSessions = allSessions.filter((s) => s.type === 'HOMEWORK')
-
-    const participationMax = participationSessions.reduce((sum, s) => {
-      return sum + gradeSession('IN_CLASS', s.questions.map(q => ({
+    const participationMax = sessions.reduce((sum, s) => {
+      return sum + gradeSession('IN_CLASS', s.questions.map((q) => ({
         id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
         totalResponseCount: q.responses.length,
-        hasAnyAiScore: q.responses.some(r => r.aiScore !== null),
-        studentResponse: null,
-      }))).max
-    }, 0)
-    const homeworkMax = homeworkSessions.reduce((sum, s) => {
-      return sum + gradeSession('HOMEWORK', s.questions.map(q => ({
-        id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
-        totalResponseCount: q.responses.length,
-        hasAnyAiScore: q.responses.some(r => r.aiScore !== null),
+        hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
         studentResponse: null,
       }))).max
     }, 0)
 
-    const participationHeaders = participationSessions.map((s) => s.title.replace(/,/g, ' '))
-    const homeworkHeaders = homeworkSessions.map((s) => `HW: ${s.title.replace(/,/g, ' ')}`)
+    const homeworkMax = assignments.reduce((sum, a) => {
+      return sum + gradeSession('HOMEWORK', a.questions.map((q) => ({
+        id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
+        totalResponseCount: 1,
+        hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
+        studentResponse: null,
+      }))).max
+    }, 0)
+
+    const participationHeaders = sessions.map((s) => s.title.replace(/,/g, ' '))
+    const homeworkHeaders = assignments.map((a) => `HW: ${a.title.replace(/,/g, ' ')}`)
 
     const header = [
       'NetID', 'Section',
@@ -695,21 +857,29 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
     const csvRows = enrollments.map((enrollment) => {
       const student = enrollment.student
       const sectionName = enrollment.section?.name ?? ''
+      const studentSectionId = enrollment.section?.id ?? null
 
-      const pTotals = participationSessions.map((session) =>
-        gradeSession('IN_CLASS', session.questions.map(q => ({
+      const pTotals = sessions.map((sess) => {
+        const relevantRunIds = new Set(
+          (sess.runs ?? [])
+            .filter((r) => r.sectionId === null || r.sectionId === studentSectionId)
+            .map((r) => r.id)
+        )
+        return gradeSession('IN_CLASS', sess.questions.map((q) => ({
           id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
           totalResponseCount: q.responses.length,
-          hasAnyAiScore: q.responses.some(r => r.aiScore !== null),
-          studentResponse: q.responses.find(r => r.studentId === student.id) ?? null,
+          sectionResponseCount: relevantRunIds.size > 0 ? q.responses.length : 0,
+          hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
+          studentResponse: q.responses.find((r) => r.studentId === student.id) ?? null,
         }))).earned
-      )
-      const hwTotals = homeworkSessions.map((session) =>
-        gradeSession('HOMEWORK', session.questions.map(q => ({
+      })
+
+      const hwTotals = assignments.map((asgn) =>
+        gradeSession('HOMEWORK', asgn.questions.map((q) => ({
           id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
-          totalResponseCount: q.responses.length,
-          hasAnyAiScore: q.responses.some(r => r.aiScore !== null),
-          studentResponse: q.responses.find(r => r.studentId === student.id) ?? null,
+          totalResponseCount: 1,
+          hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
+          studentResponse: q.responses.find((r) => r.studentId === student.id) ?? null,
         }))).earned
       )
 

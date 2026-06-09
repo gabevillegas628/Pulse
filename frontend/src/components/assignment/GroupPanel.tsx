@@ -70,7 +70,7 @@ function PartCard({
             <button
               onClick={async () => {
                 if (!confirm('Delete this part? This cannot be undone.')) return
-                await api.delete(`/sessions/${assignmentId}/questions/${q.id}`)
+                await api.delete(`/assignments/${assignmentId}/questions/${q.id}`)
                 onDeleted()
               }}
               className="text-hairline-strong hover:text-red-500 transition-colors"
@@ -156,12 +156,12 @@ export default function GroupPanel({
 
   const updateMutation = useMutation({
     mutationFn: (body: { title?: string; text?: string | null }) =>
-      api.patch(`/sessions/${assignmentId}/groups/${group.id}`, body),
+      api.patch(`/assignments/${assignmentId}/groups/${group.id}`, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['assignment', assignmentId] }),
   })
 
   const deleteMutation = useMutation({
-    mutationFn: () => api.delete(`/sessions/${assignmentId}/groups/${group.id}`),
+    mutationFn: () => api.delete(`/assignments/${assignmentId}/groups/${group.id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['assignment', assignmentId] })
       onDeleted()
@@ -169,7 +169,7 @@ export default function GroupPanel({
   })
 
   const addPartMutation = useMutation({
-    mutationFn: () => api.post(`/sessions/${assignmentId}/questions`, {
+    mutationFn: () => api.post(`/assignments/${assignmentId}/questions`, {
       text: partText,
       type: partType,
       options: ['MULTIPLE_CHOICE', 'MULTI_SELECT', 'ORDERING'].includes(partType)
@@ -190,7 +190,7 @@ export default function GroupPanel({
 
   const reorderPartsMutation = useMutation({
     mutationFn: (items: { id: string; order: number }[]) =>
-      api.put(`/sessions/${assignmentId}/questions/reorder`, items),
+      api.put(`/assignments/${assignmentId}/questions/reorder`, items),
     onError: () => qc.invalidateQueries({ queryKey: ['assignment', assignmentId] }),
   })
 

@@ -83,7 +83,8 @@ export default function SubmitPage() {
         const s: SessionData = r.data.data.session
         setSession(s)
         setAlreadySubmitted(r.data.data.alreadySubmitted)
-        if (s.status !== 'OPEN') setSessionClosed(true)
+        // Treat archived as closed; live status comes via run_status socket
+        if (s.status === 'ARCHIVED') setSessionClosed(true)
         const initialOrders: Record<string, string[]> = {}
         s.questions.forEach((q) => {
           if (q.type === 'ORDERING' && q.options) {
@@ -101,8 +102,8 @@ export default function SubmitPage() {
     if (!sessionId) return
     const socket = io({ path: '/socket.io' })
     socket.emit('join_session', sessionId)
-    socket.on('session_status', ({ status }: { status: string }) => {
-      if (status === 'CLOSED') setSessionClosed(true)
+    socket.on('run_status', ({ status }: { runId: string; status: string; sectionId: string | null }) => {
+      if (status === 'CLOSED' || status === 'ARCHIVED') setSessionClosed(true)
     })
     return () => { socket.disconnect() }
   }, [sessionId])

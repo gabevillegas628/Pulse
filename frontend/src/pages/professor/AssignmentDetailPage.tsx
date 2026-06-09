@@ -158,19 +158,19 @@ export default function AssignmentDetailPage() {
 
   const { data, isLoading } = useQuery<SessionDetail>({
     queryKey: ['assignment', assignmentId],
-    queryFn: () => api.get(`/sessions/${assignmentId}`).then((r) => r.data.data.session),
+    queryFn: () => api.get(`/assignments/${assignmentId}`).then((r) => r.data.data.assignment),
   })
 
   // ── Mutations ──────────────────────────────────────────────────────────────
 
   const statusMutation = useMutation({
-    mutationFn: (status: SessionStatus) => api.patch(`/sessions/${assignmentId}`, { status }),
+    mutationFn: (status: SessionStatus) => api.patch(`/assignments/${assignmentId}`, { status }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['assignment', assignmentId] }),
   })
 
   const gradeMutation = useMutation({
     mutationFn: (questionId: string) =>
-      api.post(`/sessions/${assignmentId}/questions/${questionId}/grade`)
+      api.post(`/assignments/${assignmentId}/questions/${questionId}/grade`)
         .then((r) => r.data.data.grades as { id: string; studentId: string; aiScore: number; reason: string }[]),
     onSuccess: (grades, questionId) => {
       const reasons: Record<string, string> = {}
@@ -196,13 +196,13 @@ export default function AssignmentDetailPage() {
 
   const setCorrectAnswerMutation = useMutation({
     mutationFn: ({ questionId, correctAnswer }: { questionId: string; correctAnswer: string | null }) =>
-      api.patch(`/sessions/${assignmentId}/questions/${questionId}`, { correctAnswer }),
+      api.patch(`/assignments/${assignmentId}/questions/${questionId}`, { correctAnswer }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['assignment', assignmentId] }),
   })
 
   const overrideScoreMutation = useMutation({
     mutationFn: ({ questionId, responseId, aiScore }: { questionId: string; responseId: string; aiScore: number }) =>
-      api.patch(`/sessions/${assignmentId}/questions/${questionId}/responses/${responseId}`, { aiScore }),
+      api.patch(`/assignments/${assignmentId}/questions/${questionId}/responses/${responseId}`, { aiScore }),
     onSuccess: (_data, { questionId, responseId, aiScore }) => {
       qc.setQueryData<SessionDetail>(['assignment', assignmentId], (prev) => {
         if (!prev) return prev
@@ -218,7 +218,7 @@ export default function AssignmentDetailPage() {
 
   const summarizeMutation = useMutation({
     mutationFn: (questionId: string) =>
-      api.post(`/sessions/${assignmentId}/questions/${questionId}/summarize`).then((r) => r.data.data.categories),
+      api.post(`/assignments/${assignmentId}/questions/${questionId}/summarize`).then((r) => r.data.data.categories),
     onSuccess: (categories: SummaryCategory[], questionId: string) => {
       setSummary(categories)
       setSummaryQuestionId(questionId)
@@ -226,7 +226,7 @@ export default function AssignmentDetailPage() {
   })
 
   const addQuestionMutation = useMutation({
-    mutationFn: () => api.post(`/sessions/${assignmentId}/questions`, {
+    mutationFn: () => api.post(`/assignments/${assignmentId}/questions`, {
       text: aqText, type: aqType,
       options: ['MULTIPLE_CHOICE', 'MULTI_SELECT', 'ORDERING'].includes(aqType)
         ? aqOptions.split('\n').map(s => s.trim()).filter(Boolean) : undefined,
@@ -248,13 +248,13 @@ export default function AssignmentDetailPage() {
   })
 
   const updateDeadlineMutation = useMutation({
-    mutationFn: (deadline: string | null) => api.patch(`/sessions/${assignmentId}`, { deadline }),
+    mutationFn: (deadline: string | null) => api.patch(`/assignments/${assignmentId}`, { deadline }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['assignment', assignmentId] }); setEditingDeadline(false) },
   })
 
   const extensionsQuery = useQuery<{ id: string; studentId: string; deadline: string; student: { id: string; netId: string } }[]>({
     queryKey: ['extensions', assignmentId],
-    queryFn: () => api.get(`/sessions/${assignmentId}/extensions`).then((r) => r.data.data.extensions),
+    queryFn: () => api.get(`/assignments/${assignmentId}/extensions`).then((r) => r.data.data.extensions),
     enabled: showExtensions,
   })
 
@@ -266,12 +266,12 @@ export default function AssignmentDetailPage() {
 
   const addExtensionMutation = useMutation({
     mutationFn: ({ studentId, deadline }: { studentId: string; deadline: string }) =>
-      api.post(`/sessions/${assignmentId}/extensions`, { studentId, deadline }),
+      api.post(`/assignments/${assignmentId}/extensions`, { studentId, deadline }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['extensions', assignmentId] }); setExtStudentId(''); setExtDeadline('') },
   })
 
   const removeExtensionMutation = useMutation({
-    mutationFn: (studentId: string) => api.delete(`/sessions/${assignmentId}/extensions/${studentId}`),
+    mutationFn: (studentId: string) => api.delete(`/assignments/${assignmentId}/extensions/${studentId}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['extensions', assignmentId] }),
   })
 
@@ -280,19 +280,19 @@ export default function AssignmentDetailPage() {
     totalQuestions: number
   }>({
     queryKey: ['submission-status', assignmentId],
-    queryFn: () => api.get(`/sessions/${assignmentId}/submission-status`).then((r) => r.data.data),
+    queryFn: () => api.get(`/assignments/${assignmentId}/submission-status`).then((r) => r.data.data),
     enabled: activeItem?.kind === 'submissions',
   })
 
   const reorderGroupsMutation = useMutation({
     mutationFn: (items: { id: string; order: number }[]) =>
-      api.put(`/sessions/${assignmentId}/groups/reorder`, items),
+      api.put(`/assignments/${assignmentId}/groups/reorder`, items),
     onError: () => qc.invalidateQueries({ queryKey: ['assignment', assignmentId] }),
   })
 
   const reorderUngroupedMutation = useMutation({
     mutationFn: (items: { id: string; order: number }[]) =>
-      api.put(`/sessions/${assignmentId}/questions/reorder`, items),
+      api.put(`/assignments/${assignmentId}/questions/reorder`, items),
     onError: () => qc.invalidateQueries({ queryKey: ['assignment', assignmentId] }),
   })
 
@@ -464,7 +464,7 @@ export default function AssignmentDetailPage() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <a href={`/api/sessions/${assignmentId}/export`}
+            <a href={`/api/assignments/${assignmentId}/export`}
               className="inline-flex items-center gap-1.5 bg-surface border border-hairline-strong text-ink-2 rounded-sm px-3 py-2 text-sm font-bold hover:bg-surface-2 transition-colors">
               <Download size={14} /> Export CSV
             </a>
