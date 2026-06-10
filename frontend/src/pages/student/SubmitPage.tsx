@@ -103,7 +103,7 @@ export default function SubmitPage() {
   useEffect(() => {
     if (!sessionId) return
     const socket = io({ path: '/socket.io', auth: { token: getStudentToken() } })
-    socket.emit('join_session', sessionId)
+    socket.on('connect', () => socket.emit('join_session', sessionId))
     socket.on('run_status', ({ status }: { runId: string; status: string; sectionId: string | null }) => {
       if (status === 'CLOSED' || status === 'ARCHIVED') setSessionClosed(true)
     })

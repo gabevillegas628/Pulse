@@ -92,7 +92,8 @@ export default function QuestionPage() {
     if (!question) return
     const socket = io({ path: '/socket.io', auth: { token: getStudentToken() } })
     if (!question.session) return
-    socket.emit('join_session', question.session.id)
+    const sessionId = question.session.id
+    socket.on('connect', () => socket.emit('join_session', sessionId))
     socket.on('run_status', ({ status }: { runId: string; status: string; sectionId: string | null }) => {
       if (status === 'CLOSED' || status === 'ARCHIVED') setSessionClosed(true)
     })

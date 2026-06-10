@@ -404,7 +404,7 @@ export default function SessionPage() {
   useEffect(() => {
     if (!sessionId) return
     const socket = io({ path: '/socket.io', auth: { token: getProfessorToken() } })
-    socket.emit('join_session', sessionId)
+    socket.on('connect', () => socket.emit('join_session', sessionId))
 
     socket.on('new_response', (payload: { student: ResponseWithStudent['student']; response: ResponseWithStudent; questionId: string; sessionId: string }) => {
       if (!seenQuestionIdsRef.current.has(payload.questionId)) {
