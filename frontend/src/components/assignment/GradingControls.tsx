@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import { useMutation } from '@tanstack/react-query'
 import { Sparkles } from 'lucide-react'
 import type { SummaryCategory } from 'shared'
 import StructureRenderer from '@/components/StructureRenderer'
