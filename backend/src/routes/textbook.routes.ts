@@ -35,6 +35,7 @@ interface SearchResult {
   sectionId: string
   sectionTitle: string
   excerpt: string
+  occurrenceIndex: number
 }
 
 // ─── Markdown → HTML processor ────────────────────────────────────────────────
@@ -84,8 +85,10 @@ function extractSections(html: string): Array<{ id: string; title: string; text:
   const sections: Array<{ id: string; title: string; text: string }> = []
   const h2Regex = /<h2[^>]*id="([^"]*)"[^>]*>([\s\S]*?)<\/h2>/g
   let lastSection: { id: string; title: string; startIndex: number } | null = null
+  let firstMatchIndex: number | null = null
 
   for (const match of html.matchAll(h2Regex)) {
+    if (firstMatchIndex === null) firstMatchIndex = match.index ?? 0
     if (lastSection) {
       sections.push({
         id: lastSection.id,
@@ -102,15 +105,50 @@ function extractSections(html: string): Array<{ id: string; title: string; text:
   if (lastSection) {
     sections.push({ id: lastSection.id, title: lastSection.title, text: stripTags(html.slice(lastSection.startIndex)) })
   }
+
+  // Capture intro content before the first h2
+  const introHtml = html.slice(0, firstMatchIndex ?? html.length)
+  const introText = stripTags(introHtml)
+  if (introText.trim()) {
+    const h1Match = introHtml.match(/<h1[^>]*id="([^"]*)"[^>]*>([\s\S]*?)<\/h1>/)
+    sections.unshift({
+      id: h1Match?.[1] ?? '',
+      title: h1Match ? stripTags(h1Match[2]) : 'Introduction',
+      text: introText,
+    })
+  }
+
   return sections
 }
 
-function buildExcerpt(text: string, query: string, prefix = 40, total = 220): string {
-  const idx = text.toLowerCase().indexOf(query.toLowerCase())
-  if (idx === -1) return text.slice(0, total) + (text.length > total ? '…' : '')
+function buildExcerpt(text: string, idx: number, queryLen: number, prefix = 40, total = 220): string {
   const start = Math.max(0, idx - prefix)
   const end = Math.min(text.length, start + total)
   return (start > 0 ? '…' : '') + text.slice(start, end) + (end < text.length ? '…' : '')
+}
+
+// Returns one result per cluster of occurrences (merging those within proximityThreshold chars).
+// occurrenceIndex is the position of this cluster's first occurrence among ALL occurrences in the
+// section — used by the frontend TreeWalker to scroll to the right one.
+function findOccurrences(text: string, query: string, proximityThreshold = 300): Array<{ excerpt: string; occurrenceIndex: number }> {
+  const results: Array<{ excerpt: string; occurrenceIndex: number }> = []
+  const q = query.toLowerCase()
+  const t = text.toLowerCase()
+  let searchFrom = 0
+  let lastClusterIdx = -Infinity
+  let totalCount = 0
+
+  while (true) {
+    const idx = t.indexOf(q, searchFrom)
+    if (idx === -1) break
+    if (idx - lastClusterIdx > proximityThreshold) {
+      results.push({ excerpt: buildExcerpt(text, idx, q.length), occurrenceIndex: totalCount })
+      lastClusterIdx = idx
+    }
+    totalCount++
+    searchFrom = idx + 1
+  }
+  return results
 }
 
 async function getOrRenderChapter(downloadUrl: string): Promise<string> {
@@ -218,14 +256,14 @@ router.get('/textbook/search', async (req, res, next) => {
       try {
         const html = await getOrRenderChapter(ch.downloadUrl)
         for (const sec of extractSections(html)) {
-          if (sec.title.toLowerCase().includes(qLower) || sec.text.toLowerCase().includes(qLower)) {
-            results.push({
-              chapterName: ch.name,
-              downloadUrl: ch.downloadUrl,
-              sectionId: sec.id,
-              sectionTitle: sec.title,
-              excerpt: buildExcerpt(sec.text, q),
-            })
+          const occurrences = findOccurrences(sec.text, q)
+          if (occurrences.length > 0) {
+            for (const { excerpt, occurrenceIndex } of occurrences) {
+              results.push({ chapterName: ch.name, downloadUrl: ch.downloadUrl, sectionId: sec.id, sectionTitle: sec.title, excerpt, occurrenceIndex })
+            }
+          } else if (sec.title.toLowerCase().includes(qLower)) {
+            const preview = sec.text.slice(0, 220)
+            results.push({ chapterName: ch.name, downloadUrl: ch.downloadUrl, sectionId: sec.id, sectionTitle: sec.title, excerpt: preview + (sec.text.length > 220 ? '…' : ''), occurrenceIndex: 0 })
           }
         }
       } catch { /* skip chapters that fail to load */ }

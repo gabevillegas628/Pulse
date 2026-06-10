@@ -14,7 +14,7 @@ function useIsNarrow() {
   }, [])
   return narrow
 }
-import { contentsApiUrl, filenameToTitle, chapterSortKey } from '@/lib/textbook'
+import { contentsApiUrl, filenameToTitle, chapterSortKey, parseChapterList } from '@/lib/textbook'
 import { api } from '@/api/client'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -41,6 +41,7 @@ interface SearchResult {
   sectionId: string
   sectionTitle: string
   excerpt: string
+  occurrenceIndex: number
 }
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -90,7 +91,8 @@ function ChapterSidebar({
   sections,
   repo,
   path,
-  onScrollToSection,
+  onNavigateToResult,
+  chapterTitles,
 }: {
   chapters: Chapter[]
   selectedName: string | null
@@ -107,11 +109,22 @@ function ChapterSidebar({
   sections?: Section[]
   repo: string
   path: string
-  onScrollToSection: (id: string, query?: string) => void
+  onNavigateToResult: (chapter: Chapter, sectionId: string, query: string, occurrence: number) => void
+  chapterTitles?: Map<string, string>
 }) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const debouncedQuery = useDebounce(searchQuery, 300)
+  const panelRef = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    if (collapsed) return
+    const handler = (e: MouseEvent) => {
+      if (!panelRef.current?.contains(e.target as Node)) onToggleCollapse()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [collapsed, onToggleCollapse])
 
   const { data: searchResults, isFetching: searchFetching } = useQuery<SearchResult[]>({
     queryKey: ['textbook-search', repo, path, debouncedQuery],
@@ -124,10 +137,7 @@ function ChapterSidebar({
 
   function handleSearchResultClick(result: SearchResult) {
     const chapter = chapters.find((c) => c.name === result.chapterName)
-    if (chapter) {
-      onSelect(chapter)
-      onScrollToSection(result.sectionId, debouncedQuery)
-    }
+    if (chapter) onNavigateToResult(chapter, result.sectionId, debouncedQuery, result.occurrenceIndex)
   }
 
   const showResults = debouncedQuery.length >= 2
@@ -150,13 +160,13 @@ function ChapterSidebar({
             className={`w-2 h-2 rounded-full shrink-0 transition-colors ${
               ch.name === selectedName ? 'bg-signal' : 'bg-hairline hover:bg-hairline-strong'
             }`}
-            title={filenameToTitle(ch.name)}
+            title={filenameToTitle(ch.name, chapterTitles)}
           />
         ))}
       </aside>
 
       {/* Expanded overlay panel — left-0 so -translate-x-full clears the strip completely */}
-      <aside className={`absolute left-0 top-0 bottom-0 w-64 z-10 bg-surface border-r border-hairline shadow-lg flex flex-col transition-transform duration-200 ease-in-out ${collapsed ? '-translate-x-full pointer-events-none' : 'translate-x-0'}`}>
+      <aside ref={panelRef} className={`absolute left-0 top-0 bottom-0 w-64 z-10 bg-surface border-r border-hairline shadow-lg flex flex-col transition-transform duration-200 ease-in-out ${collapsed ? '-translate-x-full pointer-events-none' : 'translate-x-0'}`}>
           <div className="px-4 py-3 border-b border-hairline flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2">
               <button
@@ -197,8 +207,16 @@ function ChapterSidebar({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={(e) => e.key === 'Escape' && setSearchOpen(false)}
-                  className="w-full pl-7 pr-3 py-1.5 text-xs bg-surface-2 border border-hairline rounded-sm text-ink placeholder:text-muted focus:outline-none focus:border-signal"
+                  className="w-full pl-7 pr-7 py-1.5 text-xs bg-surface-2 border border-hairline rounded-sm text-ink placeholder:text-muted focus:outline-none focus:border-signal"
                 />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-ink transition-colors"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -216,8 +234,8 @@ function ChapterSidebar({
                     onClick={() => handleSearchResultClick(result)}
                     className="w-full text-left px-4 py-2.5 hover:bg-surface-2 transition-colors border-b border-hairline last:border-0"
                   >
-                    <p className="text-xs font-medium text-signal truncate">{result.sectionTitle}</p>
-                    <p className="text-[10px] text-muted mt-0.5 truncate">{filenameToTitle(result.chapterName)}</p>
+                    <p className="text-xs font-semibold text-signal truncate">{filenameToTitle(result.chapterName, chapterTitles)}</p>
+                    <p className="text-xs text-muted mt-0.5 truncate"><span className="mr-0.5">↳</span>{result.sectionTitle}</p>
                     <p className="text-xs text-ink-2 mt-1 line-clamp-3 leading-relaxed"><HighlightedExcerpt text={result.excerpt} query={debouncedQuery} /></p>
                   </button>
                 ))
@@ -235,7 +253,7 @@ function ChapterSidebar({
                           : 'text-ink-2 hover:bg-surface-2'
                       }`}
                     >
-                      <span className="text-sm leading-snug flex-1">{filenameToTitle(ch.name)}</span>
+                      <span className="text-sm leading-snug flex-1">{filenameToTitle(ch.name, chapterTitles)}</span>
                       <span className="shrink-0 flex items-center gap-1">
                         {viewCounts && (
                           <span className="text-[10px] font-medium text-muted tabular-nums font-mono">
@@ -317,8 +335,10 @@ function ChapterContent({
   classId,
   onSectionsLoaded,
   scrollToSection,
+  scrollToOccurrence = 0,
   highlightQuery,
   onScrolled,
+  chapterTitles,
 }: {
   name: string
   downloadUrl: string
@@ -329,8 +349,10 @@ function ChapterContent({
   classId?: string
   onSectionsLoaded?: (sections: Section[]) => void
   scrollToSection?: string | null
+  scrollToOccurrence?: number
   highlightQuery?: string | null
   onScrolled?: () => void
+  chapterTitles?: Map<string, string>
 }) {
   const { data: html, isLoading, isError } = useQuery<string>({
     queryKey: ['textbook-chapter', downloadUrl],
@@ -358,12 +380,12 @@ function ChapterContent({
       let target: Element | null = null
 
       if (highlightQuery && contentRef.current) {
-        const sectionEl = document.getElementById(scrollToSection)
+        const sectionEl = contentRef.current.querySelector(`#${CSS.escape(scrollToSection)}`)
         const q = highlightQuery.toLowerCase()
         const walker = document.createTreeWalker(contentRef.current, NodeFilter.SHOW_TEXT)
+        let matchCount = 0
         let node: Node | null
-        while ((node = walker.nextNode())) {
-          if (!node.textContent?.toLowerCase().includes(q)) continue
+        outer: while ((node = walker.nextNode())) {
           if (sectionEl && !(sectionEl.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING)) continue
           let ancestor: Element | null = node.parentElement
           let inMath = false
@@ -373,14 +395,24 @@ function ChapterContent({
             ancestor = ancestor.parentElement
           }
           if (inMath) continue
-          let el: Element | null = node.parentElement
-          while (el && getComputedStyle(el).display.startsWith('inline')) el = el.parentElement
-          target = el
-          break
+          const textLower = (node.textContent ?? '').toLowerCase()
+          let offset = 0
+          while (true) {
+            const idx = textLower.indexOf(q, offset)
+            if (idx === -1) break
+            if (matchCount === scrollToOccurrence) {
+              let el: Element | null = node.parentElement
+              while (el && getComputedStyle(el).display.startsWith('inline')) el = el.parentElement
+              target = el
+              break outer
+            }
+            matchCount++
+            offset = idx + 1
+          }
         }
       }
 
-      ;(target ?? document.getElementById(scrollToSection))?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      ;(target ?? contentRef.current?.querySelector(`#${CSS.escape(scrollToSection)}`))?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       onScrolled?.()
     })
   }, [html, scrollToSection]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -434,7 +466,7 @@ function ChapterContent({
   if (isError || html == null) {
     return (
       <div className="flex-1 flex items-center justify-center text-red-500 text-sm px-8 text-center">
-        Could not load "{filenameToTitle(name)}". Check your internet connection.
+        Could not load "{filenameToTitle(name, chapterTitles)}". Check your internet connection.
       </div>
     )
   }
@@ -443,7 +475,7 @@ function ChapterContent({
     <article className="flex-1 flex flex-col overflow-hidden">
       {/* Chapter header bar */}
       <div className="flex items-center justify-between px-8 py-3 border-b border-hairline shrink-0">
-        <p className="text-sm font-semibold text-ink-2 truncate pr-4">{filenameToTitle(name)}</p>
+        <p className="text-sm font-semibold text-ink-2 truncate pr-4">{filenameToTitle(name, chapterTitles)}</p>
         <button
           onClick={onToggleExpand}
           className="flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-sm border border-hairline text-sm text-ink-2 hover:bg-surface-2 hover:border-hairline-strong transition-colors"
@@ -498,6 +530,12 @@ function Reader({
   viewCounts,
   repo,
   path,
+  chapterTitles,
+  scrollTo,
+  scrollOccurrence,
+  highlightQuery,
+  onScrolled,
+  onNavigateToResult,
 }: {
   chapters: Chapter[]
   selectedName: string | null
@@ -514,11 +552,15 @@ function Reader({
   viewCounts?: Record<string, number>
   repo: string
   path: string
+  chapterTitles?: Map<string, string>
+  scrollTo: string | null
+  scrollOccurrence: number
+  highlightQuery: string | null
+  onScrolled: () => void
+  onNavigateToResult: (chapter: Chapter, sectionId: string, query: string, occurrence: number) => void
 }) {
-  const [sections, setSections] = useState<Section[]>([])
-  const [pendingSection, setPendingSection] = useState<string | null>(null)
-  const [highlightQuery, setHighlightQuery] = useState<string | null>(null)
-  useEffect(() => { setSections([]); setHighlightQuery(null) }, [selectedName])
+  const [sectionData, setSectionData] = useState<{ chapterName: string; sections: Section[] } | null>(null)
+  const sections = sectionData?.chapterName === selectedName ? sectionData.sections : []
 
   const selectedChapter = chapters.find((c) => c.name === selectedName) ?? null
   return (
@@ -539,11 +581,9 @@ function Reader({
         sections={sections}
         repo={repo}
         path={path}
-        onScrollToSection={(id, query) => { setPendingSection(id); setHighlightQuery(query ?? null) }}
+        onNavigateToResult={onNavigateToResult}
+        chapterTitles={chapterTitles}
       />
-      {!collapsed && (
-        <div className="absolute inset-0 left-64 z-[9]" onClick={onToggleCollapse} />
-      )}
       {selectedChapter ? (
         <ChapterContent
           name={selectedChapter.name}
@@ -553,10 +593,12 @@ function Reader({
           expanded={expanded}
           onToggleExpand={onToggleExpand}
           classId={classId}
-          onSectionsLoaded={setSections}
-          scrollToSection={pendingSection}
+          onSectionsLoaded={(s) => setSectionData({ chapterName: selectedChapter.name, sections: s })}
+          scrollToSection={scrollTo}
+          scrollToOccurrence={scrollOccurrence}
           highlightQuery={highlightQuery}
-          onScrolled={() => setPendingSection(null)}
+          onScrolled={onScrolled}
+          chapterTitles={chapterTitles}
         />
       ) : (
         <EmptyState />
@@ -578,6 +620,17 @@ interface TextbookPageProps {
 export default function TextbookPage({ repo, path, classId, viewCounts }: TextbookPageProps) {
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedName = searchParams.get('chapter')
+  const scrollTo = searchParams.get('scroll_to')
+  const scrollOccurrence = parseInt(searchParams.get('scroll_n') ?? '0')
+  const highlightQuery = searchParams.get('hl')
+
+  function navigateToResult(chapter: Chapter, sectionId: string, query: string, occurrence: number) {
+    setSearchParams({ chapter: chapter.name, scroll_to: sectionId, scroll_n: String(occurrence), hl: query }, { replace: false })
+  }
+
+  function onScrolled() {
+    setSearchParams((p) => { p.delete('scroll_to'); p.delete('scroll_n'); return p }, { replace: true })
+  }
   const [expanded, setExpanded] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [contentWidth, setContentWidth] = useState(672)
@@ -591,6 +644,18 @@ export default function TextbookPage({ repo, path, classId, viewCounts }: Textbo
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [expanded])
+
+  const { data: chapterTitles } = useQuery<Map<string, string>>({
+    queryKey: ['textbook-chapter-list', repo],
+    queryFn: async () => {
+      const res = await fetch(contentsApiUrl(repo, 'chapter-list.md'))
+      if (!res.ok) return new Map()
+      const file = await res.json()
+      const bytes = Uint8Array.from(atob(file.content.replace(/\n/g, '')), (c) => c.charCodeAt(0))
+      return parseChapterList(new TextDecoder().decode(bytes))
+    },
+    staleTime: 60 * 60 * 1000,
+  })
 
   const { data: chapters, isLoading, isError } = useQuery<GitHubFile[], Error, Chapter[]>({
     queryKey: ['textbook-chapters', repo, path],
@@ -658,6 +723,12 @@ export default function TextbookPage({ repo, path, classId, viewCounts }: Textbo
         viewCounts={viewCounts}
         repo={repo}
         path={path}
+        chapterTitles={chapterTitles}
+        scrollTo={scrollTo}
+        scrollOccurrence={scrollOccurrence}
+        highlightQuery={highlightQuery}
+        onScrolled={onScrolled}
+        onNavigateToResult={navigateToResult}
       />
 
       {/* Fullscreen overlay */}
@@ -696,6 +767,12 @@ export default function TextbookPage({ repo, path, classId, viewCounts }: Textbo
               viewCounts={viewCounts}
               repo={repo}
               path={path}
+              chapterTitles={chapterTitles}
+              scrollTo={scrollTo}
+              scrollOccurrence={scrollOccurrence}
+              highlightQuery={highlightQuery}
+              onScrolled={onScrolled}
+              onNavigateToResult={navigateToResult}
             />
           </div>
         </div>

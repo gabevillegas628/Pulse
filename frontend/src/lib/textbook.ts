@@ -7,12 +7,24 @@ export function contentsApiUrl(repo: string, path: string): string {
   return `https://api.github.com/repos/${repo}/contents${segment}`
 }
 
+/** Parse a chapter-list.md file into a stem→title map.
+ *  Each non-empty line should be "filename-stem: Display Title". */
+export function parseChapterList(text: string): Map<string, string> {
+  const map = new Map<string, string>()
+  for (const line of text.split('\n')) {
+    const match = line.match(/^([^:]+):\s*(.+)$/)
+    if (match) map.set(match[1].trim(), match[2].trim())
+  }
+  return map
+}
+
 /** Convert a filename like "ch01-introduction-to-organic-chemistry.md"
- *  or "01_thermodynamics.md" into a human-readable title. */
-export function filenameToTitle(filename: string): string {
-  let name = filename.replace(/\.md$/i, '')
-  // Strip leading chapter number + separator (e.g. "ch01-", "01_", "1.")
-  name = name.replace(/^(ch\d+[-_.]|\d+[-_.])/i, '')
+ *  into a human-readable title, using an explicit title map when available. */
+export function filenameToTitle(filename: string, titles?: Map<string, string>): string {
+  const stem = filename.replace(/\.md$/i, '')
+  if (titles?.has(stem)) return titles.get(stem)!
+  // Fallback: derive from filename
+  let name = stem.replace(/^(ch\d+[-_.]|\d+[-_.])/i, '')
   return name
     .replace(/[-_]/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase())
