@@ -130,23 +130,25 @@ function buildExcerpt(text: string, idx: number, queryLen: number, prefix = 40, 
 // Returns one result per cluster of occurrences (merging those within proximityThreshold chars).
 // occurrenceIndex is the position of this cluster's first occurrence among ALL occurrences in the
 // section — used by the frontend TreeWalker to scroll to the right one.
+function wholeWordRegex(query: string): RegExp {
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`\\b${escaped}\\b`, 'gi')
+}
+
 function findOccurrences(text: string, query: string, proximityThreshold = 300): Array<{ excerpt: string; occurrenceIndex: number }> {
   const results: Array<{ excerpt: string; occurrenceIndex: number }> = []
-  const q = query.toLowerCase()
-  const t = text.toLowerCase()
-  let searchFrom = 0
+  const regex = wholeWordRegex(query)
   let lastClusterIdx = -Infinity
   let totalCount = 0
+  let match: RegExpExecArray | null
 
-  while (true) {
-    const idx = t.indexOf(q, searchFrom)
-    if (idx === -1) break
+  while ((match = regex.exec(text)) !== null) {
+    const idx = match.index
     if (idx - lastClusterIdx > proximityThreshold) {
-      results.push({ excerpt: buildExcerpt(text, idx, q.length), occurrenceIndex: totalCount })
+      results.push({ excerpt: buildExcerpt(text, idx, query.length), occurrenceIndex: totalCount })
       lastClusterIdx = idx
     }
     totalCount++
-    searchFrom = idx + 1
   }
   return results
 }
@@ -159,10 +161,15 @@ async function getOrRenderChapter(downloadUrl: string): Promise<string> {
   if (!upstream.ok) throw new Error(`GitHub returned ${upstream.status}`)
   const markdown = await upstream.text()
   const file = await processor.process(markdown.replace(/\\cr\b/g, '\\\\'))
-  const html = String(file).replace(
-    /<p>(<mjx-container(?:(?!<\/p>)[\s\S])*?<\/mjx-container>)<\/p>/g,
-    '<p class="math-display">$1</p>',
-  )
+  const html = String(file)
+    .replace(
+      /<p>(<mjx-container(?:(?!<\/p>)[\s\S])*?<\/mjx-container>)<\/p>/g,
+      '<p class="math-display">$1</p>',
+    )
+    .replace(
+      /(<mjx-container\b[^>]*\bdisplay="true"[^>]*>[\s\S]*?<\/mjx-container>)/g,
+      '<p class="math-display">$1</p>',
+    )
   cache.set(downloadUrl, { html, cachedAt: Date.now() })
   return html
 }
@@ -217,13 +224,19 @@ router.get('/textbook/render', async (req, res, next) => {
 
     // Render
     const file = await processor.process(normalizedMarkdown)
-    // rehype-mathjax SVG output doesn't emit display="true" on mjx-container,
-    // so we detect display math structurally: a <p> whose entire content is a
-    // single mjx-container (no surrounding text). Mark it for CSS centering.
-    const html = String(file).replace(
-      /<p>(<mjx-container(?:(?!<\/p>)[\s\S])*?<\/mjx-container>)<\/p>/g,
-      '<p class="math-display">$1</p>',
-    )
+    // Mark display math for CSS centering. Two patterns appear in practice:
+    // 1. <p><mjx-container>…</mjx-container></p> — container lacks display="true"
+    // 2. Standalone <mjx-container display="true"> between paragraphs
+    // Both get wrapped in <p class="math-display"> so the same CSS rule applies.
+    const html = String(file)
+      .replace(
+        /<p>(<mjx-container(?:(?!<\/p>)[\s\S])*?<\/mjx-container>)<\/p>/g,
+        '<p class="math-display">$1</p>',
+      )
+      .replace(
+        /(<mjx-container\b[^>]*\bdisplay="true"[^>]*>[\s\S]*?<\/mjx-container>)/g,
+        '<p class="math-display">$1</p>',
+      )
 
     cache.set(url, { html, cachedAt: Date.now() })
     res.json({ html })
@@ -261,7 +274,7 @@ router.get('/textbook/search', async (req, res, next) => {
             for (const { excerpt, occurrenceIndex } of occurrences) {
               results.push({ chapterName: ch.name, downloadUrl: ch.downloadUrl, sectionId: sec.id, sectionTitle: sec.title, excerpt, occurrenceIndex })
             }
-          } else if (sec.title.toLowerCase().includes(qLower)) {
+          } else if (wholeWordRegex(q).test(sec.title)) {
             const preview = sec.text.slice(0, 220)
             results.push({ chapterName: ch.name, downloadUrl: ch.downloadUrl, sectionId: sec.id, sectionTitle: sec.title, excerpt: preview + (sec.text.length > 220 ? '…' : ''), occurrenceIndex: 0 })
           }

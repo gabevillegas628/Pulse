@@ -91,6 +91,10 @@
   hyphens: auto;
 }
 
+.textbook-prose h1 {
+  text-align: left;
+}
+
 /* Figure captions: italic paragraph immediately after an image */
 .textbook-prose img + em,
 .textbook-prose p > img + em,
@@ -114,6 +118,7 @@
   display: inline-block !important;
   vertical-align: middle;
 }
+
 
 /* MathJax display math — rehype-mathjax SVG output never emits display="true",
    so the backend marks <p> elements that contain only a math container. */

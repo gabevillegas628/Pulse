@@ -53,8 +53,12 @@ function useDebounce<T>(value: T, delay: number): T {
   return debounced
 }
 
+function wordBoundaryRegex(q: string, flags = 'gi') {
+  return new RegExp(`\\b${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, flags)
+}
+
 function HighlightedExcerpt({ text, query }: { text: string; query: string }) {
-  const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'))
+  const parts = text.split(new RegExp(`(\\b${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b)`, 'gi'))
   return (
     <span>
       {parts.map((part, i) =>
@@ -115,7 +119,21 @@ function ChapterSidebar({
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const debouncedQuery = useDebounce(searchQuery, 300)
+  const [collapsedChapters, setCollapsedChapters] = useState<Set<string>>(new Set())
+  const [activeResultKey, setActiveResultKey] = useState<string | null>(null)
   const panelRef = useRef<HTMLElement>(null)
+
+  function toggleChapter(chapterName: string) {
+    setCollapsedChapters(prev => {
+      const next = new Set(prev)
+      next.has(chapterName) ? next.delete(chapterName) : next.add(chapterName)
+      return next
+    })
+  }
+
+  function resultKey(result: SearchResult) {
+    return `${result.chapterName}-${result.sectionId}-${result.occurrenceIndex}`
+  }
 
   useEffect(() => {
     if (collapsed) return
@@ -141,6 +159,18 @@ function ChapterSidebar({
   }
 
   const showResults = debouncedQuery.length >= 2
+
+  const groupedResults = (() => {
+    if (!searchResults) return []
+    const sorted = [...searchResults].sort((a, b) => chapterSortKey(a.chapterName) - chapterSortKey(b.chapterName))
+    return Array.from(
+      sorted.reduce((acc, r) => {
+        if (!acc.has(r.chapterName)) acc.set(r.chapterName, [])
+        acc.get(r.chapterName)!.push(r)
+        return acc
+      }, new Map<string, SearchResult[]>()).entries()
+    )
+  })()
 
   return (
     <>
@@ -228,17 +258,37 @@ function ChapterSidebar({
               ) : !searchResults || searchResults.length === 0 ? (
                 <p className="px-4 py-3 text-xs text-muted">No results for "{debouncedQuery}"</p>
               ) : (
-                searchResults.map((result, i) => (
-                  <button
-                    key={`${result.chapterName}-${result.sectionId}-${i}`}
-                    onClick={() => handleSearchResultClick(result)}
-                    className="w-full text-left px-4 py-2.5 hover:bg-surface-2 transition-colors border-b border-hairline last:border-0"
-                  >
-                    <p className="text-xs font-semibold text-signal truncate">{filenameToTitle(result.chapterName, chapterTitles)}</p>
-                    <p className="text-xs text-muted mt-0.5 truncate"><span className="mr-0.5">↳</span>{result.sectionTitle}</p>
-                    <p className="text-xs text-ink-2 mt-1 line-clamp-3 leading-relaxed"><HighlightedExcerpt text={result.excerpt} query={debouncedQuery} /></p>
-                  </button>
-                ))
+                groupedResults.map(([chapterName, results]) => {
+                  const collapsed = collapsedChapters.has(chapterName)
+                  return (
+                    <div key={chapterName}>
+                      <button
+                        onClick={() => toggleChapter(chapterName)}
+                        className="w-full text-left px-4 py-2 flex items-center justify-between gap-2 bg-surface-2 border-b border-hairline hover:bg-surface-3 transition-colors"
+                      >
+                        <span className="text-xs font-semibold text-ink truncate">{filenameToTitle(chapterName, chapterTitles)}</span>
+                        <span className="flex items-center gap-1.5 shrink-0">
+                          <span className="text-[10px] text-muted tabular-nums font-mono">{results.length}</span>
+                          <ChevronRight size={11} className={`text-muted transition-transform duration-150 ${collapsed ? '' : 'rotate-90'}`} />
+                        </span>
+                      </button>
+                      {!collapsed && results.map((result) => {
+                        const key = resultKey(result)
+                        const isActive = key === activeResultKey
+                        return (
+                          <button
+                            key={key}
+                            onClick={() => { setActiveResultKey(key); handleSearchResultClick(result) }}
+                            className={`w-full text-left px-4 py-2.5 transition-colors border-b border-hairline last:border-0 ${isActive ? 'bg-signal-soft' : 'hover:bg-surface-2'}`}
+                          >
+                            <p className={`text-xs truncate ${isActive ? 'text-signal' : 'text-muted'}`}><span className="mr-0.5">↳</span>{result.sectionTitle}</p>
+                            <p className="text-xs text-ink-2 mt-1 line-clamp-3 leading-relaxed"><HighlightedExcerpt text={result.excerpt} query={debouncedQuery} /></p>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )
+                })
               )
             ) : (
               chapters.map((ch) => {
@@ -395,11 +445,8 @@ function ChapterContent({
             ancestor = ancestor.parentElement
           }
           if (inMath) continue
-          const textLower = (node.textContent ?? '').toLowerCase()
-          let offset = 0
-          while (true) {
-            const idx = textLower.indexOf(q, offset)
-            if (idx === -1) break
+          for (const _ of (node.textContent ?? '').matchAll(wordBoundaryRegex(q))) {
+            void _
             if (matchCount === scrollToOccurrence) {
               let el: Element | null = node.parentElement
               while (el && getComputedStyle(el).display.startsWith('inline')) el = el.parentElement
@@ -407,7 +454,6 @@ function ChapterContent({
               break outer
             }
             matchCount++
-            offset = idx + 1
           }
         }
       }
@@ -437,17 +483,11 @@ function ChapterContent({
       }
       if (inMath) continue
 
-      const text = node.textContent ?? ''
-      const textLower = text.toLowerCase()
-      let offset = 0
-      while (true) {
-        const idx = textLower.indexOf(q, offset)
-        if (idx === -1) break
+      for (const match of (node.textContent ?? '').matchAll(wordBoundaryRegex(q))) {
         const range = new Range()
-        range.setStart(node, idx)
-        range.setEnd(node, idx + q.length)
+        range.setStart(node, match.index!)
+        range.setEnd(node, match.index! + match[0].length)
         ranges.push(range)
-        offset = idx + 1
       }
     }
 
