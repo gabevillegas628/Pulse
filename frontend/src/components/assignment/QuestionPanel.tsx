@@ -8,7 +8,7 @@ import { SessionStatus } from 'shared'
 import GradingControls from './GradingControls'
 import ResponseList from './ResponseList'
 import { questionPreview } from './helpers'
-import type { QWithGroup } from './types'
+import type { QWithGroup, GradeMutationType } from './types'
 
 interface Props {
   q: QWithGroup
@@ -18,9 +18,10 @@ interface Props {
   onConverted: (newGroupId: string) => void
   onDeleted: () => void
   gradeReasons: Record<string, string>
+  gradeResult: Record<string, { failedCount: number }>
   rubricDraft: Record<string, string>
   setRubricDraft: React.Dispatch<React.SetStateAction<Record<string, string>>>
-  gradeMutation: ReturnType<typeof useMutation<{ id: string; studentId: string; aiScore: number; reason: string }[], unknown, string>>
+  gradeMutation: GradeMutationType
   setCorrectAnswerMutation: ReturnType<typeof useMutation<unknown, unknown, { questionId: string; correctAnswer: string | null }>>
   overrideScoreMutation: ReturnType<typeof useMutation<unknown, unknown, { questionId: string; responseId: string; aiScore: number }>>
   summarizeMutation: ReturnType<typeof useMutation<SummaryCategory[], unknown, string>>
@@ -32,7 +33,7 @@ interface Props {
 
 export default function QuestionPanel({
   q, globalIdx, assignmentId, sessionStatus, onConverted, onDeleted,
-  gradeReasons, rubricDraft, setRubricDraft,
+  gradeReasons, gradeResult, rubricDraft, setRubricDraft,
   gradeMutation, setCorrectAnswerMutation, overrideScoreMutation,
   summarizeMutation, summary, summaryQuestionId, setSummary, setSummaryQuestionId,
 }: Props) {
@@ -84,6 +85,7 @@ export default function QuestionPanel({
       {isAnswerKeyEditable && (
         <GradingControls
           q={q} rubricDraft={rubricDraft} setRubricDraft={setRubricDraft}
+          gradeResult={gradeResult}
           gradeMutation={gradeMutation} setCorrectAnswerMutation={setCorrectAnswerMutation}
           summarizeMutation={summarizeMutation} summary={summary}
           summaryQuestionId={summaryQuestionId} setSummary={setSummary} setSummaryQuestionId={setSummaryQuestionId}

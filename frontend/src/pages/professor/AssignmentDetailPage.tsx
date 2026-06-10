@@ -138,6 +138,7 @@ export default function AssignmentDetailPage() {
   const [summary, setSummary] = useState<SummaryCategory[] | null>(null)
   const [summaryQuestionId, setSummaryQuestionId] = useState<string | null>(null)
   const [gradeReasons, setGradeReasons] = useState<Record<string, string>>({})
+  const [gradeResult, setGradeResult] = useState<Record<string, { failedCount: number }>>({})
   const [rubricDraft, setRubricDraft] = useState<Record<string, string>>({})
 
   const [editingDeadline, setEditingDeadline] = useState(false)
@@ -170,13 +171,17 @@ export default function AssignmentDetailPage() {
   })
 
   const gradeMutation = useMutation({
-    mutationFn: (questionId: string) =>
-      api.post(`/assignments/${assignmentId}/questions/${questionId}/grade`)
-        .then((r) => r.data.data.grades as { id: string; studentId: string; aiScore: number; reason: string }[]),
-    onSuccess: (grades, questionId) => {
+    mutationFn: ({ questionId, mode }: { questionId: string; mode: 'all' | 'ungraded' }) =>
+      api.post(`/assignments/${assignmentId}/questions/${questionId}/grade`, { mode })
+        .then((r) => r.data.data as { grades: { id: string; studentId: string; aiScore: number; reason: string }[]; failedCount: number }),
+    onMutate: ({ questionId }) => {
+      setGradeResult((prev) => { const next = { ...prev }; delete next[questionId]; return next })
+    },
+    onSuccess: ({ grades, failedCount }, { questionId }) => {
       const reasons: Record<string, string> = {}
       grades.forEach((g) => { reasons[g.id] = g.reason })
       setGradeReasons((prev) => ({ ...prev, ...reasons }))
+      setGradeResult((prev) => ({ ...prev, [questionId]: { failedCount } }))
       qc.setQueryData<SessionDetail>(['assignment', assignmentId], (prev) => {
         if (!prev) return prev
         return {
@@ -378,7 +383,7 @@ export default function AssignmentDetailPage() {
   }
 
   const sharedGradingProps = {
-    gradeReasons, rubricDraft, setRubricDraft,
+    gradeReasons, gradeResult, rubricDraft, setRubricDraft,
     gradeMutation, setCorrectAnswerMutation, overrideScoreMutation,
     summarizeMutation, summary, summaryQuestionId, setSummary, setSummaryQuestionId,
   }

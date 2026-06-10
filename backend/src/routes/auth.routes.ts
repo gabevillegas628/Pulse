@@ -2,12 +2,21 @@ import { Router, Request, Response, NextFunction } from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { z } from 'zod'
+import rateLimit from 'express-rate-limit'
 import { prisma } from '../db/index.js'
 import { config } from '../config/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { requireProfessor, requireStudent, ProfessorRequest, StudentRequest } from '../middleware/auth.middleware.js'
 
 const router = Router()
+
+const loginRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many login attempts. Please try again in 15 minutes.' },
+})
 
 const rutgersEmail = z.string().email().refine(
   (v) => v.split('@')[1]?.endsWith('rutgers.edu'),
@@ -63,7 +72,7 @@ router.post('/professor/register', async (req: Request, res: Response, next: Nex
   }
 })
 
-router.post('/professor/login', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/professor/login', loginRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = professorLoginSchema.parse(req.body)
     const professor = await prisma.professor.findUnique({ where: { email: body.email } })
@@ -134,7 +143,7 @@ router.post('/student/register', async (req: Request, res: Response, next: NextF
   }
 })
 
-router.post('/student/login', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/student/login', loginRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = studentLoginSchema.parse(req.body)
     const student = await prisma.student.findFirst({

@@ -12,6 +12,7 @@ export const config = {
   frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:5173',
   isDev: (process.env.NODE_ENV ?? 'development') === 'development',
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? '',
+  githubToken: process.env.GITHUB_TOKEN ?? '',
   professorInviteCode: process.env.PROFESSOR_INVITE_CODE ?? '',
   uploadDir: process.env.UPLOAD_DIR ?? './uploads',
 }

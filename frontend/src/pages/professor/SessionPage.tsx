@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from '@/api/client'
+import { api, getProfessorToken } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
@@ -271,30 +271,14 @@ export default function SessionPage() {
   })
 
   const [gradeReasons, setGradeReasons] = useState<Record<string, string>>({})
+  const [gradingState, setGradingState] = useState<Record<string, { graded: number; total: number }>>({})
+  const [gradeResult, setGradeResult] = useState<Record<string, { failedCount: number }>>({})
 
   const gradeMutation = useMutation({
-    mutationFn: (questionId: string) =>
-      api.post(`/sessions/${sessionId}/questions/${questionId}/grade`).then((r) => r.data.data.grades as { id: string; studentId: string; aiScore: number; reason: string }[]),
-    onSuccess: (grades, questionId) => {
-      const reasons: Record<string, string> = {}
-      grades.forEach((g) => { reasons[g.id] = g.reason })
-      setGradeReasons((prev) => ({ ...prev, ...reasons }))
-      qc.setQueryData<SessionDetail>(['session', sessionId], (prev) => {
-        if (!prev) return prev
-        return {
-          ...prev,
-          questions: prev.questions.map((q) => {
-            if (q.id !== questionId) return q
-            return {
-              ...q,
-              responses: q.responses.map((r) => {
-                const g = grades.find((g) => g.id === r.id)
-                return g ? { ...r, aiScore: g.aiScore } : r
-              }),
-            }
-          }),
-        }
-      })
+    mutationFn: ({ questionId, mode }: { questionId: string; mode: 'all' | 'ungraded' }) =>
+      api.post(`/sessions/${sessionId}/questions/${questionId}/grade`, { mode }),
+    onMutate: ({ questionId }) => {
+      setGradeResult((prev) => { const next = { ...prev }; delete next[questionId]; return next })
     },
   })
 
@@ -419,7 +403,7 @@ export default function SessionPage() {
 
   useEffect(() => {
     if (!sessionId) return
-    const socket = io({ path: '/socket.io' })
+    const socket = io({ path: '/socket.io', auth: { token: getProfessorToken() } })
     socket.emit('join_session', sessionId)
 
     socket.on('new_response', (payload: { student: ResponseWithStudent['student']; response: ResponseWithStudent; questionId: string; sessionId: string }) => {
@@ -443,6 +427,38 @@ export default function SessionPage() {
           }),
         }
       })
+    })
+
+    socket.on('grade_progress', ({ questionId, graded, total, batchGrades }: { questionId: string; graded: number; total: number; batchGrades: { id: string; studentId: string; aiScore: number; reason: string }[] }) => {
+      setGradingState((prev) => ({ ...prev, [questionId]: { graded, total } }))
+      if (batchGrades.length > 0) {
+        setGradeReasons((prev) => {
+          const updates: Record<string, string> = {}
+          batchGrades.forEach((g) => { updates[g.id] = g.reason })
+          return { ...prev, ...updates }
+        })
+        qc.setQueryData<SessionDetail>(['session', sessionId], (prev) => {
+          if (!prev) return prev
+          return {
+            ...prev,
+            questions: prev.questions.map((q) => {
+              if (q.id !== questionId) return q
+              return {
+                ...q,
+                responses: q.responses.map((r) => {
+                  const g = batchGrades.find((g) => g.id === r.id)
+                  return g ? { ...r, aiScore: g.aiScore } : r
+                }),
+              }
+            }),
+          }
+        })
+      }
+    })
+
+    socket.on('grade_complete', ({ questionId, failedCount }: { questionId: string; failedCount: number }) => {
+      setGradingState((prev) => { const next = { ...prev }; delete next[questionId]; return next })
+      setGradeResult((prev) => ({ ...prev, [questionId]: { failedCount } }))
     })
 
     socket.on('run_status', ({ runId, status, sectionId }: { runId: string; status: SessionStatus; sectionId: string | null }) => {
@@ -857,22 +873,68 @@ export default function SessionPage() {
           {/* AI summary + grade buttons for free text */}
           {activeQuestion.type === 'FREE_TEXT' && activeQuestion.responses.length > 0 && (
             <div className="mb-5">
-              {(hasBeenRun || data.status === SessionStatus.ARCHIVED) && (
-                <button
-                  onClick={() => {
-                    const alreadyGraded = activeQuestion.responses.filter(r => r.aiScore !== null).length
-                    if (alreadyGraded > 0 && !window.confirm(
-                      `${alreadyGraded} response${alreadyGraded !== 1 ? 's' : ''} already have AI scores (including any manual edits). Re-grading will overwrite them. Continue?`
-                    )) return
-                    gradeMutation.mutate(activeQuestion.id)
-                  }}
-                  disabled={gradeMutation.isPending}
-                  className="flex items-center gap-1.5 text-sm text-good border border-good/20 px-3 py-2 rounded-sm hover:bg-good-soft disabled:opacity-50 mb-2 transition-colors"
-                >
-                  <GraduationCap size={14} />
-                  {gradeMutation.isPending ? 'Grading…' : 'Grade with AI'}
-                </button>
-              )}
+              {(hasBeenRun || data.status === SessionStatus.ARCHIVED) && (() => {
+                const qid = activeQuestion.id
+                const isGrading = !!gradingState[qid]
+                const ungradedCount = activeQuestion.responses.filter((r) => r.aiScore === null).length
+                const result = gradeResult[qid]
+                return (
+                  <div className="mb-2 space-y-2">
+                    {isGrading ? (
+                      <div className="flex items-center gap-3 py-1">
+                        <div className="flex-1 h-1.5 rounded-full bg-surface-2 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-good transition-all duration-300"
+                            style={{ width: `${Math.round((gradingState[qid].graded / gradingState[qid].total) * 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-xs text-muted font-mono shrink-0">
+                          {gradingState[qid].graded} / {gradingState[qid].total}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          onClick={() => {
+                            const alreadyGraded = activeQuestion.responses.filter((r) => r.aiScore !== null).length
+                            if (alreadyGraded > 0 && !window.confirm(
+                              `${alreadyGraded} response${alreadyGraded !== 1 ? 's' : ''} already have AI scores (including any manual edits). Re-grading will overwrite them. Continue?`
+                            )) return
+                            gradeMutation.mutate({ questionId: qid, mode: 'all' })
+                          }}
+                          disabled={gradeMutation.isPending}
+                          className="flex items-center gap-1.5 text-sm text-good border border-good/20 px-3 py-2 rounded-sm hover:bg-good-soft disabled:opacity-50 transition-colors"
+                        >
+                          <GraduationCap size={14} /> Grade all with AI
+                        </button>
+                        {ungradedCount > 0 && (ungradedCount < activeQuestion.responses.length || !!result) && (
+                          <button
+                            onClick={() => gradeMutation.mutate({ questionId: qid, mode: 'ungraded' })}
+                            disabled={gradeMutation.isPending}
+                            className="flex items-center gap-1.5 text-sm text-ink-2 border border-hairline px-3 py-2 rounded-sm hover:bg-surface-2 disabled:opacity-50 transition-colors"
+                          >
+                            <GraduationCap size={14} /> Grade ungraded ({ungradedCount})
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {result && !isGrading && (
+                      result.failedCount > 0 ? (
+                        <p className="text-xs text-warn bg-warn-soft border border-warn/20 rounded-sm px-3 py-2">
+                          Graded {activeQuestion.responses.length - result.failedCount} of {activeQuestion.responses.length} — {result.failedCount} failed. Use &ldquo;Grade ungraded&rdquo; to retry.
+                        </p>
+                      ) : (
+                        <p className="text-xs text-good bg-good-soft border border-good/20 rounded-sm px-3 py-2">
+                          All {activeQuestion.responses.length} responses graded.
+                        </p>
+                      )
+                    )}
+                    {gradeMutation.isError && (
+                      <p className="text-xs text-red-500">{(gradeMutation.error as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Failed to start grading.'}</p>
+                    )}
+                  </div>
+                )
+              })()}
               {summaryQuestionId !== activeQuestion.id || !summary ? (
                 <button
                   onClick={() => {
@@ -921,9 +983,6 @@ export default function SessionPage() {
                 <p className="text-xs text-red-500 mt-2">Failed to summarize — try again.</p>
               )}
             </div>
-          )}
-          {gradeMutation.isError && (
-            <p className="text-xs text-red-500 mb-3">AI grading failed — try again.</p>
           )}
 
           {/* Response list */}

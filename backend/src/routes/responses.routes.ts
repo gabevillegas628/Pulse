@@ -273,7 +273,7 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
       // Auto-enroll
       await upsertEnrollment(student.id, sess.classId, null)
 
-      getIo().to(sess.id).emit('new_response', {
+      getIo().to(`${sess.id}:professor`).emit('new_response', {
         student: { id: student.id, netId: student.netId },
         response,
         questionId,

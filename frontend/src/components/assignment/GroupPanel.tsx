@@ -14,13 +14,13 @@ import { SessionStatus } from 'shared'
 import { apiError } from '@/lib/errors'
 import GradingControls from './GradingControls'
 import ResponseList from './ResponseList'
-import type { QWithGroup } from './types'
+import type { QWithGroup, GradeMutationType } from './types'
 
 // ─── PartCard (only used inside GroupPanel) ───────────────────────────────────
 
 function PartCard({
   q, partIdx, assignmentId, isDraft, isGradable, onDeleted,
-  gradeReasons, rubricDraft, setRubricDraft,
+  gradeReasons, gradeResult, rubricDraft, setRubricDraft,
   gradeMutation, setCorrectAnswerMutation, overrideScoreMutation,
   summarizeMutation, summary, summaryQuestionId, setSummary, setSummaryQuestionId,
 }: {
@@ -31,9 +31,10 @@ function PartCard({
   isGradable: boolean
   onDeleted: () => void
   gradeReasons: Record<string, string>
+  gradeResult: Record<string, { failedCount: number }>
   rubricDraft: Record<string, string>
   setRubricDraft: React.Dispatch<React.SetStateAction<Record<string, string>>>
-  gradeMutation: ReturnType<typeof useMutation<{ id: string; studentId: string; aiScore: number; reason: string }[], unknown, string>>
+  gradeMutation: GradeMutationType
   setCorrectAnswerMutation: ReturnType<typeof useMutation<unknown, unknown, { questionId: string; correctAnswer: string | null }>>
   overrideScoreMutation: ReturnType<typeof useMutation<unknown, unknown, { questionId: string; responseId: string; aiScore: number }>>
   summarizeMutation: ReturnType<typeof useMutation<SummaryCategory[], unknown, string>>
@@ -100,6 +101,7 @@ function PartCard({
       {isAnswerKeyEditable && (
         <GradingControls
           q={q} rubricDraft={rubricDraft} setRubricDraft={setRubricDraft}
+          gradeResult={gradeResult}
           gradeMutation={gradeMutation} setCorrectAnswerMutation={setCorrectAnswerMutation}
           summarizeMutation={summarizeMutation} summary={summary}
           summaryQuestionId={summaryQuestionId} setSummary={setSummary} setSummaryQuestionId={setSummaryQuestionId}
@@ -119,9 +121,10 @@ interface Props {
   sessionStatus: SessionStatus
   onDeleted: () => void
   gradeReasons: Record<string, string>
+  gradeResult: Record<string, { failedCount: number }>
   rubricDraft: Record<string, string>
   setRubricDraft: React.Dispatch<React.SetStateAction<Record<string, string>>>
-  gradeMutation: ReturnType<typeof useMutation<{ id: string; studentId: string; aiScore: number; reason: string }[], unknown, string>>
+  gradeMutation: GradeMutationType
   setCorrectAnswerMutation: ReturnType<typeof useMutation<unknown, unknown, { questionId: string; correctAnswer: string | null }>>
   overrideScoreMutation: ReturnType<typeof useMutation<unknown, unknown, { questionId: string; responseId: string; aiScore: number }>>
   summarizeMutation: ReturnType<typeof useMutation<SummaryCategory[], unknown, string>>
@@ -133,7 +136,7 @@ interface Props {
 
 export default function GroupPanel({
   group, questions, assignmentId, sessionStatus, onDeleted,
-  gradeReasons, rubricDraft, setRubricDraft,
+  gradeReasons, gradeResult, rubricDraft, setRubricDraft,
   gradeMutation, setCorrectAnswerMutation, overrideScoreMutation,
   summarizeMutation, summary, summaryQuestionId, setSummary, setSummaryQuestionId,
 }: Props) {
@@ -218,7 +221,7 @@ export default function GroupPanel({
   }
 
   const sharedGradingProps = {
-    gradeReasons, rubricDraft, setRubricDraft,
+    gradeReasons, gradeResult, rubricDraft, setRubricDraft,
     gradeMutation, setCorrectAnswerMutation, overrideScoreMutation,
     summarizeMutation, summary, summaryQuestionId, setSummary, setSummaryQuestionId,
   }

@@ -5,39 +5,43 @@ import { prisma } from '../db/index.js'
 import { config } from '../config/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
+import { getIo } from '../socket.js'
+import { logger } from '../utils/logger.js'
 import { p } from '../utils/params.js'
 
 const anthropic = new Anthropic({ apiKey: config.anthropicApiKey })
+const BATCH_SIZE = 25
 
 const router = Router()
 
-// ─── AI grading helpers ───────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-async function runAiGrading(
-  question: {
-    id: string
-    text: string
-    type: string
-    correctAnswer: string | null
-    responses: Array<{ id: string; studentId: string; responseText: string }>
-  }
-) {
-  const responseList = question.responses.map((r, i) => `[${i}] ${r.responseText}`).join('\n')
-  const n = question.responses.length
-  const rubricLine = question.correctAnswer
-    ? `\nReference answer (what the professor was looking for): "${question.correctAnswer}"\n`
+type GradeResult = { id: string; studentId: string; aiScore: number; reason: string }
+type ResponseRow = { id: string; studentId: string; responseText: string; aiScore?: number | null }
+
+// ─── Core grading helpers ─────────────────────────────────────────────────────
+
+async function gradeBatch(
+  questionText: string,
+  correctAnswer: string | null,
+  responses: ResponseRow[]
+): Promise<GradeResult[]> {
+  const responseList = responses.map((r, i) => `[${i}] ${r.responseText}`).join('\n')
+  const n = responses.length
+  const rubricLine = correctAnswer
+    ? `\nReference answer (what the professor was looking for): "${correctAnswer}"\n`
     : ''
 
   const msg = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 8192,
+    max_tokens: 4096,
     temperature: 0,
     messages: [
       {
         role: 'user',
         content: `You are grading student responses to a classroom question for participation credit. Judge whether each student engaged with the right concept — not whether they stated it perfectly.
 ${rubricLine}
-Question: "${question.text}"
+Question: "${questionText}"
 
 Student responses (${n} total, indexed 0 to ${n - 1}):
 ${responseList}
@@ -62,7 +66,7 @@ Return a JSON array only, no other text:
   const gradeMap = new Map(parsed.map((g) => [g.index, g]))
 
   return Promise.all(
-    question.responses.map(async (resp, index) => {
+    responses.map(async (resp, index) => {
       const g = gradeMap.get(index)
       const score = g?.score ?? 'full_credit'
       const reason = g?.reason ?? 'Not individually graded'
@@ -72,6 +76,58 @@ Return a JSON array only, no other text:
     })
   )
 }
+
+// Async batched grading — emits grade_progress and grade_complete via socket
+async function runAiGradingAsync(
+  questionId: string,
+  questionText: string,
+  correctAnswer: string | null,
+  responses: ResponseRow[],
+  socketRoom: string
+) {
+  const total = responses.length
+  let processed = 0
+  let failedCount = 0
+
+  for (let i = 0; i < total; i += BATCH_SIZE) {
+    const batch = responses.slice(i, i + BATCH_SIZE)
+    try {
+      const batchGrades = await gradeBatch(questionText, correctAnswer, batch)
+      processed += batch.length
+      getIo().to(socketRoom).emit('grade_progress', { questionId, graded: processed, total, batchGrades })
+    } catch (err) {
+      failedCount += batch.length
+      processed += batch.length
+      logger.error('Grade batch failed', { questionId, batchStart: i, error: err instanceof Error ? err.message : String(err) })
+      getIo().to(socketRoom).emit('grade_progress', { questionId, graded: processed, total, batchGrades: [] })
+    }
+  }
+
+  getIo().to(socketRoom).emit('grade_complete', { questionId, failedCount })
+}
+
+// Sync batched grading — returns all results at once (used for assignments)
+async function runAiGradingSync(
+  questionText: string,
+  correctAnswer: string | null,
+  responses: ResponseRow[]
+): Promise<{ grades: GradeResult[]; failedCount: number }> {
+  const grades: GradeResult[] = []
+  let failedCount = 0
+
+  for (let i = 0; i < responses.length; i += BATCH_SIZE) {
+    const batch = responses.slice(i, i + BATCH_SIZE)
+    try {
+      grades.push(...await gradeBatch(questionText, correctAnswer, batch))
+    } catch {
+      failedCount += batch.length
+    }
+  }
+
+  return { grades, failedCount }
+}
+
+// ─── AI summarize ─────────────────────────────────────────────────────────────
 
 async function runAiSummarize(question: { text: string; responses: Array<{ responseText: string }> }) {
   const responseTexts = question.responses.map((r, i) => `${i + 1}. ${r.responseText}`).join('\n')
@@ -112,12 +168,15 @@ Only return the JSON array, no other text.`,
   return categories
 }
 
-// ─── Session question grading routes ─────────────────────────────────────────
+// ─── Session grading routes ───────────────────────────────────────────────────
 
-// AI-grade all responses for a FREE_TEXT question in a session
+// Async: responds 202 immediately, grades in background via socket progress events
 router.post('/sessions/:sessionId/questions/:questionId/grade', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
+    const { mode } = z.object({
+      mode: z.enum(['all', 'ungraded']).default('all'),
+    }).parse(req.body)
 
     const question = await prisma.question.findFirst({
       where: {
@@ -132,13 +191,22 @@ router.post('/sessions/:sessionId/questions/:questionId/grade', requireProfessor
     })
     if (!question) throw new AppError('Question not found', 404)
     if (question.type !== 'FREE_TEXT') throw new AppError('AI grading only applies to FREE_TEXT questions', 400)
-    // For IN_CLASS sessions, require at least one closed run before grading
     if (question.session!.runs.length === 0)
       throw new AppError('Session must have at least one closed run before grading', 400)
-    if (question.responses.length === 0) throw new AppError('No responses to grade', 400)
 
-    const grades = await runAiGrading(question)
-    res.json({ success: true, data: { grades } })
+    const responses = mode === 'ungraded'
+      ? question.responses.filter((r) => r.aiScore === null)
+      : question.responses
+
+    if (responses.length === 0) throw new AppError('No responses to grade', 400)
+
+    const socketRoom = `${question.sessionId}:professor`
+    res.status(202).json({ success: true, data: { total: responses.length } })
+
+    runAiGradingAsync(question.id, question.text, question.correctAnswer, responses, socketRoom)
+      .catch(() => {
+        getIo().to(socketRoom).emit('grade_complete', { questionId: question.id, failedCount: responses.length })
+      })
   } catch (err) {
     next(err)
   }
@@ -194,9 +262,9 @@ router.post('/sessions/:sessionId/questions/:questionId/summarize', requireProfe
   }
 })
 
-// ─── Assignment question grading routes ───────────────────────────────────────
+// ─── Assignment grading routes ─────────────────────────────────────────────────
 
-// AI-grade all responses for a FREE_TEXT question in an assignment
+// Sync batched grading for assignments (no socket connection on that page)
 router.post('/assignments/:assignmentId/questions/:questionId/grade', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
@@ -218,8 +286,8 @@ router.post('/assignments/:assignmentId/questions/:questionId/grade', requirePro
       throw new AppError('Assignment must be closed before grading', 400)
     if (question.responses.length === 0) throw new AppError('No responses to grade', 400)
 
-    const grades = await runAiGrading(question)
-    res.json({ success: true, data: { grades } })
+    const { grades, failedCount } = await runAiGradingSync(question.text, question.correctAnswer, question.responses)
+    res.json({ success: true, data: { grades, failedCount } })
   } catch (err) {
     next(err)
   }

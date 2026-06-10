@@ -17,6 +17,10 @@ import rehypeStringify from 'rehype-stringify'
 
 const router = Router()
 
+function githubHeaders(): HeadersInit {
+  return config.githubToken ? { Authorization: `Bearer ${config.githubToken}` } : {}
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface GitHubFile {
@@ -113,7 +117,7 @@ async function getOrRenderChapter(downloadUrl: string): Promise<string> {
   const cached = cache.get(downloadUrl)
   if (cached && Date.now() - cached.cachedAt < CACHE_TTL_MS) return cached.html
 
-  const upstream = await fetch(downloadUrl)
+  const upstream = await fetch(downloadUrl, { headers: githubHeaders() })
   if (!upstream.ok) throw new Error(`GitHub returned ${upstream.status}`)
   const markdown = await upstream.text()
   const file = await processor.process(markdown.replace(/\\cr\b/g, '\\\\'))
@@ -162,7 +166,7 @@ router.get('/textbook/render', async (req, res, next) => {
     }
 
     // Fetch markdown from GitHub
-    const upstream = await fetch(url)
+    const upstream = await fetch(url, { headers: githubHeaders() })
     if (!upstream.ok) {
       return void res.status(upstream.status).json({ error: `GitHub returned ${upstream.status}` })
     }
@@ -200,7 +204,7 @@ router.get('/textbook/search', async (req, res, next) => {
 
     const q = query.trim()
     const segment = repoPath ? `/${repoPath}` : ''
-    const listRes = await fetch(`https://api.github.com/repos/${repo}/contents${segment}`)
+    const listRes = await fetch(`https://api.github.com/repos/${repo}/contents${segment}`, { headers: githubHeaders() })
     if (!listRes.ok) return void res.status(listRes.status).json({ error: `GitHub API error ${listRes.status}` })
 
     const files = await listRes.json() as GitHubFile[]

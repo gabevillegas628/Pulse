@@ -1,9 +1,8 @@
 import { useState, useRef } from 'react'
-import { useMutation } from '@tanstack/react-query'
 import { Sparkles } from 'lucide-react'
 import type { SummaryCategory } from 'shared'
 import StructureRenderer from '@/components/StructureRenderer'
-import type { QWithGroup } from './types'
+import type { QWithGroup, GradeMutationType } from './types'
 import { Editor } from 'ketcher-react'
 import { RemoteStructServiceProvider } from 'ketcher-core'
 import type { Ketcher } from 'ketcher-core'
@@ -14,7 +13,8 @@ interface Props {
   q: QWithGroup
   rubricDraft: Record<string, string>
   setRubricDraft: React.Dispatch<React.SetStateAction<Record<string, string>>>
-  gradeMutation: ReturnType<typeof useMutation<{ id: string; studentId: string; aiScore: number; reason: string }[], unknown, string>>
+  gradeResult: Record<string, { failedCount: number }>
+  gradeMutation: GradeMutationType
   setCorrectAnswerMutation: ReturnType<typeof useMutation<unknown, unknown, { questionId: string; correctAnswer: string | null }>>
   summarizeMutation: ReturnType<typeof useMutation<SummaryCategory[], unknown, string>>
   summary: SummaryCategory[] | null
@@ -24,7 +24,7 @@ interface Props {
 }
 
 export default function GradingControls({
-  q, rubricDraft, setRubricDraft, gradeMutation, setCorrectAnswerMutation,
+  q, rubricDraft, setRubricDraft, gradeResult, gradeMutation, setCorrectAnswerMutation,
   summarizeMutation, summary, summaryQuestionId, setSummary, setSummaryQuestionId,
 }: Props) {
   const [editingStructure, setEditingStructure] = useState(false)
@@ -151,29 +151,56 @@ export default function GradingControls({
           </ol>
         </div>
       )}
-      {q.type === 'FREE_TEXT' && (
-        <>
-          <input
-            value={rubricDraft[q.id] ?? q.correctAnswer ?? ''}
-            onChange={(e) => setRubricDraft((prev) => ({ ...prev, [q.id]: e.target.value }))}
-            onBlur={() => {
-              const val = rubricDraft[q.id]
-              if (val !== undefined)
-                setCorrectAnswerMutation.mutate({ questionId: q.id, correctAnswer: val || null })
-            }}
-            placeholder="Reference answer (optional, used by AI grader)"
-            className="text-xs border border-hairline rounded px-2.5 py-1.5 text-ink-2 bg-surface focus:outline-none focus:ring-1 focus:ring-signal w-56"
-          />
-          <button
-            onClick={() => gradeMutation.mutate(q.id)}
-            disabled={gradeMutation.isPending || q.responses.length === 0}
-            className="flex items-center gap-1.5 text-xs text-white bg-signal hover:bg-[var(--signal-bright)] px-3 py-1.5 rounded-sm disabled:opacity-50"
-          >
-            <Sparkles size={12} />
-            {gradeMutation.isPending ? 'Grading…' : 'AI grade all'}
-          </button>
-        </>
-      )}
+      {q.type === 'FREE_TEXT' && (() => {
+        const ungradedCount = q.responses.filter((r) => r.aiScore === null).length
+        const isThisGrading = gradeMutation.isPending && gradeMutation.variables?.questionId === q.id
+        const result = gradeResult[q.id]
+        return (
+          <>
+            <input
+              value={rubricDraft[q.id] ?? q.correctAnswer ?? ''}
+              onChange={(e) => setRubricDraft((prev) => ({ ...prev, [q.id]: e.target.value }))}
+              onBlur={() => {
+                const val = rubricDraft[q.id]
+                if (val !== undefined)
+                  setCorrectAnswerMutation.mutate({ questionId: q.id, correctAnswer: val || null })
+              }}
+              placeholder="Reference answer (optional, used by AI grader)"
+              className="text-xs border border-hairline rounded px-2.5 py-1.5 text-ink-2 bg-surface focus:outline-none focus:ring-1 focus:ring-signal w-56"
+            />
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => gradeMutation.mutate({ questionId: q.id, mode: 'all' })}
+                  disabled={gradeMutation.isPending || q.responses.length === 0}
+                  className="flex items-center gap-1.5 text-xs text-white bg-signal hover:bg-[var(--signal-bright)] px-3 py-1.5 rounded-sm disabled:opacity-50"
+                >
+                  <Sparkles size={12} />
+                  {isThisGrading ? 'Grading…' : 'AI grade all'}
+                </button>
+                {ungradedCount > 0 && (ungradedCount < q.responses.length || !!result) && (
+                  <button
+                    onClick={() => gradeMutation.mutate({ questionId: q.id, mode: 'ungraded' })}
+                    disabled={gradeMutation.isPending}
+                    className="flex items-center gap-1.5 text-xs text-ink-2 border border-hairline px-3 py-1.5 rounded-sm hover:bg-surface-2 disabled:opacity-50"
+                  >
+                    Grade ungraded ({ungradedCount})
+                  </button>
+                )}
+              </div>
+              {result && !isThisGrading && (
+                result.failedCount > 0 ? (
+                  <p className="text-xs text-warn">
+                    Graded {q.responses.length - result.failedCount} of {q.responses.length} — {result.failedCount} failed. Use &ldquo;Grade ungraded&rdquo; to retry.
+                  </p>
+                ) : (
+                  <p className="text-xs text-good">All {q.responses.length} responses graded.</p>
+                )
+              )}
+            </div>
+          </>
+        )
+      })()}
       {q.type === 'FREE_TEXT' && q.responses.length > 0 && (
         summarizeMutation.isPending && summaryQuestionId === q.id ? (
           <span className="text-xs text-muted">Summarizing…</span>

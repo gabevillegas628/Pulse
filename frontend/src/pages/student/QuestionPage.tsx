@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useForm, Controller } from 'react-hook-form'
-import { api } from '@/api/client'
+import { api, getStudentToken } from '@/api/client'
 import { useStudentAuth } from '@/context/StudentAuthContext'
 import StudentLayout from '@/components/layout/StudentLayout'
 import { io } from 'socket.io-client'
@@ -90,7 +90,7 @@ export default function QuestionPage() {
 
   useEffect(() => {
     if (!question) return
-    const socket = io({ path: '/socket.io' })
+    const socket = io({ path: '/socket.io', auth: { token: getStudentToken() } })
     if (!question.session) return
     socket.emit('join_session', question.session.id)
     socket.on('run_status', ({ status }: { runId: string; status: string; sectionId: string | null }) => {
