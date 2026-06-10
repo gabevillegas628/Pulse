@@ -102,7 +102,9 @@ function scoreResponse(
  * Ungraded questions are excluded from both earned and max.
  *
  * - RATING: always counted (participation by design)
- * - FREE_TEXT: counted after AI grading has run (any response has aiScore)
+ * - Any type: counted if any response has an aiScore (explicit professor action —
+ *   covers "Give all full credit", manual score cycling, and AI grading)
+ * - FREE_TEXT: counted only via the aiScore path above
  * - STRUCTURE: counted when AI-graded or correctAnswer is set
  * - All others: counted when correctAnswer is set
  */
@@ -112,8 +114,9 @@ function isGraded(
   hasAnyAiScore: boolean
 ): boolean {
   if (qType === 'RATING') return true
-  if (qType === 'FREE_TEXT') return hasAnyAiScore
-  if (qType === 'STRUCTURE') return hasAnyAiScore || correctAnswer !== null
+  if (hasAnyAiScore) return true
+  if (qType === 'FREE_TEXT') return false
+  if (qType === 'STRUCTURE') return correctAnswer !== null
   return correctAnswer !== null
 }
 
