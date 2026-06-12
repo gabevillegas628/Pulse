@@ -15,6 +15,7 @@ import ResultsSummary from '@/components/ResultsSummary'
 import LiveMonitorPanel from '@/components/LiveMonitorPanel'
 import { apiError } from '@/lib/errors'
 import { downloadCsv } from '@/lib/downloadCsv'
+import { calcResponseScore, cycleScore } from '@/lib/scoring'
 
 type PipWindow = Window & { documentPictureInPicture?: { requestWindow: (opts: { width: number; height: number }) => Promise<Window> } }
 
@@ -341,29 +342,6 @@ export default function SessionPage() {
     return labels[type] ?? type
   }
 
-  function cycleScore(current: number | null): number {
-    if (current === null || current === 1.0) return 0
-    if (current === 0) return 0.5
-    return 1.0
-  }
-
-  function calcResponseScore(q: { type: string; correctAnswer: string | null; tolerance?: number | null }, r: { responseText: string; aiScore: number | null }): number | null {
-    // aiScore is always the override — takes priority over computed scores
-    if (r.aiScore !== null) return r.aiScore
-    if (q.type === 'MULTIPLE_CHOICE' || q.type === 'YES_NO') {
-      if (!q.correctAnswer) return null
-      return r.responseText === q.correctAnswer ? 1.0 : 0.5
-    }
-    if (q.type === 'FREE_TEXT') return null
-    if (q.type === 'NUMERIC') {
-      if (!q.correctAnswer) return null
-      const correct = parseFloat(q.correctAnswer)
-      const answer = parseFloat(r.responseText)
-      if (isNaN(correct) || isNaN(answer)) return null
-      return Math.abs(answer - correct) <= (q.tolerance ?? 0) ? 1.0 : 0
-    }
-    return null
-  }
 
   // Archive-only status mutation (PATCH /sessions/:id { status: 'ARCHIVED' })
   const statusMutation = useMutation({

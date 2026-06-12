@@ -240,6 +240,7 @@ router.get('/sessions/:id/export', requireProfessor, async (req: Request, res: R
           type: q.type,
           correctAnswer: q.correctAnswer,
           tolerance: q.tolerance,
+          unit: q.unit,
           totalResponseCount: q.responses.filter((r) => runIds.includes(r.runId ?? '')).length,
           sectionResponseCount: sectionResponses.length,
           hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),

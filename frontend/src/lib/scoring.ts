@@ -1,9 +1,17 @@
+import { unit as mathUnit } from 'mathjs'
 import type { ResponseWithStudent } from 'shared'
+
+function parseValueUnit(s: string): [number, string] {
+  const m = s.trim().match(/^([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s*(.*)$/)
+  if (!m) return [NaN, '']
+  return [parseFloat(m[1]), m[2].trim()]
+}
 
 type ScoredQuestion = {
   type: string
   correctAnswer: string | null
   tolerance?: number | null
+  unit?: string | null
 }
 
 type ScoredResponse = {
@@ -23,11 +31,21 @@ export function calcResponseScore(
   if (q.type === 'FREE_TEXT') return r.aiScore
   if (q.type === 'NUMERIC') {
     if (!q.correctAnswer) return null
-    const correct = parseFloat(q.correctAnswer)
-    const student = parseFloat(r.responseText)
-    if (isNaN(student)) return 0
+    const [correctVal, correctUnitStr] = parseValueUnit(q.correctAnswer)
+    const answerKeyUnit = correctUnitStr || q.unit || ''
+    const [studentVal, studentUnitStr] = parseValueUnit(r.responseText)
+    if (isNaN(studentVal)) return 0
     const tol = q.tolerance ?? 0
-    return Math.abs(student - correct) <= tol ? 1.0 : 0.0
+    if (!answerKeyUnit) {
+      return Math.abs(studentVal - correctVal) <= tol ? 1.0 : 0.0
+    }
+    if (!studentUnitStr) return 0
+    try {
+      const converted = mathUnit(studentVal, studentUnitStr).toNumber(answerKeyUnit)
+      return Math.abs(converted - correctVal) <= tol ? 1.0 : 0.0
+    } catch {
+      return 0
+    }
   }
   if (q.type === 'MULTI_SELECT') {
     if (!q.correctAnswer) return null

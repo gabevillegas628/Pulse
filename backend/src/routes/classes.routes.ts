@@ -512,6 +512,7 @@ router.get('/:id/students/:studentId/activity', async (req: Request, res: Respon
             type: q.type,
             correctAnswer: q.correctAnswer,
             tolerance: q.tolerance,
+            unit: q.unit,
             totalResponseCount: q._count.responses,
             sectionResponseCount: relevantRunIds.length > 0 ? q._count.responses : 0,
             hasAnyAiScore: aiGradedQuestionIds.has(q.id),
@@ -550,6 +551,7 @@ router.get('/:id/students/:studentId/activity', async (req: Request, res: Respon
             type: q.type,
             correctAnswer: q.correctAnswer,
             tolerance: q.tolerance,
+            unit: q.unit,
             totalResponseCount: 1,
             hasAnyAiScore: aiGradedQuestionIds.has(q.id),
             studentResponse: q.responses[0] ?? null,
@@ -622,6 +624,7 @@ type GradeQuestion = {
   type: string
   correctAnswer: string | null
   tolerance: number | null
+  unit: string | null
   responses: { studentId: string; responseText: string; aiScore: number | null }[]
 }
 
@@ -700,7 +703,7 @@ router.get('/:id/grades/json', async (req: Request, res: Response, next: NextFun
 
     const participationMax = participationSessions.reduce((sum, s) => {
       return sum + gradeSession('IN_CLASS', s.questions.map((q) => ({
-        id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
+        id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance, unit: q.unit,
         totalResponseCount: q.responses.length,
         hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
         studentResponse: null,
@@ -709,7 +712,7 @@ router.get('/:id/grades/json', async (req: Request, res: Response, next: NextFun
 
     const hwMax = homeworkSessions.reduce((sum, a) => {
       return sum + gradeSession('HOMEWORK', a.questions.map((q) => ({
-        id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
+        id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance, unit: q.unit,
         totalResponseCount: a.questions.length,
         hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
         studentResponse: null,
@@ -736,7 +739,7 @@ router.get('/:id/grades/json', async (req: Request, res: Response, next: NextFun
               .map((r) => r.id)
           )
           const result = gradeSession('IN_CLASS', sess.questions.map((q) => ({
-            id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
+            id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance, unit: q.unit,
             totalResponseCount: q.responses.length,
             sectionResponseCount: relevantRunIds.size > 0 ? q.responses.length : 0,
             hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
@@ -745,7 +748,7 @@ router.get('/:id/grades/json', async (req: Request, res: Response, next: NextFun
           return { sessionId: item.id, earned: result.earned, max: result.max }
         } else {
           const result = gradeSession('HOMEWORK', item.questions.map((q) => ({
-            id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
+            id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance, unit: q.unit,
             totalResponseCount: 1,
             hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
             studentResponse: q.responses.find((r) => r.studentId === student.id) ?? null,
@@ -834,7 +837,7 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
 
     const participationMax = sessions.reduce((sum, s) => {
       return sum + gradeSession('IN_CLASS', s.questions.map((q) => ({
-        id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
+        id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance, unit: q.unit,
         totalResponseCount: q.responses.length,
         hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
         studentResponse: null,
@@ -843,7 +846,7 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
 
     const homeworkMax = assignments.reduce((sum, a) => {
       return sum + gradeSession('HOMEWORK', a.questions.map((q) => ({
-        id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
+        id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance, unit: q.unit,
         totalResponseCount: 1,
         hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
         studentResponse: null,
@@ -873,7 +876,7 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
             .map((r) => r.id)
         )
         return gradeSession('IN_CLASS', sess.questions.map((q) => ({
-          id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
+          id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance, unit: q.unit,
           totalResponseCount: q.responses.length,
           sectionResponseCount: relevantRunIds.size > 0 ? q.responses.length : 0,
           hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
@@ -883,7 +886,7 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
 
       const hwTotals = assignments.map((asgn) =>
         gradeSession('HOMEWORK', asgn.questions.map((q) => ({
-          id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance,
+          id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance, unit: q.unit,
           totalResponseCount: 1,
           hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
           studentResponse: q.responses.find((r) => r.studentId === student.id) ?? null,

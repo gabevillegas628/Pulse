@@ -432,6 +432,7 @@ router.get('/student/classes/:classId/grades', requireStudent, async (req: Reque
         type: q.type,
         correctAnswer: q.correctAnswer,
         tolerance: q.tolerance,
+        unit: q.unit,
         totalResponseCount: q._count.responses,
         sectionResponseCount: relevantRunIds.length > 0 ? undefined : 0, // will be refined below
         hasAnyAiScore: aiGradedSessionQIds.has(q.id),
@@ -486,6 +487,7 @@ router.get('/student/classes/:classId/grades', requireStudent, async (req: Reque
         type: q.type,
         correctAnswer: q.correctAnswer,
         tolerance: q.tolerance,
+        unit: q.unit,
         totalResponseCount: 1, // HOMEWORK: all questions count
         hasAnyAiScore: aiGradedAssignmentQIds.has(q.id),
         studentResponse: q.responses[0] ?? null,
@@ -573,6 +575,7 @@ router.get('/student/sessions/:sessionId/grades', requireStudent, async (req: Re
       type: q.type,
       correctAnswer: q.correctAnswer,
       tolerance: q.tolerance,
+      unit: q.unit,
       totalResponseCount: q._count.responses,
       sectionResponseCount: sectionResponseCounts.get(q.id) ?? 0,
       hasAnyAiScore: aiGradedQuestionIds.has(q.id),
@@ -656,6 +659,7 @@ router.get('/student/assignments/:id/grades', requireStudent, async (req: Reques
       type: q.type,
       correctAnswer: q.correctAnswer,
       tolerance: q.tolerance,
+      unit: q.unit,
       totalResponseCount: 1,
       hasAnyAiScore: aiGradedQIds.has(q.id),
       studentResponse: q.responses[0] ?? null,
@@ -899,7 +903,7 @@ router.get('/student/classes/:classId/assignments', requireStudent, async (req: 
     }
 
     const result: AssignmentRow[] = assignments.map((a) => {
-      const qs = a.questions as Array<{ id: string; type: string; correctAnswer: string | null; tolerance: number | null; responses: Array<{ id: string; responseText: string; aiScore: number | null }> }>
+      const qs = a.questions as Array<{ id: string; type: string; correctAnswer: string | null; tolerance: number | null; unit: string | null; responses: Array<{ id: string; responseText: string; aiScore: number | null }> }>
       const isClosed = a.status === 'CLOSED' || a.status === 'ARCHIVED'
       const submittedCount = qs.filter((q) => q.responses.length > 0).length
       let earnedScore: number | null = null
@@ -910,6 +914,7 @@ router.get('/student/classes/:classId/assignments', requireStudent, async (req: 
           type: q.type,
           correctAnswer: q.correctAnswer,
           tolerance: q.tolerance,
+          unit: q.unit,
           totalResponseCount: 1,
           hasAnyAiScore: aiGradedQIds.has(q.id),
           studentResponse: q.responses[0] ?? null,

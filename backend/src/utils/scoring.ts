@@ -1,3 +1,11 @@
+import { unit as mathUnit } from 'mathjs'
+
+function parseValueUnit(s: string): [number, string] {
+  const m = s.trim().match(/^([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s*(.*)$/)
+  if (!m) return [NaN, '']
+  return [parseFloat(m[1]), m[2].trim()]
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface QuestionGradeInput {
@@ -5,6 +13,7 @@ export interface QuestionGradeInput {
   type: string
   correctAnswer: string | null
   tolerance?: number | null
+  unit?: string | null
   /** Total responses across ALL students — used for the IN_CLASS "was it presented?" check */
   totalResponseCount: number
   /**
@@ -45,7 +54,8 @@ function scoreResponse(
   qType: string,
   correctAnswer: string | null,
   response: { responseText: string; aiScore: number | null } | null,
-  tolerance?: number | null
+  tolerance?: number | null,
+  unit?: string | null
 ): number {
   if (!response) return 0
 
@@ -61,10 +71,20 @@ function scoreResponse(
 
   if (qType === 'NUMERIC') {
     if (!correctAnswer) return 1.0
-    const correct = parseFloat(correctAnswer)
-    const student = parseFloat(response.responseText)
-    if (isNaN(student)) return 0
-    return Math.abs(student - correct) <= (tolerance ?? 0) ? 1.0 : 0.0
+    const [correctVal, correctUnitStr] = parseValueUnit(correctAnswer)
+    const answerKeyUnit = correctUnitStr || unit || ''
+    const [studentVal, studentUnitStr] = parseValueUnit(response.responseText)
+    if (isNaN(studentVal)) return 0
+    if (!answerKeyUnit) {
+      return Math.abs(studentVal - correctVal) <= (tolerance ?? 0) ? 1.0 : 0.0
+    }
+    if (!studentUnitStr) return 0
+    try {
+      const converted = mathUnit(studentVal, studentUnitStr).toNumber(answerKeyUnit)
+      return Math.abs(converted - correctVal) <= (tolerance ?? 0) ? 1.0 : 0.0
+    } catch {
+      return 0
+    }
   }
 
   if (qType === 'MULTI_SELECT') {
@@ -144,7 +164,7 @@ export function gradeSession(
     const wasPresented = sessionType !== 'IN_CLASS' || presentedCount > 0
     const counted = graded && wasPresented
     const score = counted
-      ? scoreResponse(q.type, q.correctAnswer, q.studentResponse, q.tolerance)
+      ? scoreResponse(q.type, q.correctAnswer, q.studentResponse, q.tolerance, q.unit)
       : 0
     return { id: q.id, score, graded, counted }
   })

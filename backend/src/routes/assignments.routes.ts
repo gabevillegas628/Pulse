@@ -189,6 +189,7 @@ router.get('/assignments/:id/export', requireProfessor, async (req: Request, res
         type: q.type,
         correctAnswer: q.correctAnswer,
         tolerance: q.tolerance,
+        unit: q.unit,
         totalResponseCount: 1, // HOMEWORK: all questions count
         hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
         studentResponse: q.responses.find((r) => r.studentId === s.id) ?? null,

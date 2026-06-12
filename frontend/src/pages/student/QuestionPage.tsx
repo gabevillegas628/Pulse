@@ -167,6 +167,12 @@ export default function QuestionPage() {
     q.type === 'ORDERING' ? false :
     q.type === 'MULTI_SELECT' ? selectedOptions.length === 0 :
     q.type === 'STRUCTURE' ? false :
+    q.type === 'NUMERIC' ? (() => {
+      if (!responseValue?.trim()) return true
+      if (!q.unit) return false
+      const m = responseValue.trim().match(/^([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s+(\S.*)$/)
+      return !m
+    })() :
     !responseValue?.trim()
 
   return (
@@ -267,19 +273,27 @@ export default function QuestionPage() {
               <Controller
                 name="response"
                 control={control}
-                render={({ field }) => (
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={field.value ?? ''}
-                      onChange={(e) => field.onChange(e.target.value)}
-                      placeholder="Your answer…"
-                      className="w-48 border border-hairline rounded-[14px] px-3 py-3 text-base font-mono bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
-                    />
-                    {q.unit && <span className="text-sm text-muted">{q.unit}</span>}
-                  </div>
-                )}
+                render={({ field }) => {
+                  const missingUnit = !!q.unit && !!field.value?.trim() &&
+                    !field.value.trim().match(/^([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s+(\S.*)$/)
+                  return (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <input
+                          type="text"
+                          inputMode={q.unit ? 'text' : 'decimal'}
+                          value={field.value ?? ''}
+                          onChange={(e) => field.onChange(e.target.value)}
+                          placeholder={q.unit ? 'e.g. 5000 J, 3.2 mV' : 'Your answer…'}
+                          className={`border border-hairline rounded-[14px] px-3 py-3 text-base font-mono bg-surface focus:outline-none focus:ring-2 focus:ring-signal ${q.unit ? 'w-64' : 'w-48'}`}
+                        />
+                      </div>
+                      {missingUnit && (
+                        <p className="text-xs text-warn">Remember to include units (e.g. 5000 J, 3.2 mV, 10 kJ/mol)</p>
+                      )}
+                    </div>
+                  )
+                }}
               />
             )}
 
