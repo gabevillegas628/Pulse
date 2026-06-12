@@ -128,6 +128,7 @@ router.get('/student/questions/:id', requireStudent, async (req: Request, res: R
             text: question.text,
             type: question.type,
             options: question.options,
+            unit: question.unit,
             order: question.order,
             accessCode: question.accessCode,
             session: {
@@ -173,6 +174,7 @@ router.get('/student/questions/:id', requireStudent, async (req: Request, res: R
             text: question.text,
             type: question.type,
             options: question.options,
+            unit: question.unit,
             order: question.order,
             accessCode: question.accessCode,
             assignment: {
