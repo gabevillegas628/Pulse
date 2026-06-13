@@ -1,3 +1,4 @@
+import { Check } from 'lucide-react'
 import type { QuestionWithResponses } from 'shared'
 
 interface Props {
@@ -5,7 +6,7 @@ interface Props {
 }
 
 export default function ResultsSummary({ question }: Props) {
-  const { type, options, responses } = question
+  const { type, options, responses, correctAnswer } = question
   const total = responses.length
   if (total === 0) return null
 
@@ -21,15 +22,19 @@ export default function ResultsSummary({ question }: Props) {
         {options.map((opt) => {
           const count = counts[opt]
           const pct = total > 0 ? Math.round((count / total) * 100) : 0
+          const isCorrect = correctAnswer != null && opt === correctAnswer
           return (
             <div key={opt}>
               <div className="flex items-center justify-between text-sm mb-1">
-                <span className="text-ink-2 truncate max-w-[70%]">{opt}</span>
+                <span className={`truncate max-w-[70%] flex items-center gap-1 ${isCorrect ? 'text-good font-medium' : 'text-ink-2'}`}>
+                  {isCorrect && <Check size={12} className="shrink-0 text-good" />}
+                  {opt}
+                </span>
                 <span className="text-muted shrink-0 ml-2 font-mono">{count} <span className="text-muted">({pct}%)</span></span>
               </div>
               <div className="h-3 bg-surface-2 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-signal rounded-full transition-all duration-500"
+                  className={`h-full rounded-full transition-all duration-500 ${isCorrect ? 'bg-good' : 'bg-signal'}`}
                   style={{ width: `${(count / max) * 100}%` }}
                 />
               </div>
@@ -81,31 +86,95 @@ export default function ResultsSummary({ question }: Props) {
 
   if (type === 'YES_NO') {
     const yes = responses.filter((r) => r.responseText === 'yes').length
-    const no = responses.filter((r) => r.responseText === 'no').length
+    const no  = responses.filter((r) => r.responseText === 'no').length
     const yesPct = total > 0 ? Math.round((yes / total) * 100) : 0
-    const noPct = total > 0 ? Math.round((no / total) * 100) : 0
+    const noPct  = total > 0 ? Math.round((no  / total) * 100) : 0
+    const yesIsCorrect = correctAnswer === 'Yes'
+    const noIsCorrect  = correctAnswer === 'No'
 
     return (
       <div className="bg-surface border border-hairline rounded-[14px] p-5 mb-5">
         <div className="flex gap-3 mb-3">
           <div className="flex-1 text-center">
-            <p className="text-3xl font-bold text-good font-mono">{yesPct}%</p>
-            <p className="text-sm text-muted mt-0.5">Yes · {yes}</p>
+            <p className={`text-3xl font-bold font-mono ${yesIsCorrect ? 'text-good' : correctAnswer ? 'text-muted' : 'text-good'}`}>
+              {yesPct}%
+            </p>
+            <p className="text-sm text-muted mt-0.5 flex items-center justify-center gap-1">
+              {yesIsCorrect && <Check size={11} className="text-good" />}
+              Yes · {yes}
+            </p>
           </div>
           <div className="flex-1 text-center">
-            <p className="text-3xl font-bold text-muted font-mono">{noPct}%</p>
-            <p className="text-sm text-muted mt-0.5">No · {no}</p>
+            <p className={`text-3xl font-bold font-mono ${noIsCorrect ? 'text-good' : 'text-muted'}`}>
+              {noPct}%
+            </p>
+            <p className="text-sm text-muted mt-0.5 flex items-center justify-center gap-1">
+              {noIsCorrect && <Check size={11} className="text-good" />}
+              No · {no}
+            </p>
           </div>
         </div>
         <div className="flex h-3 rounded-full overflow-hidden bg-surface-2">
           {yesPct > 0 && (
-            <div className="bg-good transition-all duration-500" style={{ width: `${yesPct}%` }} />
+            <div
+              className={`transition-all duration-500 ${yesIsCorrect ? 'bg-good' : 'bg-signal'}`}
+              style={{ width: `${yesPct}%` }}
+            />
           )}
           {noPct > 0 && (
-            <div className="bg-hairline-strong transition-all duration-500" style={{ width: `${noPct}%` }} />
+            <div
+              className={`transition-all duration-500 ${noIsCorrect ? 'bg-good' : 'bg-hairline-strong'}`}
+              style={{ width: `${noPct}%` }}
+            />
           )}
         </div>
         <p className="text-xs text-muted mt-2 font-mono">{total} response{total !== 1 ? 's' : ''}</p>
+      </div>
+    )
+  }
+
+  if (type === 'MULTI_SELECT' && options) {
+    let correctSet: Set<string> = new Set()
+    if (correctAnswer) {
+      try { correctSet = new Set(JSON.parse(correctAnswer) as string[]) } catch { /* ignore */ }
+    }
+
+    const counts = Object.fromEntries(options.map((o) => [o, 0]))
+    for (const r of responses) {
+      try {
+        const arr: string[] = JSON.parse(r.responseText)
+        for (const item of arr) {
+          if (item in counts) counts[item]++
+        }
+      } catch { /* skip malformed */ }
+    }
+    const max = Math.max(...Object.values(counts), 1)
+
+    return (
+      <div className="bg-surface border border-hairline rounded-[14px] p-5 mb-5 space-y-3">
+        {options.map((opt) => {
+          const count = counts[opt]
+          const pct = total > 0 ? Math.round((count / total) * 100) : 0
+          const isCorrect = correctSet.size > 0 && correctSet.has(opt)
+          return (
+            <div key={opt}>
+              <div className="flex items-center justify-between text-sm mb-1">
+                <span className={`truncate max-w-[70%] flex items-center gap-1 ${isCorrect ? 'text-good font-medium' : 'text-ink-2'}`}>
+                  {isCorrect && <Check size={12} className="shrink-0 text-good" />}
+                  {opt}
+                </span>
+                <span className="text-muted shrink-0 ml-2 font-mono">{count} <span className="text-muted">({pct}%)</span></span>
+              </div>
+              <div className="h-3 bg-surface-2 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${isCorrect ? 'bg-good' : 'bg-signal'}`}
+                  style={{ width: `${(count / max) * 100}%` }}
+                />
+              </div>
+            </div>
+          )
+        })}
+        <p className="text-xs text-muted pt-1 font-mono">{total} response{total !== 1 ? 's' : ''}</p>
       </div>
     )
   }
@@ -132,6 +201,85 @@ export default function ResultsSummary({ question }: Props) {
             <p className="text-xs text-muted">avg words</p>
           </div>
         )}
+      </div>
+    )
+  }
+
+  if (type === 'ORDERING') {
+    let correctArr: string[] | null = null
+    if (correctAnswer) {
+      try { correctArr = JSON.parse(correctAnswer) } catch { /* ignore */ }
+    }
+
+    const groupMap = new Map<string, { items: string[]; count: number; isExactMatch: boolean }>()
+    for (const r of responses) {
+      let arr: string[]
+      try { arr = JSON.parse(r.responseText) } catch { continue }
+      const key = JSON.stringify(arr)
+      if (!groupMap.has(key)) {
+        const isExactMatch =
+          correctArr != null &&
+          correctArr.length === arr.length &&
+          correctArr.every((v, i) => v === arr[i])
+        groupMap.set(key, { items: arr, count: 0, isExactMatch })
+      }
+      groupMap.get(key)!.count++
+    }
+
+    const allGroups = [...groupMap.values()]
+    const exactMatches = allGroups.filter((g) => g.isExactMatch).sort((a, b) => b.count - a.count)
+    const others = allGroups.filter((g) => !g.isExactMatch).sort((a, b) => b.count - a.count)
+    const sorted = [...exactMatches, ...others]
+
+    const MAX_ORDERINGS = 6
+    const displayed = sorted.slice(0, MAX_ORDERINGS)
+    const remaining = sorted.slice(MAX_ORDERINGS).reduce((s, g) => s + g.count, 0)
+    const remainingGroups = sorted.length - MAX_ORDERINGS
+
+    return (
+      <div className="bg-surface border border-hairline rounded-[14px] p-5 mb-5 space-y-3">
+        {displayed.map((group, i) => (
+          <div
+            key={i}
+            className={`rounded-sm p-3 border ${group.isExactMatch ? 'border-good/30 bg-good-soft' : 'border-hairline bg-surface-2'}`}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex flex-wrap gap-1 flex-1 min-w-0">
+                {group.items.map((item, idx) => (
+                  <span
+                    key={idx}
+                    className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded border font-mono ${
+                      group.isExactMatch
+                        ? 'bg-good-soft border-good/20 text-good'
+                        : 'bg-surface border-hairline text-ink-2'
+                    }`}
+                  >
+                    <span className="text-muted">{idx + 1}.</span>
+                    {item}
+                  </span>
+                ))}
+              </div>
+              <span
+                className={`shrink-0 text-xs font-mono font-bold px-2 py-0.5 rounded-full ${
+                  group.isExactMatch ? 'bg-good text-white' : 'bg-surface text-ink-2 border border-hairline'
+                }`}
+              >
+                {group.count}
+              </span>
+            </div>
+            {group.isExactMatch && (
+              <p className="text-[10px] text-good mt-1.5 flex items-center gap-0.5">
+                <Check size={10} /> Correct order
+              </p>
+            )}
+          </div>
+        ))}
+        {remaining > 0 && (
+          <p className="text-xs text-muted font-mono pl-1">
+            and {remaining} response{remaining !== 1 ? 's' : ''} in {remainingGroups} more ordering{remainingGroups !== 1 ? 's' : ''}
+          </p>
+        )}
+        <p className="text-xs text-muted pt-1 font-mono">{total} response{total !== 1 ? 's' : ''}</p>
       </div>
     )
   }
