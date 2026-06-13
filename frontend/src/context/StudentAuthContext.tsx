@@ -6,9 +6,12 @@ interface StudentAuthState {
   student: Student | null
   isAuthenticated: boolean
   isLoading: boolean
+  sessionExpired: boolean
   login: (credential: string, password: string) => Promise<void>
   register: (netId: string, email: string, password: string) => Promise<void>
   logout: () => void
+  triggerSessionExpired: () => void
+  clearSessionExpired: () => void
 }
 
 const StudentAuthContext = createContext<StudentAuthState | null>(null)
@@ -16,6 +19,7 @@ const StudentAuthContext = createContext<StudentAuthState | null>(null)
 export function StudentAuthProvider({ children }: { children: ReactNode }) {
   const [student, setStudent] = useState<Student | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [sessionExpired, setSessionExpired] = useState(false)
 
   useEffect(() => {
     const token = getStudentToken()
@@ -30,6 +34,7 @@ export function StudentAuthProvider({ children }: { children: ReactNode }) {
     const r = await api.post('/auth/student/login', { credential, password })
     setStudentToken(r.data.data.token)
     setStudent(r.data.data.student)
+    setSessionExpired(false)
   }
 
   async function register(netId: string, email: string, password: string) {
@@ -41,10 +46,21 @@ export function StudentAuthProvider({ children }: { children: ReactNode }) {
   function logout() {
     setStudentToken(null)
     setStudent(null)
+    setSessionExpired(false)
+  }
+
+  function triggerSessionExpired() {
+    setStudentToken(null)
+    setSessionExpired(true)
+  }
+
+  function clearSessionExpired() {
+    setStudent(null)
+    setSessionExpired(false)
   }
 
   return (
-    <StudentAuthContext.Provider value={{ student, isAuthenticated: !!student, isLoading, login, register, logout }}>
+    <StudentAuthContext.Provider value={{ student, isAuthenticated: !!student, isLoading, sessionExpired, login, register, logout, triggerSessionExpired, clearSessionExpired }}>
       {children}
     </StudentAuthContext.Provider>
   )

@@ -6,9 +6,12 @@ interface ProfessorAuthState {
   professor: Professor | null
   isAuthenticated: boolean
   isLoading: boolean
+  sessionExpired: boolean
   login: (email: string, password: string) => Promise<void>
   register: (name: string, email: string, password: string, inviteCode: string) => Promise<void>
   logout: () => void
+  triggerSessionExpired: () => void
+  clearSessionExpired: () => void
 }
 
 const ProfessorAuthContext = createContext<ProfessorAuthState | null>(null)
@@ -16,6 +19,7 @@ const ProfessorAuthContext = createContext<ProfessorAuthState | null>(null)
 export function ProfessorAuthProvider({ children }: { children: ReactNode }) {
   const [professor, setProfessor] = useState<Professor | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [sessionExpired, setSessionExpired] = useState(false)
 
   useEffect(() => {
     const token = getProfessorToken()
@@ -30,6 +34,7 @@ export function ProfessorAuthProvider({ children }: { children: ReactNode }) {
     const r = await api.post('/auth/professor/login', { email, password })
     setProfessorToken(r.data.data.token)
     setProfessor(r.data.data.professor)
+    setSessionExpired(false)
   }
 
   async function register(name: string, email: string, password: string, inviteCode: string) {
@@ -41,10 +46,21 @@ export function ProfessorAuthProvider({ children }: { children: ReactNode }) {
   function logout() {
     setProfessorToken(null)
     setProfessor(null)
+    setSessionExpired(false)
+  }
+
+  function triggerSessionExpired() {
+    setProfessorToken(null)
+    setSessionExpired(true)
+  }
+
+  function clearSessionExpired() {
+    setProfessor(null)
+    setSessionExpired(false)
   }
 
   return (
-    <ProfessorAuthContext.Provider value={{ professor, isAuthenticated: !!professor, isLoading, login, register, logout }}>
+    <ProfessorAuthContext.Provider value={{ professor, isAuthenticated: !!professor, isLoading, sessionExpired, login, register, logout, triggerSessionExpired, clearSessionExpired }}>
       {children}
     </ProfessorAuthContext.Provider>
   )

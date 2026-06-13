@@ -9,17 +9,23 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+type AuthExpiredHandler = () => void
+let onAuthExpired: AuthExpiredHandler | null = null
+export function setAuthExpiredHandler(handler: AuthExpiredHandler) {
+  onAuthExpired = handler
+}
+
 api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
-      // Clear both tokens and redirect to appropriate login
-      const hasProfToken = !!localStorage.getItem('professor_token')
-      localStorage.removeItem('professor_token')
-      localStorage.removeItem('student_token')
-      const dest = hasProfToken ? '/professor/login' : '/student/login'
-      if (!window.location.pathname.includes('/login')) {
-        window.location.href = dest
+      const isLoginRoute = window.location.pathname === '/login'
+      if (!isLoginRoute && onAuthExpired) {
+        onAuthExpired()
+      } else if (!isLoginRoute) {
+        localStorage.removeItem('professor_token')
+        localStorage.removeItem('student_token')
+        window.location.href = '/login'
       }
     }
     return Promise.reject(err)
