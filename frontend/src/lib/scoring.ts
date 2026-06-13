@@ -24,6 +24,7 @@ export function calcResponseScore(
   q: ScoredQuestion,
   r: ScoredResponse | ResponseWithStudent
 ): number | null {
+  if (r.aiScore !== null && r.aiScore !== undefined) return r.aiScore
   if (q.type === 'MULTIPLE_CHOICE' || q.type === 'YES_NO') {
     if (!q.correctAnswer) return null
     return r.responseText === q.correctAnswer ? 1.0 : 0.5
