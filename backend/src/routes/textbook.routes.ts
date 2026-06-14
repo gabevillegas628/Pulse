@@ -174,6 +174,22 @@ async function getOrRenderChapter(downloadUrl: string): Promise<string> {
   return html
 }
 
+// ─── Image URL rewriting ──────────────────────────────────────────────────────
+
+// Remark renders relative image paths as-is (e.g. "Assets/Ch01/img.png").
+// When the HTML is injected into the frontend, the browser resolves them against
+// the app origin instead of the GitHub raw base URL, so images 404.
+// Rewrite any non-absolute src to an absolute raw.githubusercontent.com URL.
+function rewriteImageUrls(html: string, downloadUrl: string): string {
+  const baseUrl = downloadUrl.slice(0, downloadUrl.lastIndexOf('/') + 1)
+  return html.replace(
+    /(<img\b[^>]*?\bsrc=")(?!https?:\/\/)([^"]*)/g,
+    (_, prefix, src) => {
+      try { return prefix + new URL(src, baseUrl).href } catch { return prefix + src }
+    },
+  )
+}
+
 // ─── Route ────────────────────────────────────────────────────────────────────
 
 router.get('/textbook/render', async (req, res, next) => {
@@ -207,7 +223,7 @@ router.get('/textbook/render', async (req, res, next) => {
     // Serve from cache if fresh
     const cached = cache.get(url)
     if (cached && Date.now() - cached.cachedAt < CACHE_TTL_MS) {
-      return void res.json({ html: cached.html })
+      return void res.json({ html: rewriteImageUrls(cached.html, url) })
     }
 
     // Fetch markdown from GitHub
@@ -239,7 +255,7 @@ router.get('/textbook/render', async (req, res, next) => {
       )
 
     cache.set(url, { html, cachedAt: Date.now() })
-    res.json({ html })
+    res.json({ html: rewriteImageUrls(html, url) })
   } catch (err) {
     next(err)
   }
