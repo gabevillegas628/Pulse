@@ -28,7 +28,7 @@ app.use(helmet({
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-eval'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", 'data:', 'blob:'],
+      imgSrc: ["'self'", 'data:', 'blob:', 'https://raw.githubusercontent.com'],
       fontSrc: ["'self'", 'data:'],
       connectSrc: [
         "'self'",
