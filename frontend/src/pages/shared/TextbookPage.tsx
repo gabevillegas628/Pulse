@@ -673,6 +673,7 @@ export default function TextbookPage({ repo, path, classId, viewCounts }: Textbo
   }
   const [expanded, setExpanded] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [fullscreenSidebarCollapsed, setFullscreenSidebarCollapsed] = useState(false)
   const [contentWidth, setContentWidth] = useState(672)
   const [fontSize, setFontSize] = useState<FontSize>('1rem')
   const isNarrow = useIsNarrow()
@@ -797,8 +798,8 @@ export default function TextbookPage({ repo, path, classId, viewCounts }: Textbo
               onSelect={selectChapter}
               expanded={expanded}
               onToggleExpand={() => setExpanded(false)}
-              collapsed={sidebarCollapsed}
-              onToggleCollapse={() => setSidebarCollapsed(c => !c)}
+              collapsed={fullscreenSidebarCollapsed}
+              onToggleCollapse={() => setFullscreenSidebarCollapsed(c => !c)}
               contentWidth={contentWidth}
               onWidthChange={setContentWidth}
               fontSize={fontSize}

@@ -111,6 +111,7 @@
 .textbook-prose img {
   margin-left: auto;
   margin-right: auto;
+  border-radius: 8px;
 }
 
 /* MathJax inline math — prose resets custom elements to block; force inline */
