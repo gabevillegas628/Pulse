@@ -97,6 +97,7 @@ function ChapterSidebar({
   path,
   onNavigateToResult,
   chapterTitles,
+  contentRootRef,
 }: {
   chapters: Chapter[]
   selectedName: string | null
@@ -115,6 +116,7 @@ function ChapterSidebar({
   path: string
   onNavigateToResult: (chapter: Chapter, sectionId: string, query: string, occurrence: number) => void
   chapterTitles?: Map<string, string>
+  contentRootRef?: React.MutableRefObject<HTMLDivElement | null>
 }) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -318,7 +320,7 @@ function ChapterSidebar({
                         {sections.map((sec) => (
                           <button
                             key={sec.id}
-                            onClick={() => document.getElementById(sec.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                            onClick={() => (contentRootRef?.current ?? document).querySelector(`#${CSS.escape(sec.id)}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
                             className="w-full text-left pl-7 pr-4 py-1 text-xs text-ink-3 hover:text-signal hover:bg-surface-2 transition-colors flex items-center gap-2"
                           >
                             <span className="w-1 h-1 rounded-full bg-hairline-strong shrink-0 mt-px" />
@@ -389,6 +391,7 @@ function ChapterContent({
   highlightQuery,
   onScrolled,
   chapterTitles,
+  contentRootRef,
 }: {
   name: string
   downloadUrl: string
@@ -403,6 +406,7 @@ function ChapterContent({
   highlightQuery?: string | null
   onScrolled?: () => void
   chapterTitles?: Map<string, string>
+  contentRootRef?: React.MutableRefObject<HTMLDivElement | null>
 }) {
   const { data: html, isLoading, isError } = useQuery<string>({
     queryKey: ['textbook-chapter', downloadUrl],
@@ -421,7 +425,7 @@ function ChapterContent({
     onSectionsLoaded(sections)
   }, [html]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const contentRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement | null>(null)
 
   // Scroll to search result
   useEffect(() => {
@@ -528,7 +532,7 @@ function ChapterContent({
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto px-8 py-10" style={{ maxWidth: contentWidth }}>
           <div
-            ref={contentRef}
+            ref={(el) => { contentRef.current = el; if (contentRootRef) contentRootRef.current = el }}
             className="textbook-prose"
             style={{ fontSize }}
             dangerouslySetInnerHTML={{ __html: html }}
@@ -601,6 +605,7 @@ function Reader({
 }) {
   const [sectionData, setSectionData] = useState<{ chapterName: string; sections: Section[] } | null>(null)
   const sections = sectionData?.chapterName === selectedName ? sectionData.sections : []
+  const contentRootRef = useRef<HTMLDivElement | null>(null)
 
   const selectedChapter = chapters.find((c) => c.name === selectedName) ?? null
   return (
@@ -623,6 +628,7 @@ function Reader({
         path={path}
         onNavigateToResult={onNavigateToResult}
         chapterTitles={chapterTitles}
+        contentRootRef={contentRootRef}
       />
       {selectedChapter ? (
         <ChapterContent
@@ -639,6 +645,7 @@ function Reader({
           highlightQuery={highlightQuery}
           onScrolled={onScrolled}
           chapterTitles={chapterTitles}
+          contentRootRef={contentRootRef}
         />
       ) : (
         <EmptyState />
