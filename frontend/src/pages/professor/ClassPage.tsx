@@ -12,7 +12,7 @@ import Tabs from '@/components/ui/Tabs'
 import Pill from '@/components/ui/Pill'
 import CodeChip from '@/components/ui/CodeChip'
 import Empty from '@/components/ui/Empty'
-import { Plus, Trash2, X, ChevronLeft, ChevronDown, Download, KeyRound, Copy, Users, BookOpen, Settings, RefreshCw } from 'lucide-react'
+import { Plus, Trash2, X, ChevronLeft, ChevronDown, ChevronUp, ArrowUpDown, Download, KeyRound, Copy, Users, BookOpen, Settings, RefreshCw } from 'lucide-react'
 import type { StudentStats, ActivitySession, GradebookSession, GradebookStudentRow } from 'shared'
 import TextbookPage from '@/pages/shared/TextbookPage'
 import GradebookTable from '@/components/GradebookTable'
@@ -66,7 +66,7 @@ function statusPill(status: string) {
 }
 
 const CLASS_TABS = [
-  { key: 'sessions',     label: 'Sessions' },
+  { key: 'sessions',     label: 'Class Sessions' },
   { key: 'assignments',  label: 'Assignments' },
   { key: 'grades',       label: 'Grades' },
   { key: 'roster',       label: 'Roster' },
@@ -104,6 +104,7 @@ export default function ClassPage() {
   const [sectionLoading, setSectionLoading] = useState(false)
   const [selectedCell, setSelectedCell] = useState<{ studentId: string; sessionId: string } | null>(null)
   const [selectedStudent, setSelectedStudent] = useState<{ studentId: string; netId: string } | null>(null)
+  const [sessionSort, setSessionSort] = useState<{ key: 'title' | 'date'; dir: 'asc' | 'desc' }>({ key: 'date', dir: 'desc' })
 
   const { data, isLoading } = useQuery({
     queryKey: ['class', classId],
@@ -397,7 +398,7 @@ export default function ClassPage() {
         className="mb-6"
       />
 
-      {/* Sessions tab */}
+      {/* Class Sessions tab */}
       {tab === 'sessions' && (
         !sessionsData ? (
           <Empty icon={BookOpen} message="Loading sessions…" />
@@ -405,15 +406,8 @@ export default function ClassPage() {
           <Empty icon={BookOpen} message="No sessions yet — create one to start collecting responses." />
         ) : (() => {
           const openSessions = sessionsData.filter((s) => s.isLive)
-          const otherSessions = [...sessionsData.filter((s) => !s.isLive)].sort((a, b) => {
-            const latestRun = (s: SessionRow) => {
-              if (s.runs.length === 0) return s.createdAt
-              const sorted = [...s.runs].sort((r1, r2) => new Date(r2.openedAt).getTime() - new Date(r1.openedAt).getTime())
-              return sorted[0].closedAt ?? sorted[0].openedAt
-            }
-            return new Date(latestRun(b)).getTime() - new Date(latestRun(a)).getTime()
-          })
 
+          // Date shown in the list: most recent run's close/open time, else creation
           const sessionDate = (s: SessionRow) => {
             if (s.runs.length === 0) return { label: 'Created', date: new Date(s.createdAt) }
             const sorted = [...s.runs].sort((r1, r2) => new Date(r2.openedAt).getTime() - new Date(r1.openedAt).getTime())
@@ -422,12 +416,46 @@ export default function ClassPage() {
             return { label: 'Opened', date: new Date(latest.openedAt) }
           }
 
+          const otherSessions = [...sessionsData.filter((s) => !s.isLive)].sort((a, b) => {
+            const cmp = sessionSort.key === 'title'
+              ? a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' })
+              : sessionDate(a).date.getTime() - sessionDate(b).date.getTime()
+            return sessionSort.dir === 'asc' ? cmp : -cmp
+          })
+
           // Derive display status for non-live sessions
           const sessionDisplayStatus = (s: SessionRow): string => {
             if (s.status === 'DRAFT') return 'DRAFT'
             if (s.status === 'ARCHIVED') return 'ARCHIVED'
             if (s.runs.length > 0) return 'CLOSED'
             return 'DRAFT'
+          }
+
+          function toggleSort(key: 'title' | 'date') {
+            setSessionSort((prev) =>
+              prev.key === key
+                ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+                // Names read best A→Z, dates newest-first
+                : { key, dir: key === 'title' ? 'asc' : 'desc' }
+            )
+          }
+
+          function SortHeader({ label, sortKey }: { label: string; sortKey: 'title' | 'date' }) {
+            const active = sessionSort.key === sortKey
+            const Icon = !active ? ArrowUpDown : sessionSort.dir === 'asc' ? ChevronUp : ChevronDown
+            return (
+              <th className="px-5 py-3">
+                <button
+                  onClick={() => toggleSort(sortKey)}
+                  className={`flex items-center gap-1 text-xs font-medium uppercase tracking-wide transition-colors ${
+                    active ? 'text-ink-2' : 'text-muted hover:text-ink-2'
+                  }`}
+                >
+                  {label}
+                  <Icon size={12} className={active ? '' : 'opacity-40'} />
+                </button>
+              </th>
+            )
           }
 
           return (
@@ -459,61 +487,68 @@ export default function ClassPage() {
                 </div>
               ))}
 
-              {/* Session grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {otherSessions.map((s) => {
-                  const { label, date } = sessionDate(s)
-                  const qCount = s._count?.questions ?? 0
-                  const pct = enrolledCount > 0 ? Math.round((s.respondentCount / enrolledCount) * 100) : null
-                  return (
-                    <div key={s.id} className="group relative bg-surface border border-hairline rounded-[14px] hover:shadow-card transition-shadow flex flex-col">
-                      <Link to={`/professor/sessions/${s.id}`} className="flex-1 p-5 flex flex-col gap-3">
-                        {/* Top row: status */}
-                        <div className="flex items-center gap-2">
-                          {(() => {
-                            const displayStatus = sessionDisplayStatus(s)
-                            return (
+              {/* Session list */}
+              {otherSessions.length > 0 && (
+                <div className="bg-surface border border-hairline rounded-[14px] overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-hairline text-left">
+                        <SortHeader label="Session" sortKey="title" />
+                        <th className="px-5 py-3 text-xs font-medium text-muted uppercase tracking-wide">Status</th>
+                        <th className="px-5 py-3 text-xs font-medium text-muted uppercase tracking-wide">Questions</th>
+                        <th className="px-5 py-3 text-xs font-medium text-muted uppercase tracking-wide">Participation</th>
+                        <SortHeader label="Last activity" sortKey="date" />
+                        <th className="px-5 py-3"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {otherSessions.map((s) => {
+                        const { label, date } = sessionDate(s)
+                        const qCount = s._count?.questions ?? 0
+                        const displayStatus = sessionDisplayStatus(s)
+                        const pct = enrolledCount > 0 ? Math.round((s.respondentCount / enrolledCount) * 100) : null
+                        return (
+                          <tr
+                            key={s.id}
+                            onClick={() => navigate(`/professor/sessions/${s.id}`)}
+                            className="group border-t border-hairline hover:bg-surface-2 cursor-pointer"
+                          >
+                            <td className="px-5 py-3.5 font-medium text-ink">{s.title}</td>
+                            <td className="px-5 py-3.5">
                               <Pill variant={statusPill(displayStatus)}>
                                 {displayStatus.charAt(0) + displayStatus.slice(1).toLowerCase()}
                               </Pill>
-                            )
-                          })()}
-                        </div>
-
-                        {/* Title */}
-                        <p className="font-semibold text-ink leading-snug">{s.title}</p>
-
-                        {/* Footer stats */}
-                        <div className="mt-auto flex items-end justify-between gap-2">
-                          <div className="text-xs text-muted space-y-0.5">
-                            <p>{qCount} question{qCount !== 1 ? 's' : ''}</p>
-                            <p className="font-mono">{label} {date.toLocaleDateString([], { month: 'short', day: 'numeric', year: date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined })}</p>
-                          </div>
-                          {pct !== null && sessionDisplayStatus(s) !== 'DRAFT' && (
-                            <span className="text-xs font-mono text-muted shrink-0">
-                              {s.respondentCount}/{enrolledCount} · {pct}%
-                            </span>
-                          )}
-                        </div>
-                      </Link>
-
-                      {/* Delete — hover only */}
-                      <button
-                        onClick={(e) => {
-                          e.preventDefault()
-                          if (!confirm(`Delete "${s.title}"? This will remove all responses and cannot be undone.`)) return
-                          deleteSessionMutation.mutate(s.id)
-                        }}
-                        disabled={deleteSessionMutation.isPending}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity absolute top-3 right-3 w-7 h-7 flex items-center justify-center text-hairline-strong hover:text-red-500 hover:bg-surface-2 rounded-sm disabled:opacity-30"
-                        title="Delete session"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  )
-                })}
-              </div>
+                            </td>
+                            <td className="px-5 py-3.5 text-ink-2 font-mono">{qCount}</td>
+                            <td className="px-5 py-3.5 font-mono text-ink-2">
+                              {pct !== null && displayStatus !== 'DRAFT'
+                                ? <>{s.respondentCount}/{enrolledCount} · {pct}%</>
+                                : <span className="text-hairline-strong">—</span>
+                              }
+                            </td>
+                            <td className="px-5 py-3.5 text-muted font-mono whitespace-nowrap">
+                              {label} {date.toLocaleDateString([], { month: 'short', day: 'numeric', year: date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined })}
+                            </td>
+                            <td className="px-5 py-3.5 text-right" onClick={(ev) => ev.stopPropagation()}>
+                              <button
+                                onClick={() => {
+                                  if (!confirm(`Delete "${s.title}"? This will remove all responses and cannot be undone.`)) return
+                                  deleteSessionMutation.mutate(s.id)
+                                }}
+                                disabled={deleteSessionMutation.isPending}
+                                className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-hairline-strong hover:text-red-500 disabled:opacity-30"
+                                title="Delete session"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )
         })()
@@ -1003,6 +1038,15 @@ export default function ClassPage() {
                   placeholder="Spring 2027"
                   className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
                 />
+              </div>
+
+              <div className="bg-surface-2 border border-hairline rounded-sm px-3 py-2.5">
+                <p className="text-xs font-medium text-ink-2 mb-1">What gets copied</p>
+                <p className="text-xs text-muted leading-relaxed">
+                  Sessions, homework assignments, all their questions and groups, and the linked
+                  textbook. Assignments come over as drafts with their deadlines cleared, so set new
+                  dates before opening them. Students, responses, and grades are not copied.
+                </p>
               </div>
 
               <label className="flex items-start gap-3 cursor-pointer select-none">
