@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pulse</title>
+    <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+    <link rel="stylesheet" href="./src/taskpane.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>Pulse</h1>
+        <span id="summary-badge" class="badge hidden"></span>
+      </header>
+
+      <section id="signed-out">
+        <p class="muted">Sign in to insert question codes and check this deck.</p>
+        <button id="sign-in" class="primary">Sign in to Pulse</button>
+        <p id="auth-status" class="status"></p>
+      </section>
+
+      <section id="signed-in" class="hidden">
+        <div class="field">
+          <label for="class-select">Class</label>
+          <select id="class-select"></select>
+        </div>
+
+        <details open>
+          <summary>Add a question to this slide</summary>
+          <div class="field">
+            <label for="session-select">Session</label>
+            <select id="session-select"></select>
+          </div>
+          <div class="field">
+            <label for="question-select">Question</label>
+            <select id="question-select"></select>
+          </div>
+          <button id="insert-btn" class="primary">Insert on current slide</button>
+          <p id="insert-status" class="status"></p>
+        </details>
+
+        <details open>
+          <summary>Deck status</summary>
+          <div class="actions">
+            <button id="verify-btn">Re-check</button>
+            <button id="sync-btn" disabled>Fix all</button>
+          </div>
+          <p id="verify-status" class="status"></p>
+          <ul id="verify-list" class="rows"></ul>
+          <pre id="verify-detail" class="detail"></pre>
+        </details>
+
+        <details>
+          <summary>New semester</summary>
+          <p class="muted">
+            After duplicating a class, pick the new class above and re-bind. Matched slides keep
+            their existing QR image.
+          </p>
+          <button id="rebind-btn">Re-bind deck to selected class</button>
+          <p id="rebind-status" class="status"></p>
+        </details>
+
+        <footer>
+          <button id="sign-out" class="link">Sign out</button>
+        </footer>
+      </section>
+    </div>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

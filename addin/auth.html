@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sign in to Pulse</title>
+    <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+    <link rel="stylesheet" href="./src/taskpane.css" />
+  </head>
+  <body>
+    <div id="app">
+      <h1>Sign in to Pulse</h1>
+      <p class="muted">Use your professor account.</p>
+      <form id="form">
+        <div class="field">
+          <label for="email">Email</label>
+          <input id="email" type="email" autocomplete="username" required />
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input id="password" type="password" autocomplete="current-password" required />
+        </div>
+        <button type="submit" class="primary" id="submit">Sign in</button>
+        <p id="status" class="status"></p>
+      </form>
+    </div>
+    <script type="module" src="./src/auth.ts"></script>
+  </body>
+</html>

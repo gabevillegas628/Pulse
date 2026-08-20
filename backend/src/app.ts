@@ -19,6 +19,8 @@ import extensionRoutes from './routes/extensions.routes.js'
 import responseRoutes from './routes/responses.routes.js'
 import uploadRoutes from './routes/uploads.routes.js'
 import textbookRoutes from './routes/textbook.routes.js'
+import addinRoutes from './routes/addin.routes.js'
+import addinManifestRoutes from './routes/addin-manifest.js'
 
 const app = express()
 
@@ -100,6 +102,12 @@ app.use('/api', extensionRoutes)
 app.use('/api', responseRoutes)
 app.use('/api', uploadRoutes)
 app.use('/api', textbookRoutes)
+app.use('/api/addin', addinRoutes)
+
+// Add-in task pane assets (same origin as the API, so no CORS needed)
+const addinDist = path.join(__dirname, '..', '..', 'addin', 'dist')
+app.use('/addin', addinManifestRoutes)
+app.use('/addin', express.static(addinDist))
 
 // Serve frontend in production
 if (!config.isDev) {
