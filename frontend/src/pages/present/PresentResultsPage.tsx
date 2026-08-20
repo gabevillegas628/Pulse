@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { io, type Socket } from 'socket.io-client'
 import { api, getProfessorToken } from '@/api/client'
 import ResultsSummary from '@/components/ResultsSummary'
@@ -54,11 +55,15 @@ interface LiveSession {
 
 type Phase = 'loading' | 'no-session' | 'live' | 'unauthorised' | 'error'
 
-const NO_SESSION_POLL = 8000
-const LIVE_POLL = 30000
-// When the socket is down the poll is the only source of updates, so it has to be quick
-// enough to still feel live on a projector.
-const DEGRADED_POLL = 4000
+// A steady short heartbeat rather than one long timer. Chromium throttles timers hard in
+// backgrounded frames, and a slide show backgrounds this one — but the Phase 0 spike showed
+// a 1s interval keeps firing there, so the heartbeat stays short and decides for itself
+// when a fetch is due.
+const HEARTBEAT = 1000
+const NO_SESSION_POLL = 5000
+const LIVE_POLL = 6000
+// With the socket down the poll is the only source of updates, so it tightens.
+const DEGRADED_POLL = 2500
 
 export default function PresentResultsPage() {
   const [phase, setPhase] = useState<Phase>('loading')
@@ -71,94 +76,115 @@ export default function PresentResultsPage() {
   const joinedRef = useRef<string | null>(null)
   const connectedRef = useRef(false)
   const sessionIdRef = useRef<string | null>(null)
+  const fetchRef = useRef<() => void>(() => {})
 
   // ── Load whatever is currently open ──────────────────────────────────────────
   useEffect(() => {
     let cancelled = false
-    let timer: number
+    let inFlight = false
+    let lastFetch = 0
 
-    async function load() {
+    async function fetchNow() {
+      if (inFlight || cancelled) return
+      inFlight = true
       try {
         const res = await api.get('/addin/live')
         if (cancelled) return
         const data = res.data.data as { session: LiveSession | null; activeQuestionId: string | null }
 
-        if (!data.session) {
-          setSession(null)
-          sessionIdRef.current = null
-          setPhase('no-session')
-        } else {
-          setSession(data.session)
-          sessionIdRef.current = data.session.id
-          // Always take the server's answer. It is derived from the most recent response, so
-          // it is authoritative; the socket only fills the gaps between polls. An earlier
-          // version kept the existing value once set, which pinned the display to the first
-          // question forever whenever the socket was not delivering.
-          setActiveId(data.activeQuestionId)
-          setPhase('live')
-        }
+        // flushSync, because React's asynchronous commit does not reliably run in an
+        // unfocused add-in frame: state updated but the DOM did not, until a click forced
+        // a synchronous flush. Committing here keeps the projector honest without a poke.
+        flushSync(() => {
+          if (!data.session) {
+            setSession(null)
+            sessionIdRef.current = null
+            setPhase('no-session')
+          } else {
+            setSession(data.session)
+            sessionIdRef.current = data.session.id
+            // Always take the server's answer. It is derived from the most recent response,
+            // so it is authoritative; the socket only fills the gaps between polls.
+            setActiveId(data.activeQuestionId)
+            setPhase('live')
+          }
+        })
       } catch (err) {
         if (cancelled) return
         const status = (err as { response?: { status?: number } })?.response?.status
-        if (status === 401) {
-          setPhase('unauthorised')
-        } else {
-          // Keep any results already on screen; only report the trouble.
-          setMessage('Reconnecting…')
-          if (!session) setPhase('error')
-        }
+        flushSync(() => {
+          if (status === 401) {
+            setPhase('unauthorised')
+          } else {
+            // Keep any results already on screen; only report the trouble.
+            setMessage('Reconnecting…')
+            if (!sessionIdRef.current) setPhase('error')
+          }
+        })
       } finally {
-        if (!cancelled) {
-          // Cadence from refs, so it reflects the live socket state rather than whatever
-          // was captured when this effect was created.
-          const delay = !sessionIdRef.current
-            ? NO_SESSION_POLL
-            : connectedRef.current ? LIVE_POLL : DEGRADED_POLL
-          timer = window.setTimeout(load, delay)
-        }
+        inFlight = false
+        lastFetch = Date.now()
       }
     }
 
-    load()
-    return () => { cancelled = true; window.clearTimeout(timer) }
-    // Runs once: the loop re-arms itself and reads current state from refs, so it must not
-    // be torn down and rebuilt every time the session object changes identity.
+    const id = window.setInterval(() => {
+      if (cancelled) return
+      const due = !sessionIdRef.current
+        ? NO_SESSION_POLL
+        : connectedRef.current ? LIVE_POLL : DEGRADED_POLL
+      if (Date.now() - lastFetch >= due) void fetchNow()
+    }, HEARTBEAT)
+
+    // Socket handlers refetch through this, so a run opening or closing is picked up the
+    // moment the server says so rather than on the next tick.
+    fetchRef.current = () => { void fetchNow() }
+
+    void fetchNow()
+    return () => { cancelled = true; window.clearInterval(id) }
+    // Runs once: the heartbeat reads current state from refs, so it must not be torn down
+    // and rebuilt whenever the session object changes identity.
   }, [])
 
   // ── Live updates ─────────────────────────────────────────────────────────────
+  // The socket is opened on mount, not once a session exists. Waiting meant that with
+  // nothing open there was no connection at all, leaving a throttled timer as the only way
+  // to notice a session starting — which is why the object needed poking to wake up.
   useEffect(() => {
-    if (!session?.id) return
+    const socket = io({ path: '/socket.io', auth: { token: getProfessorToken() } })
+    socketRef.current = socket
 
-    if (!socketRef.current) {
-      const socket = io({ path: '/socket.io', auth: { token: getProfessorToken() } })
-      socketRef.current = socket
+    socket.on('connect', () => {
+      connectedRef.current = true
+      flushSync(() => { setConnected(true); setMessage('') })
+      // Re-join after a reconnect; room membership does not survive the drop.
+      if (joinedRef.current) socket.emit('join_session', joinedRef.current)
+      fetchRef.current()
+    })
+    socket.on('disconnect', () => {
+      connectedRef.current = false
+      flushSync(() => { setConnected(false); setMessage('Reconnecting…') })
+    })
+    socket.on('connect_error', (err) => {
+      connectedRef.current = false
+      // The server drops sockets with no valid token, which looks identical to being
+      // offline unless it is called out. Polling still works, so results stay current.
+      const why = /auth|token|unauthor/i.test(err.message) ? 'Sign-in expired' : 'Reconnecting…'
+      flushSync(() => { setConnected(false); setMessage(why) })
+    })
 
-      socket.on('connect', () => {
-        connectedRef.current = true
-        setConnected(true)
-        setMessage('')
-        if (joinedRef.current) socket.emit('join_session', joinedRef.current)
-      })
-      socket.on('disconnect', () => {
-        connectedRef.current = false
-        setConnected(false)
-        setMessage('Reconnecting…')
-      })
-      socket.on('connect_error', (err) => {
-        connectedRef.current = false
-        setConnected(false)
-        // The server drops sockets with no valid token, which looks identical to being
-        // offline unless it is called out. Polling still works, so results stay current.
-        setMessage(/auth|token|unauthor/i.test(err.message) ? 'Sign-in expired' : 'Reconnecting…')
-      })
+    // A run opening or closing changes what should be on screen; refetch immediately.
+    socket.on('run_status', () => fetchRef.current())
 
-      socket.on('new_response', (payload: {
-        questionId: string
-        response: { id: string; responseText: string; wordCount: number; isFlagged: boolean; submittedAt: string; aiScore: number | null }
-      }) => {
-        // The socket payload also carries the student; deliberately not destructured or
-        // stored, so identity cannot reach the projector even by accident.
-        const { id, responseText, wordCount, isFlagged, submittedAt, aiScore } = payload.response
+    socket.on('new_response', (payload: {
+      questionId: string
+      response: { id: string; responseText: string; wordCount: number; isFlagged: boolean; submittedAt: string; aiScore: number | null }
+    }) => {
+      // The socket payload also carries the student; deliberately not destructured or
+      // stored, so identity cannot reach the projector even by accident.
+      const { id, responseText, wordCount, isFlagged, submittedAt, aiScore } = payload.response
+      // Synchronous commit: without it the answer lands in state but never reaches the
+      // screen until the object is clicked.
+      flushSync(() => {
         setActiveId(payload.questionId)
         setSession((prev) => {
           if (!prev) return prev
@@ -172,17 +198,21 @@ export default function PresentResultsPage() {
           }
         })
       })
-    }
+    })
 
+    return () => { socket.disconnect(); socketRef.current = null }
+  }, [])
+
+  // Follow the open session into its room as it changes.
+  useEffect(() => {
     const socket = socketRef.current
+    if (!socket || !session?.id) return
     if (joinedRef.current && joinedRef.current !== session.id) {
       socket.emit('leave_session', joinedRef.current)
     }
     joinedRef.current = session.id
     socket.emit('join_session', session.id)
   }, [session?.id])
-
-  useEffect(() => () => { socketRef.current?.disconnect() }, [])
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
