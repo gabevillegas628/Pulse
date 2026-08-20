@@ -113,7 +113,9 @@ export const adoptCode = (questionId: string, code: string) =>
   post<{ changed: boolean; accessCode: string }>('/addin/adopt-code', { questionId, code })
 
 export const getQuestionQr = (questionId: string) =>
-  get<{ accessCode: string; qrDataUrl: string }>(`/addin/questions/${questionId}/qr`)
+  get<{ accessCode: string; qrDataUrl: string; title: string | null; text: string }>(
+    `/addin/questions/${questionId}/qr`
+  )
 
 export const proposeRebind = (fromClassId: string, toClassId: string) =>
   post<{

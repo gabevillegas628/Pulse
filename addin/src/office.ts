@@ -1,3 +1,5 @@
+import { renderQrCardBase64 } from 'shared'
+
 /**
  * Office.js interop for Pulse Question objects.
  *
@@ -139,7 +141,13 @@ function insertImage(base64: string): Promise<void> {
   })
 }
 
-const stripDataUrl = (dataUrl: string) => dataUrl.replace(/^data:image\/\w+;base64,/, '')
+/**
+ * The card the professor UI produces, at 2x so it stays sharp when projected.
+ * Shared with the web app so a slide and a copy-pasted card look identical.
+ */
+function renderCard(qrDataUrl: string, code: string, questionText: string): Promise<string> {
+  return renderQrCardBase64({ qrDataUrl, accessCode: code, questionText, scale: 2 })
+}
 
 async function shapeIdsOnSlide(slideIndex0: number): Promise<Set<string>> {
   return PowerPoint.run(async (context) => {
@@ -162,12 +170,14 @@ export async function insertPulseQuestion(opts: {
   sessionId: string
   code: string
   classId: string
+  questionText: string
 }): Promise<void> {
   const slideIndex1 = await getSelectedSlideIndex()
   const slideIndex0 = slideIndex1 - 1
 
+  const card = await renderCard(opts.qrDataUrl, opts.code, opts.questionText)
   const before = await shapeIdsOnSlide(slideIndex0)
-  await insertImage(stripDataUrl(opts.qrDataUrl))
+  await insertImage(card)
   const after = await shapeIdsOnSlide(slideIndex0)
 
   const newIds = [...after].filter((id) => !before.has(id))
@@ -193,14 +203,21 @@ export async function insertPulseQuestion(opts: {
  * Replace a bound shape's image in place, preserving position and size, and re-tag it.
  * Only used when a code could not be adopted onto the question.
  */
-export async function restampShape(shape: BoundShape, qrDataUrl: string, newCode: string): Promise<void> {
+export async function restampShape(
+  shape: BoundShape,
+  qrDataUrl: string,
+  newCode: string,
+  questionText: string
+): Promise<void> {
+  const card = await renderCard(qrDataUrl, newCode, questionText)
+
   await PowerPoint.run(async (context) => {
     context.presentation.slides.getItemAt(shape.slideIndex).shapes.getItem(shape.shapeId).delete()
     await context.sync()
   })
 
   const before = await shapeIdsOnSlide(shape.slideIndex)
-  await insertImage(stripDataUrl(qrDataUrl))
+  await insertImage(card)
   const after = await shapeIdsOnSlide(shape.slideIndex)
   const newIds = [...after].filter((id) => !before.has(id))
   if (newIds.length !== 1) throw new Error('Could not identify the replacement image.')

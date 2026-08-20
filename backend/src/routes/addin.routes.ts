@@ -122,7 +122,7 @@ async function findOwnedQuestion(questionId: string, professorId: string) {
         { assignment: { class: { professorId } } },
       ],
     },
-    select: { id: true, accessCode: true },
+    select: { id: true, accessCode: true, title: true, text: true },
   })
 }
 
@@ -193,7 +193,17 @@ router.get('/questions/:id/qr', async (req: Request, res: Response, next: NextFu
     if (!question) throw new AppError('Question not found', 404)
 
     const qrDataUrl = await generateQuestionQr(question.accessCode)
-    res.json({ success: true, data: { accessCode: question.accessCode, qrDataUrl } })
+    // Text comes back too: the add-in draws the full question card client-side, which
+    // needs the wording, not just the code.
+    res.json({
+      success: true,
+      data: {
+        accessCode: question.accessCode,
+        qrDataUrl,
+        title: question.title,
+        text: question.text,
+      },
+    })
   } catch (err) {
     next(err)
   }

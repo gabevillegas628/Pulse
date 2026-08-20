@@ -188,8 +188,15 @@ async function onInsert() {
 
   setStatus('insert-status', 'Inserting…', 'muted')
   try {
-    const { qrDataUrl, accessCode } = await getQuestionQr(questionId)
-    await insertPulseQuestion({ qrDataUrl, questionId, sessionId, code: accessCode, classId })
+    const { qrDataUrl, accessCode, text } = await getQuestionQr(questionId)
+    await insertPulseQuestion({
+      qrDataUrl,
+      questionId,
+      sessionId,
+      code: accessCode,
+      classId,
+      questionText: text,
+    })
     if (deckClassId !== classId) {
       await setDeckClassId(classId)
       deckClassId = classId
@@ -323,8 +330,8 @@ async function onSync() {
       if (err instanceof ApiError && (err.status === 409 || err.status === 404)) {
         // Code unavailable (or the question is gone) — fall back to re-stamping.
         try {
-          const { qrDataUrl, accessCode } = await getQuestionQr(shape.questionId)
-          await restampShape(shape, qrDataUrl, accessCode)
+          const { qrDataUrl, accessCode, text } = await getQuestionQr(shape.questionId)
+          await restampShape(shape, qrDataUrl, accessCode, text)
           restamped++
         } catch (inner) {
           failures.push(`Slide ${shape.slideIndex + 1}: ${errText(inner)}`)

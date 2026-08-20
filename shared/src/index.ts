@@ -1,3 +1,7 @@
+// Browser-only card renderer. Safe to re-export: nothing runs at import time, and
+// the backend never calls it.
+export * from './qrCard.js'
+
 // Enums
 
 export enum SessionStatus {
