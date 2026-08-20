@@ -176,7 +176,17 @@ router.post('/:id/duplicate', async (req: Request, res: Response, next: NextFunc
       include: {
         sessions: {
           orderBy: { createdAt: 'asc' },
-          include: { questions: { orderBy: { order: 'asc' } } },
+          include: {
+            questions: { orderBy: { order: 'asc' } },
+            groups: { orderBy: { order: 'asc' } },
+          },
+        },
+        assignments: {
+          orderBy: { createdAt: 'asc' },
+          include: {
+            questions: { orderBy: { order: 'asc' } },
+            groups: { orderBy: { order: 'asc' } },
+          },
         },
       },
     })
@@ -219,9 +229,60 @@ router.post('/:id/duplicate', async (req: Request, res: Response, next: NextFunc
       tempQuestionCodes.push(tCodes)
     }
 
+    const newAssignmentQuestionCodes: string[][] = []
+    for (const assignment of source.assignments) {
+      const qCodes: string[] = []
+      for (const _ of assignment.questions) qCodes.push(await uniqueQuestionCode())
+      newAssignmentQuestionCodes.push(qCodes)
+    }
+
+    type SourceGroup = { id: string; title: string; text: string | null; order: number }
+    type SourceQuestion = (typeof source.sessions)[number]['questions'][number]
+
+    /** Copy groups into a new parent, returning an old-id → new-id map for questions to follow. */
+    async function copyGroups(
+      tx: Prisma.TransactionClient,
+      groups: SourceGroup[],
+      parent: { sessionId: string } | { assignmentId: string }
+    ) {
+      const idMap = new Map<string, string>()
+      for (const g of groups) {
+        const created = await tx.questionGroup.create({
+          data: { ...parent, title: g.title, text: g.text, order: g.order },
+        })
+        idMap.set(g.id, created.id)
+      }
+      return idMap
+    }
+
+    /** Field-for-field question copy, with the group re-pointed at the duplicate's group. */
+    function copyQuestion(q: SourceQuestion, accessCode: string, groupIds: Map<string, string>) {
+      return {
+        groupId: q.groupId ? groupIds.get(q.groupId) ?? null : null,
+        title: q.title,
+        text: q.text,
+        type: q.type,
+        options: q.options ?? undefined,
+        order: q.order,
+        accessCode,
+        correctAnswer: q.correctAnswer,
+        tolerance: q.tolerance,
+        unit: q.unit,
+      }
+    }
+
     const newClass = await prisma.$transaction(async (tx) => {
       const cls = await tx.class.create({
-        data: { name, description: description ?? null, joinCode, professorId: professor.id },
+        data: {
+          name,
+          description: description ?? null,
+          joinCode,
+          professorId: professor.id,
+          // Carry the linked textbook so the new class reads the same chapters
+          textbookRepo: source.textbookRepo,
+          textbookPath: source.textbookPath,
+          textbookBranch: source.textbookBranch,
+        },
       })
 
       type NewSession = { id: string; questions: { id: string; accessCode: string }[] }
@@ -234,20 +295,43 @@ router.post('/:id/duplicate', async (req: Request, res: Response, next: NextFunc
             title: src.title,
             accessCode: newSessionCodes[i],
             status: 'DRAFT',
-            questions: {
-              create: src.questions.map((q, j) => ({
-                text: q.text,
-                type: q.type,
-                options: q.options ?? undefined,
-                order: q.order,
-                accessCode: newQuestionCodes[i][j],
-                correctAnswer: q.correctAnswer,
-              })),
-            },
           },
-          include: { questions: { orderBy: { order: 'asc' } } },
         })
-        newSessions.push(session as NewSession)
+        const groupIds = await copyGroups(tx, src.groups, { sessionId: session.id })
+        // Collect in creation order so the QR swap below can pair each new question
+        // with its source by index, without relying on a re-query's sort.
+        const questions: { id: string; accessCode: string }[] = []
+        for (let j = 0; j < src.questions.length; j++) {
+          const created = await tx.question.create({
+            data: { sessionId: session.id, ...copyQuestion(src.questions[j], newQuestionCodes[i][j], groupIds) },
+            select: { id: true, accessCode: true },
+          })
+          questions.push(created)
+        }
+        newSessions.push({ id: session.id, questions })
+      }
+
+      // Homework carries its content over, but not its schedule: a duplicate is for a
+      // new term, so it starts as a DRAFT with no deadline for the professor to set.
+      for (let i = 0; i < source.assignments.length; i++) {
+        const src = source.assignments[i]
+        const assignment = await tx.assignment.create({
+          data: {
+            classId: cls.id,
+            title: src.title,
+            status: 'DRAFT',
+            deadline: null,
+          },
+        })
+        const groupIds = await copyGroups(tx, src.groups, { assignmentId: assignment.id })
+        for (let j = 0; j < src.questions.length; j++) {
+          await tx.question.create({
+            data: {
+              assignmentId: assignment.id,
+              ...copyQuestion(src.questions[j], newAssignmentQuestionCodes[i][j], groupIds),
+            },
+          })
+        }
       }
 
       if (transferQrCodes) {
@@ -269,7 +353,7 @@ router.post('/:id/duplicate', async (req: Request, res: Response, next: NextFunc
         where: { id: cls.id },
         include: { _count: { select: { sessions: true, enrollments: true } } },
       })
-    })
+    }, { maxWait: 10_000, timeout: 60_000 })
 
     res.status(201).json({ success: true, data: { class: newClass } })
   } catch (err) {
