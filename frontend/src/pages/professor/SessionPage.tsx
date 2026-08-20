@@ -640,6 +640,11 @@ export default function SessionPage() {
                         className="w-10 h-10"
                       />
                     </button>
+                    {/*
+                      A pasted card is pixel-identical to one the add-in inserts but carries no
+                      shape tags, so Verify / Fix all / Re-bind cannot see it. The tooltip says
+                      so at the moment someone would otherwise create an untracked card.
+                    */}
                     <button
                       onClick={async () => {
                         await copyQrCardToClipboard({
@@ -651,7 +656,7 @@ export default function SessionPage() {
                         setTimeout(() => setCopiedQrId(null), 2000)
                       }}
                       className="border border-hairline rounded-sm p-1.5 hover:bg-surface transition-colors"
-                      title="Copy QR + code as image"
+                      title="Copy card image — for handouts or non-PowerPoint slides. Pasted cards are not tracked by the Pulse add-in; insert from the add-in to keep them checked."
                     >
                       {copiedQrId === activeQuestion.id
                         ? <Check size={16} className="text-good" />
