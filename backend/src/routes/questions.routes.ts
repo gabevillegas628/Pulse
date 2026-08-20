@@ -5,9 +5,8 @@ import { prisma } from '../db/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
 import { generateUniqueCode } from '../utils/codes.js'
-import { generateQr } from '../utils/qr.js'
+import { generateQuestionQr } from '../utils/qr.js'
 import { p } from '../utils/params.js'
-import { config } from '../config/index.js'
 import { toInchi } from '../utils/indigo.js'
 
 const nanoidDigits = customAlphabet('0123456789', 4)
@@ -93,7 +92,7 @@ router.post('/sessions/:id/questions', requireProfessor, async (req: Request, re
       },
     })
 
-    const qrDataUrl = await generateQr(`${config.baseUrl}/q/${question.id}`)
+    const qrDataUrl = await generateQuestionQr(question.accessCode)
     res.status(201).json({ success: true, data: { question: { ...question, qrDataUrl } } })
   } catch (err) {
     next(err)
@@ -398,7 +397,7 @@ router.post('/assignments/:id/questions', requireProfessor, async (req: Request,
       },
     })
 
-    const qrDataUrl = await generateQr(`${config.baseUrl}/q/${question.id}`)
+    const qrDataUrl = await generateQuestionQr(question.accessCode)
     res.status(201).json({ success: true, data: { question: { ...question, qrDataUrl } } })
   } catch (err) {
     next(err)
