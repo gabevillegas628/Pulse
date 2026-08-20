@@ -194,7 +194,27 @@ Clear the Office cache — see
 
 Sideload `https://<your-pulse-host>/addin/results-manifest.xml` the same way as the task pane
 manifest — drop it in the same catalog folder, no extra Trust Center work. Then
-**Insert → Add-ins → Advanced → SHARED FOLDER → Pulse Live Results**, and size it on the slide.
+**Home → Add-ins → Advanced → SHARED FOLDER → Pulse Live Results**, and size it on the slide.
+
+### Why it has no ribbon button
+
+The task pane gets its own **Pulse** group on the Home tab; the results object cannot. That is a
+schema limit, not an oversight: `<Action>` is
+[valid only in the Task pane and Mail VersionOverrides schemas](https://learn.microsoft.com/en-us/javascript/api/manifest/action?view=common-js-preview),
+and its only two types are `ShowTaskpane` and `ExecuteFunction`. There is no action that inserts
+a content add-in, and no Office.js call that does it either. Content add-ins are only ever placed
+through the Add-ins dialog.
+
+In practice this costs little, because you rarely insert one:
+
+- **It is an ordinary slide object once placed.** Copy and paste it onto other slides like any
+  shape — no re-inserting.
+- **One is usually enough.** It follows whichever question the class is answering, so the same
+  object works on every slide you paste it onto.
+- **Put it in your template deck.** Place it once in the .pptx you start new lectures from and
+  it is simply there.
+
+### How it behaves
 
 It follows the class automatically. There is no per-question binding and no activation step:
 whichever question is receiving answers is the one shown, because the students' scans are what
