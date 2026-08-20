@@ -5,12 +5,12 @@
 .DESCRIPTION
   Office on Windows will only load a sideloaded add-in from a *network path*
   (\\COMPUTER\ShareName), never a plain local path like C:\Something. That is the
-  only reason a "shared folder" is involved — the folder never leaves your machine
+  only reason a "shared folder" is involved - the folder never leaves your machine
   and nobody else needs access to it. You are sharing it with yourself.
 
   This script does four things:
     1. Creates the catalog folder.
-    2. Shares it (needs an elevated shell — if not elevated it tells you the two
+    2. Shares it (needs an elevated shell - if not elevated it tells you the two
        clicks to do it by hand).
     3. Downloads the manifest from your Pulse server into it.
     4. Registers the folder as a Trusted Add-in Catalog for your user, which is
@@ -60,7 +60,7 @@ Write-Host "  folder     : $FolderPath"
 Write-Host "  network path: $uncPath"
 Write-Host "  elevated   : $isAdmin"
 
-# ── 1. Folder ────────────────────────────────────────────────────────────────
+# -- 1. Folder ----------------------------------------------------------------
 Write-Step 1 "Create the catalog folder"
 if (Test-Path $FolderPath) {
   Write-Ok "already exists: $FolderPath"
@@ -69,7 +69,7 @@ if (Test-Path $FolderPath) {
   Write-Ok "created $FolderPath"
 }
 
-# ── 2. Share ─────────────────────────────────────────────────────────────────
+# -- 2. Share -----------------------------------------------------------------
 Write-Step 2 "Share the folder (so Office has a \\ path to read)"
 $existing = Get-SmbShare -Name $ShareName -ErrorAction SilentlyContinue
 if ($existing) {
@@ -90,11 +90,11 @@ if ($existing) {
   Write-Host "    Then re-run this script. Or re-run it in an elevated PowerShell" -ForegroundColor White
   Write-Host "    (right-click PowerShell -> Run as administrator) to skip the clicking."
   Write-Host ""
-  Write-Host "    Stopping here — the remaining steps need the share to exist." -ForegroundColor Yellow
+  Write-Host "    Stopping here - the remaining steps need the share to exist." -ForegroundColor Yellow
   exit 1
 }
 
-# ── 3. Manifest ──────────────────────────────────────────────────────────────
+# -- 3. Manifest --------------------------------------------------------------
 Write-Step 3 "Download the manifest from $PulseUrl"
 $manifestUrl = "$PulseUrl/addin/manifest.xml"
 $manifestPath = Join-Path $FolderPath 'pulse-manifest.xml'
@@ -118,16 +118,16 @@ try {
     Write-Warn2 "Set BASE_URL on the Pulse server to its https:// origin and re-run."
   }
 } catch {
-  Write-Warn2 "Downloaded file is not valid XML — the server probably returned an error page."
+  Write-Warn2 "Downloaded file is not valid XML - the server probably returned an error page."
   exit 1
 }
 
-# ── 4. Trust the catalog ─────────────────────────────────────────────────────
+# -- 4. Trust the catalog -----------------------------------------------------
 Write-Step 4 "Register the folder as a Trusted Add-in Catalog"
 $catalogRoot = 'HKCU:\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs'
 if (-not (Test-Path $catalogRoot)) { New-Item -Path $catalogRoot -Force | Out-Null }
 
-# A catalog must be a *folder* — a network share, or a SharePoint catalog. Pointing one
+# A catalog must be a *folder* - a network share, or a SharePoint catalog. Pointing one
 # at an https:// manifest file is a natural mistake that silently never works, so flag it.
 Get-ChildItem $catalogRoot -ErrorAction SilentlyContinue | ForEach-Object {
   $u = (Get-ItemProperty $_.PSPath -Name Url -ErrorAction SilentlyContinue).Url
@@ -158,7 +158,7 @@ if ($existingKey) {
   Write-Ok "trusted $uncPath"
 }
 
-# ── Done ─────────────────────────────────────────────────────────────────────
+# -- Done ---------------------------------------------------------------------
 Write-Host "`nDone." -ForegroundColor Green
 Write-Host @"
 
