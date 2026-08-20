@@ -24,7 +24,7 @@ import addinManifestRoutes from './routes/addin-manifest.js'
 
 const app = express()
 
-app.use(helmet({
+const appHelmet = helmet({
   contentSecurityPolicy: config.isDev ? false : {
     directives: {
       defaultSrc: ["'self'"],
@@ -39,7 +39,43 @@ app.use(helmet({
       ],
     },
   },
-}))
+})
+
+/**
+ * The add-in pages need their own policy, kept separate so the main app's stays strict.
+ *
+ * Office add-ins must load office.js from Microsoft's CDN — self-hosting it is not
+ * supported, as the library is version-matched to the Office host. The app-wide
+ * `script-src 'self'` therefore blocks it outright, which silently leaves the task pane
+ * as dead static HTML: no Office.onReady, no event handlers, buttons that do nothing.
+ *
+ * Office also frames these pages (the task pane host and the dialog API), so the
+ * app-wide `frame-ancestors 'self'` and X-Frame-Options have to be relaxed here.
+ */
+const addinHelmet = helmet({
+  frameguard: false, // X-Frame-Options can't express a list; frame-ancestors below does
+  contentSecurityPolicy: config.isDev ? false : {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-eval'", 'https://appsforoffice.microsoft.com'],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'blob:'],
+      fontSrc: ["'self'", 'data:'],
+      connectSrc: ["'self'", 'https://appsforoffice.microsoft.com'],
+      frameAncestors: [
+        "'self'",
+        'https://*.officeapps.live.com',
+        'https://*.office.com',
+        'https://*.microsoft.com',
+        'https://*.sharepoint.com',
+       ],
+    },
+  },
+})
+
+app.use((req, res, next) =>
+  req.path.startsWith('/addin') ? addinHelmet(req, res, next) : appHelmet(req, res, next)
+)
 app.use(compression())
 
 const rawIndigoUrl = process.env.INDIGO_SERVICE_URL ?? 'http://indigoservice.railway.internal'

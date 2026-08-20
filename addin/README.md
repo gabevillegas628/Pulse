@@ -30,11 +30,49 @@ prints, and exports to PDF.
   The add-in checks on load and says so plainly if unavailable.
 - The Pulse server reachable over **HTTPS** — Office refuses add-in content over plain HTTP.
 
+### Server requirements
+
+The `/addin` routes are served with their own Content-Security-Policy, set in
+`backend/src/app.ts`. This is not optional decoration:
+
+- `script-src` must include `https://appsforoffice.microsoft.com`. Office add-ins have to
+  load `office.js` from Microsoft's CDN — self-hosting it is unsupported, since the
+  library is version-matched to the Office host. Under the app-wide `script-src 'self'`
+  the script is blocked, `Office.onReady` never fires, no event handlers are attached,
+  and the task pane renders as dead static HTML: **you see the UI, and every button does
+  nothing.** There is no visible error.
+- `frame-ancestors` must allow the Office hosts, and `X-Frame-Options` must not be sent,
+  because Office frames these pages (the task pane host and the dialog API).
+
+If you ever see the pane render but not respond, check the response headers on
+`/addin/taskpane.html` before suspecting anything else.
+
 ## Sideloading
 
 Everything below assumes the add-in is deployed and
 `https://<your-pulse-host>/addin/manifest.xml` opens in a browser. Check that first —
 if it 404s, nothing else will work.
+
+**Fair warning: this process is genuinely fiddly.** It is not you. Office's sideloading
+story for desktop is a network share, a Trust Center entry, and a full app restart, with
+no useful error message when any of the three is wrong. Traps worth knowing up front:
+
+- **Creating the share needs administrator rights.** The script says so and falls back to
+  manual instructions, but plan on either an elevated PowerShell or five clicks in
+  Explorer.
+- **The Trust Center wants a folder, not a file.** Pasting
+  `https://…/addin/manifest.xml` into *Catalog Url* looks right and silently never works.
+  If you did that once, remove the entry — a dead catalog stays in the list forever and
+  makes later diagnosis confusing:
+  ```powershell
+  Get-ChildItem 'HKCU:\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs' |
+    ForEach-Object { $_.PSPath, (Get-ItemProperty $_.PSPath).Url }
+  # then Remove-Item '<the PSPath whose Url is not a \\ path>' -Recurse
+  ```
+- **PowerPoint must be fully quit and reopened**, not just the window closed. Trust Center
+  changes are read once at startup.
+- **The add-in appearing but doing nothing** is usually a Content-Security-Policy problem
+  on the server, not a sideloading problem. See *Server requirements* below.
 
 ### Windows
 
