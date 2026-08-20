@@ -73,8 +73,12 @@ const addinHelmet = helmet({
   },
 })
 
+// /present is a frontend route, but it is rendered inside a PowerPoint content add-in,
+// so it needs the add-in policy: Office frames it, and office.js loads from the CDN.
+const isAddinSurface = (path: string) => path.startsWith('/addin') || path === '/present'
+
 app.use((req, res, next) =>
-  req.path.startsWith('/addin') ? addinHelmet(req, res, next) : appHelmet(req, res, next)
+  isAddinSurface(req.path) ? addinHelmet(req, res, next) : appHelmet(req, res, next)
 )
 app.use(compression())
 

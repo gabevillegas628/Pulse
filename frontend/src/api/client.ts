@@ -3,8 +3,14 @@ import axios from 'axios'
 export const api = axios.create({ baseURL: '/api' })
 
 api.interceptors.request.use((config) => {
-  // Inject whichever token is present (professor takes precedence on shared pages)
-  const token = localStorage.getItem('professor_token') ?? localStorage.getItem('student_token')
+  // Inject whichever token is present (professor takes precedence on shared pages).
+  // The add-in key is included because pages rendered inside PowerPoint share an origin
+  // with the task pane, which is where the professor signed in — the browser's own
+  // professor_token is in a different storage partition and will not be there.
+  const token =
+    localStorage.getItem('professor_token') ??
+    localStorage.getItem('pulse_addin_professor_token') ??
+    localStorage.getItem('student_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })

@@ -131,7 +131,14 @@ function manifestXml(baseUrl: string): string {
  */
 const SPIKE_ADDIN_ID = 'b7c3d94e-1a58-4f26-9d0b-3e8f5a2c7614'
 
-function spikeManifestXml(baseUrl: string): string {
+function contentManifestXml(baseUrl: string, opts: {
+  id: string
+  name: string
+  description: string
+  source: string
+  width: number
+  height: number
+}): string {
   const icon = `${baseUrl}/addin/icon-32.png`
   const icon80 = `${baseUrl}/addin/icon-80.png`
 
@@ -141,12 +148,12 @@ function spikeManifestXml(baseUrl: string): string {
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
   xsi:type="ContentApp">
-  <Id>${SPIKE_ADDIN_ID}</Id>
+  <Id>${opts.id}</Id>
   <Version>1.0.0.0</Version>
   <ProviderName>Pulse</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
-  <DisplayName DefaultValue="Pulse spike" />
-  <Description DefaultValue="Throwaway probe: does a content add-in run during a slide show?" />
+  <DisplayName DefaultValue="${opts.name}" />
+  <Description DefaultValue="${opts.description}" />
   <IconUrl DefaultValue="${icon}" />
   <HighResolutionIconUrl DefaultValue="${icon80}" />
   <SupportUrl DefaultValue="${baseUrl}" />
@@ -157,20 +164,48 @@ function spikeManifestXml(baseUrl: string): string {
     <Host Name="Presentation" />
   </Hosts>
   <DefaultSettings>
-    <SourceLocation DefaultValue="${baseUrl}/addin/spike.html" />
-    <RequestedWidth>400</RequestedWidth>
-    <RequestedHeight>360</RequestedHeight>
+    <SourceLocation DefaultValue="${baseUrl}${opts.source}" />
+    <RequestedWidth>${opts.width}</RequestedWidth>
+    <RequestedHeight>${opts.height}</RequestedHeight>
   </DefaultSettings>
   <Permissions>ReadWriteDocument</Permissions>
 </OfficeApp>
 `
 }
 
+/** Stable GUID for the results object — changing it orphans every already-inserted copy. */
+const RESULTS_ADDIN_ID = 'c4a81f37-6b29-4d05-90ae-7f21b8e3d5c6'
+
 router.get('/spike-manifest.xml', (_req: Request, res: Response) => {
   const baseUrl = config.baseUrl.replace(/\/$/, '')
   res.type('application/xml')
   res.setHeader('Content-Disposition', 'attachment; filename="pulse-spike-manifest.xml"')
-  res.send(spikeManifestXml(baseUrl))
+  res.send(contentManifestXml(baseUrl, {
+    id: SPIKE_ADDIN_ID,
+    name: 'Pulse spike',
+    description: 'Throwaway probe: does a content add-in run during a slide show?',
+    source: '/addin/spike.html',
+    width: 400,
+    height: 360,
+  }))
+})
+
+/**
+ * The live results object. Drop it on a slide and it shows aggregate results for whichever
+ * question the class is currently answering — no binding, no per-question activation.
+ */
+router.get('/results-manifest.xml', (_req: Request, res: Response) => {
+  const baseUrl = config.baseUrl.replace(/\/$/, '')
+  res.type('application/xml')
+  res.setHeader('Content-Disposition', 'attachment; filename="pulse-results-manifest.xml"')
+  res.send(contentManifestXml(baseUrl, {
+    id: RESULTS_ADDIN_ID,
+    name: 'Pulse Live Results',
+    description: 'Shows live class responses on your slide for the question being answered.',
+    source: '/present',
+    width: 600,
+    height: 450,
+  }))
 })
 
 router.get('/manifest.xml', (_req: Request, res: Response) => {

@@ -320,4 +320,90 @@ router.post('/rebind', async (req: Request, res: Response, next: NextFunction) =
   }
 })
 
+// ─── Live results for the in-slide display ───────────────────────────────────
+
+/**
+ * The professor's currently-open session, shaped for projection.
+ *
+ * Requires no configuration: the content add-in on a slide just asks "what is live
+ * right now?". Opening a session in Pulse is the only action, and the slide follows.
+ *
+ * Student identity is stripped here rather than in the UI. This payload is rendered on
+ * a lecture-hall projector, so netIDs must not be in the data at all — a rendering bug
+ * should not be able to expose them.
+ */
+router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+
+    const run = await prisma.sessionRun.findFirst({
+      where: { status: 'OPEN', session: { class: { professorId: professor.id } } },
+      orderBy: { openedAt: 'desc' },
+      select: { id: true, sessionId: true, openedAt: true },
+    })
+    if (!run) return res.json({ success: true, data: { session: null } })
+
+    const session = await prisma.session.findUnique({
+      where: { id: run.sessionId },
+      select: {
+        id: true,
+        title: true,
+        class: { select: { name: true, _count: { select: { enrollments: true } } } },
+        questions: {
+          orderBy: { order: 'asc' },
+          select: {
+            id: true,
+            title: true,
+            text: true,
+            type: true,
+            options: true,
+            order: true,
+            correctAnswer: true,
+            responses: {
+              orderBy: { submittedAt: 'desc' },
+              // No student relation: identity must not reach the projector.
+              select: {
+                id: true,
+                responseText: true,
+                wordCount: true,
+                isFlagged: true,
+                submittedAt: true,
+                aiScore: true,
+              },
+            },
+          },
+        },
+      },
+    })
+    if (!session) return res.json({ success: true, data: { session: null } })
+
+    // Whichever question most recently received an answer is where the class is now.
+    let activeQuestionId: string | null = null
+    let latest = 0
+    for (const q of session.questions) {
+      const t = q.responses[0] ? new Date(q.responses[0].submittedAt).getTime() : 0
+      if (t > latest) { latest = t; activeQuestionId = q.id }
+    }
+    // Before anyone has answered, show the first question rather than nothing.
+    if (!activeQuestionId) activeQuestionId = session.questions[0]?.id ?? null
+
+    res.json({
+      success: true,
+      data: {
+        session: {
+          id: session.id,
+          title: session.title,
+          className: session.class.name,
+          enrolledCount: session.class._count.enrollments,
+          questions: session.questions,
+        },
+        activeQuestionId,
+        runId: run.id,
+      },
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
 export default router

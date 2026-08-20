@@ -354,6 +354,46 @@ async function main() {
     check('all access codes are unique', new Set(distinct.map((d) => d.accessCode)).size === distinct.length)
     check('all access codes are 4 digits', distinct.every((d) => /^\d{4}$/.test(d.accessCode)))
     console.log(`  INFO  ${total} questions using ${((total / 10000) * 100).toFixed(1)}% of the 4-digit namespace`)
+    // ── 10. Projected live results ────────────────────────────────────────────
+    section('10. Projected live results (/addin/live)')
+
+    // Nothing open: the slide should be told so explicitly, not handed stale data.
+    let live = await http<any>('GET', '/api/addin/live', { token: pTok })
+    check('reports no session when nothing is open', live.status === 200 && live.body?.data?.session === null,
+      `status ${live.status}`)
+
+    const liveRun = await http<any>('POST', `/api/sessions/${sessions[1].id}/runs`, { token: pTok, body: {} })
+    check('run opens for the live test', liveRun.status === 201 || liveRun.status === 200)
+
+    const liveQs = await prisma.question.findMany({
+      where: { sessionId: sessions[1].id }, orderBy: { order: 'asc' }, select: { id: true },
+    })
+    await http('POST', '/api/responses', {
+      token: sTok, body: { questionId: liveQs[1].id, responseText: 'projected answer' },
+    })
+
+    live = await http<any>('GET', '/api/addin/live', { token: pTok })
+    check('returns the open session', live.body?.data?.session?.id === sessions[1].id)
+    check('carries the enrolled count for the participation bar',
+      typeof live.body?.data?.session?.enrolledCount === 'number')
+    check('follows the question that was just answered',
+      live.body?.data?.activeQuestionId === liveQs[1].id,
+      `got ${live.body?.data?.activeQuestionId}`)
+
+    // The whole point of stripping identity server-side: this payload is projected in a
+    // lecture hall, so a rendering bug must not be able to expose who answered.
+    const payload = JSON.stringify(live.body)
+    check('payload contains no netId', !payload.includes('netId'))
+    check('payload contains no studentId', !payload.includes('studentId'))
+    check('payload contains no student object', !/"student"\s*:/.test(payload))
+
+    const liveRunId = liveRun.body?.data?.run?.id
+    if (liveRunId) {
+      await http('PATCH', `/api/sessions/${sessions[1].id}/runs/${liveRunId}`, { token: pTok, body: { status: 'CLOSED' } })
+      live = await http<any>('GET', '/api/addin/live', { token: pTok })
+      check('stops reporting a session once the run closes', live.body?.data?.session === null)
+    }
+
   } finally {
     section('Cleanup')
     await destroyFixture(professor.id, student.id)

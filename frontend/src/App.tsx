@@ -18,6 +18,7 @@ import AssignmentDetailPage from '@/pages/professor/AssignmentDetailPage'
 import CodeEntryPage from '@/pages/student/CodeEntryPage'
 import QuestionPage from '@/pages/student/QuestionPage'
 import QuestionRedirectPage from '@/pages/student/QuestionRedirectPage'
+import PresentResultsPage from '@/pages/present/PresentResultsPage'
 import ConfirmationPage from '@/pages/student/ConfirmationPage'
 import MyClassesPage from '@/pages/student/MyClassesPage'
 import StudentClassPage from '@/pages/student/StudentClassPage'
@@ -108,6 +109,8 @@ export default function App() {
         <Route path="/student/classes/:classId" element={<StudentProtected><StudentClassPage /></StudentProtected>} />
         <Route path="/student/classes/:classId/textbook" element={<StudentProtected><StudentTextbookPage /></StudentProtected>} />
         <Route path="/student/assignments/:assignmentId" element={<StudentProtected><AssignmentPage /></StudentProtected>} />
+        {/* Rendered inside a PowerPoint content add-in on a slide. Aggregate only. */}
+        <Route path="/present" element={<PresentResultsPage />} />
         <Route path="/q/code/:code" element={<QuestionRedirectPage />} />
         <Route path="/q/:questionId" element={<QuestionPage />} />
         <Route path="/q/:questionId/confirmation" element={<ConfirmationPage />} />

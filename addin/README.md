@@ -2,7 +2,19 @@
 
 Insert question QR codes onto slides and keep them true across semesters.
 
-## What it does
+## Two pieces
+
+**Task pane** — the pre-lecture tool. Insert question cards, check the deck, fix stale codes,
+re-bind at rollover. Not visible during a slide show, by design: it is part of the editing
+chrome.
+
+**Live Results object** — a *content* add-in you drop onto a slide. Unlike the task pane it
+renders during the slide show, so class responses appear in your deck without leaving the
+presentation. It needs no setup: it shows aggregate results for whichever question the class
+is currently answering, so opening a session in Pulse is the only action. See
+[Live results on a slide](#live-results-on-a-slide).
+
+## What the task pane does
 
 A "Pulse Question" is an ordinary picture shape carrying tags that record which question it
 points at. The tags live inside the `.pptx`, so the binding survives save, close, copy, and
@@ -16,12 +28,16 @@ send — and the add-in can check the whole deck in one pass.
 - **New semester** — after duplicating a class, re-binds the whole deck in one step. Matched
   slides keep their existing QR image.
 
-## Why the images stay static
+## Why the QR cards stay static
 
-The add-in writes a plain PNG into the slide rather than rendering live content. A content
-add-in *does* render during a slide show, but it needs network and a successful add-in load at
-lecture time — and a failure puts a blank box on the projector. A static image works offline,
-prints, and exports to PDF.
+The task pane writes a plain PNG into the slide rather than rendering the QR live. A content
+add-in could render it, but it would need network and a successful load at lecture time — and a
+failure would put a blank box where the QR should be, which is the exact embarrassment this was
+built to prevent. A static image works offline, prints, and exports to PDF.
+
+The Live Results object makes the opposite trade deliberately: live data cannot be baked into an
+image, so there is nothing to fall back to. Hence it is a separate object you place only where
+you want it, and it degrades to a readable status line rather than going blank.
 
 ## Requirements
 
@@ -173,6 +189,30 @@ Simpler — no sharing, just a folder Office already watches.
 
 Clear the Office cache — see
 [Clear the Office cache](https://learn.microsoft.com/office/dev/add-ins/testing/clear-cache).
+
+## Live results on a slide
+
+Sideload `https://<your-pulse-host>/addin/results-manifest.xml` the same way as the task pane
+manifest — drop it in the same catalog folder, no extra Trust Center work. Then
+**Insert → Add-ins → Advanced → SHARED FOLDER → Pulse Live Results**, and size it on the slide.
+
+It follows the class automatically. There is no per-question binding and no activation step:
+whichever question is receiving answers is the one shown, because the students' scans are what
+say where the lecture is. Put one on any slide where you want the room to see results.
+
+**What the room sees is aggregate only** — counts, distribution charts, percentage answered,
+and for free text the response count and average length. Never netIDs, never anyone's words.
+That is enforced in the API, not just the UI: `/api/addin/live` strips student identity from
+the payload entirely, so a rendering bug cannot expose it.
+
+**Limitations.**
+
+- **PowerPoint Live (Teams) does not host content add-ins.** Remote or hybrid sessions lose the
+  in-slide view; use the browser pop-out instead.
+- It needs the network at lecture time. Unlike a QR card there is no offline fallback, so the
+  page always paints a readable status ("Connecting…", "Waiting for the room…", "Reconnecting…")
+  and holds the last known counts through a dropout rather than going blank.
+- Sign in through the task pane once; the results object shares that session.
 
 ## Development
 
