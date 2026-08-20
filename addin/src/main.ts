@@ -69,6 +69,7 @@ function wireEvents() {
   $('insert-btn').addEventListener('click', onInsert)
   $('verify-btn').addEventListener('click', () => void runVerify())
   $('sync-btn').addEventListener('click', onSync)
+  $('refresh-btn').addEventListener('click', onRefreshAll)
   $('rebind-btn').addEventListener('click', onRebind)
 }
 
@@ -129,7 +130,12 @@ async function showSignedIn() {
 function renderClassOptions() {
   const select = $('class-select') as HTMLSelectElement
   select.innerHTML = classes
-    .map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
+    .map((c) => {
+      // Description carries the semester, which is what distinguishes two classes
+      // with the same name after a duplication.
+      const label = c.description?.trim() ? `${c.name} — ${c.description.trim()}` : c.name
+      return `<option value="${c.id}">${escapeHtml(label)}</option>`
+    })
     .join('')
   // Default to whatever class this deck is already bound to
   if (deckClassId && classes.some((c) => c.id === deckClassId)) select.value = deckClassId
@@ -301,6 +307,8 @@ function updateSummary(total: number, stale: number) {
   badge.textContent = stale > 0 ? String(stale) : ''
   badge.classList.toggle('hidden', stale === 0)
   ;($('sync-btn') as HTMLButtonElement).disabled = stale === 0 || total === 0
+  // Refresh is useful whenever anything is tracked, healthy or not
+  ;($('refresh-btn') as HTMLButtonElement).disabled = total === 0
 }
 
 // ─── Sync ─────────────────────────────────────────────────────────────────────
@@ -349,6 +357,52 @@ async function onSync() {
   ].filter(Boolean)
 
   setStatus('verify-status', parts.join(' · ') || 'Nothing to do', failures.length ? 'warn' : 'ok')
+  if (failures.length) $('verify-detail').textContent = failures.join('\n')
+  await runVerify()
+}
+
+/**
+ * Redraw every healthy tracked card from current server data.
+ *
+ * Editing a question's wording in Pulse leaves the slide showing the old text — the
+ * image is a snapshot, not a live view. This pulls each tracked question fresh and
+ * re-stamps its card in place, preserving position and size.
+ *
+ * Shapes that need fixing first (code moved, question deleted, wrong class) are skipped:
+ * re-stamping them would bake in a broken state. Run Fix all on those instead.
+ */
+async function onRefreshAll() {
+  const healthy = lastRows.filter((r) => classify(r).severity === 'ok')
+  const needsFixing = lastRows.length - healthy.length
+
+  if (healthy.length === 0) {
+    setStatus('verify-status',
+      needsFixing > 0 ? 'Nothing to refresh — run Fix all first.' : 'No tracked cards in this deck.',
+      'warn')
+    return
+  }
+
+  setStatus('verify-status', `Refreshing ${healthy.length}…`, 'muted')
+  let redrawn = 0
+  const failures: string[] = []
+
+  for (const row of healthy) {
+    try {
+      const { qrDataUrl, accessCode, text } = await getQuestionQr(row.shape.questionId)
+      await restampShape(row.shape, qrDataUrl, accessCode, text)
+      redrawn++
+    } catch (err) {
+      failures.push(`Slide ${row.shape.slideIndex + 1}: ${errText(err)}`)
+    }
+  }
+
+  const parts = [
+    `${redrawn} card${redrawn !== 1 ? 's' : ''} redrawn`,
+    needsFixing > 0 ? `${needsFixing} skipped (need fixing)` : null,
+    failures.length > 0 ? `${failures.length} failed` : null,
+  ].filter(Boolean)
+
+  setStatus('verify-status', parts.join(' · '), failures.length ? 'warn' : 'ok')
   if (failures.length) $('verify-detail').textContent = failures.join('\n')
   await runVerify()
 }

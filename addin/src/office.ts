@@ -211,6 +211,11 @@ export async function restampShape(
 ): Promise<void> {
   const card = await renderCard(qrDataUrl, newCode, questionText)
 
+  // setSelectedDataAsync inserts at the *current selection*, so the target slide has to
+  // be selected first. Without this the replacement lands on whatever slide the user
+  // happens to be on, and the id diff below then finds nothing.
+  await goToSlide(shape.slideIndex)
+
   await PowerPoint.run(async (context) => {
     context.presentation.slides.getItemAt(shape.slideIndex).shapes.getItem(shape.shapeId).delete()
     await context.sync()
