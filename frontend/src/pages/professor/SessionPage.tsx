@@ -7,7 +7,7 @@ import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
 import Empty from '@/components/ui/Empty'
-import { Check, ChevronLeft, Copy, Download, Flag, GraduationCap, Pencil, PictureInPicture2, Plus, Sparkles, X } from 'lucide-react'
+import { Check, ChevronLeft, Copy, Download, Flag, GraduationCap, Pencil, PictureInPicture2, Plus, Sparkles, Trash2, X } from 'lucide-react'
 import { io } from 'socket.io-client'
 import type { SessionDetail, QuestionWithResponses, ResponseWithStudent, SummaryCategory } from 'shared'
 import { SessionStatus } from 'shared'
@@ -145,6 +145,7 @@ export default function SessionPage() {
   const [showSectionModal, setShowSectionModal] = useState(false)
 
   const [showAddQuestion, setShowAddQuestion] = useState(false)
+  const [aqTitle, setAqTitle] = useState('')
   const [aqText, setAqText] = useState('')
   const [aqType, setAqType] = useState<'FREE_TEXT' | 'MULTIPLE_CHOICE' | 'RATING' | 'YES_NO' | 'NUMERIC' | 'MULTI_SELECT' | 'ORDERING' | 'STRUCTURE'>('FREE_TEXT')
   const [aqOptions, setAqOptions] = useState('')
@@ -155,6 +156,7 @@ export default function SessionPage() {
 
   const [showEditQuestion, setShowEditQuestion] = useState(false)
   const [eqId, setEqId] = useState<string | null>(null)
+  const [eqTitle, setEqTitle] = useState('')
   const [eqText, setEqText] = useState('')
   const [eqOptions, setEqOptions] = useState<string[]>([])
   const [eqCorrectAnswer, setEqCorrectAnswer] = useState('')
@@ -168,6 +170,7 @@ export default function SessionPage() {
 
   function openEditQuestion(q: QuestionWithResponses) {
     setEqId(q.id)
+    setEqTitle(q.title ?? '')
     setEqText(q.text)
     setEqOptions((q.options as string[] | null) ?? [])
     setEqCorrectAnswer(q.correctAnswer ?? '')
@@ -191,6 +194,7 @@ export default function SessionPage() {
 
   const addQuestionMutation = useMutation({
     mutationFn: () => api.post(`/sessions/${sessionId}/questions`, {
+      title: aqTitle.trim() || undefined,
       text: aqText,
       type: aqType,
       options: ['MULTIPLE_CHOICE', 'MULTI_SELECT', 'ORDERING'].includes(aqType)
@@ -202,7 +206,7 @@ export default function SessionPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['session', sessionId] })
       setShowAddQuestion(false)
-      setAqText(''); setAqType('FREE_TEXT'); setAqOptions('')
+      setAqTitle(''); setAqText(''); setAqType('FREE_TEXT'); setAqOptions('')
       setAqNumericAnswer(''); setAqTolerance(''); setAqUnit(''); setAqError('')
     },
     onError: (e: unknown) => {
@@ -217,6 +221,8 @@ export default function SessionPage() {
       if (!question) throw new Error('Question not found')
 
       const payload: Record<string, unknown> = {}
+      const newTitle = eqTitle.trim() || null
+      if (newTitle !== (question.title ?? null)) payload.title = newTitle
       if (eqText.trim() !== question.text) payload.text = eqText.trim()
 
       const hasOptions = ['MULTIPLE_CHOICE', 'MULTI_SELECT', 'ORDERING'].includes(question.type)
@@ -240,7 +246,7 @@ export default function SessionPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['session', sessionId] })
       setShowEditQuestion(false)
-      setEqId(null); setEqText(''); setEqOptions([]); setEqCorrectAnswer(''); setEqTolerance(''); setEqUnit(''); setEqError('')
+      setEqId(null); setEqTitle(''); setEqText(''); setEqOptions([]); setEqCorrectAnswer(''); setEqTolerance(''); setEqUnit(''); setEqError('')
     },
     onError: (e: unknown) => setEqError(apiError(e, 'Failed to save question')),
   })
@@ -333,6 +339,13 @@ export default function SessionPage() {
       })
     },
   })
+
+  /** Sidebar label: the professor-set title, else a trimmed snippet of the question text */
+  function questionLabel(q: { title?: string | null; text: string }): string {
+    const title = q.title?.trim()
+    if (title) return title
+    return q.text.length > 60 ? q.text.slice(0, 60).trimEnd() + '…' : q.text
+  }
 
   function questionTypeLabel(type: string): string {
     const labels: Record<string, string> = {
@@ -592,83 +605,119 @@ export default function SessionPage() {
         </div>
       </div>
 
-      {/* Question tabs */}
-      <div className="flex items-center gap-1 mb-6 border-b border-hairline">
-        {data.questions.map((q, i) => {
-          const scorableTypes = ['FREE_TEXT', 'MULTIPLE_CHOICE', 'YES_NO', 'NUMERIC']
-          const isScorable = scorableTypes.includes(q.type)
-          const n = q.responses.length
-          const scoredCount = isScorable && n > 0
-            ? q.responses.filter(r => calcResponseScore(q, r) !== null).length
-            : 0
+      <div className="flex gap-6 items-start">
+        {/* Question sidebar */}
+        <aside className="w-64 shrink-0 sticky top-6">
+          <div className="bg-surface border border-hairline rounded-[14px] overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-2.5 border-b border-hairline">
+              <p className="text-xs font-medium text-muted uppercase tracking-wide">Questions</p>
+              <span className="text-xs text-hairline-strong font-mono">{data.questions.length}</span>
+            </div>
 
-          let countColor = ''
-          if (n > 0) {
-            if (!isScorable) countColor = 'text-ink-2/40'
-            else if (scoredCount === 0) countColor = 'text-warn'
-            else if (scoredCount < n) countColor = 'text-yellow-500'
-            else countColor = 'text-good'
-          }
+            {data.questions.length === 0 ? (
+              <p className="px-3 py-4 text-xs text-muted">No questions yet.</p>
+            ) : (
+              <ul className="py-1">
+                {data.questions.map((q, i) => {
+                  const scorableTypes = ['FREE_TEXT', 'MULTIPLE_CHOICE', 'YES_NO', 'NUMERIC']
+                  const isScorable = scorableTypes.includes(q.type)
+                  const n = q.responses.length
+                  const scoredCount = isScorable && n > 0
+                    ? q.responses.filter(r => calcResponseScore(q, r) !== null).length
+                    : 0
 
-          const gradingLabel = !isScorable
-            ? `${n} response${n !== 1 ? 's' : ''}`
-            : scoredCount === 0 ? `${n} response${n !== 1 ? 's' : ''} — not graded`
-            : scoredCount < n ? `${scoredCount} / ${n} graded`
-            : `All ${n} graded`
+                  let countColor = ''
+                  if (n > 0) {
+                    if (!isScorable) countColor = 'text-ink-2/40'
+                    else if (scoredCount === 0) countColor = 'text-warn'
+                    else if (scoredCount < n) countColor = 'text-yellow-500'
+                    else countColor = 'text-good'
+                  }
 
-          return (
-          <div key={q.id} className="group relative flex items-center">
-            <button
-              onClick={() => setActiveTab(i)}
-              title={n > 0 ? gradingLabel : undefined}
-              className={`flex flex-col items-center px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === i
-                  ? 'border-signal text-ink'
-                  : 'border-transparent text-muted hover:text-ink'
-              }`}
-            >
-              Q{i + 1}
-              {n > 0 && (
-                <span className={`text-[10px] font-mono leading-none mt-0.5 ${countColor}`}>{n}</span>
-              )}
-            </button>
-            {!hasBeenRun && data.status !== SessionStatus.ARCHIVED && (
-              <button
-                onClick={() => {
-                  if (!confirm(`Delete Q${i + 1}? This cannot be undone.`)) return
-                  deleteQuestionMutation.mutate(q.id)
-                }}
-                disabled={deleteQuestionMutation.isPending}
-                className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-1 -right-1 w-4 h-4 flex items-center justify-center bg-surface border border-hairline rounded-full text-hairline-strong hover:text-red-500 hover:border-red-300 disabled:opacity-30"
-                title="Delete question"
-              >
-                <X size={9} />
-              </button>
+                  const gradingLabel = !isScorable
+                    ? `${n} response${n !== 1 ? 's' : ''}`
+                    : scoredCount === 0 ? `${n} response${n !== 1 ? 's' : ''} — not graded`
+                    : scoredCount < n ? `${scoredCount} / ${n} graded`
+                    : `All ${n} graded`
+
+                  const isActive = activeTab === i
+                  return (
+                    <li key={q.id} className="group relative">
+                      <button
+                        onClick={() => setActiveTab(i)}
+                        title={n > 0 ? gradingLabel : undefined}
+                        className={`w-full text-left pl-3 pr-8 py-2 border-l-2 transition-colors ${
+                          isActive
+                            ? 'border-signal bg-signal-soft'
+                            : 'border-transparent hover:bg-surface-2'
+                        }`}
+                      >
+                        <div className="flex items-baseline gap-2">
+                          <span className={`text-xs font-mono shrink-0 ${isActive ? 'text-signal font-bold' : 'text-hairline-strong'}`}>
+                            Q{i + 1}
+                          </span>
+                          <span className={`text-sm leading-snug line-clamp-2 ${isActive ? 'text-ink font-medium' : 'text-ink-2'}`}>
+                            {questionLabel(q)}
+                          </span>
+                        </div>
+                        {n > 0 && (
+                          <p className={`text-[10px] font-mono mt-0.5 ml-[1.9rem] ${countColor}`}>
+                            {n} response{n !== 1 ? 's' : ''}
+                          </p>
+                        )}
+                      </button>
+
+                      {!hasBeenRun && data.status !== SessionStatus.ARCHIVED && (
+                        <button
+                          onClick={() => {
+                            if (!confirm(`Delete Q${i + 1} — "${questionLabel(q)}"? This cannot be undone.`)) return
+                            deleteQuestionMutation.mutate(q.id)
+                          }}
+                          disabled={deleteQuestionMutation.isPending}
+                          className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity absolute top-2 right-2 w-5 h-5 flex items-center justify-center text-hairline-strong hover:text-red-500 rounded-sm disabled:opacity-30"
+                          title="Delete question"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
             )}
-          </div>
-        )
-        })}
-        <button
-          onClick={() => setShowAddQuestion(true)}
-          className="ml-1 mb-px flex items-center gap-1 text-xs text-muted hover:text-signal px-2 py-1.5 transition-colors"
-          title="Add question"
-        >
-          <Plus size={13} /> Add
-        </button>
-      </div>
 
-      {activeQuestion && (
+            <div className="border-t border-hairline p-2">
+              <button
+                onClick={() => { setAqError(''); setShowAddQuestion(true) }}
+                disabled={isLive}
+                title={isLive ? 'Close the session to add questions' : 'Add a new question'}
+                className="w-full flex items-center justify-center gap-1.5 text-xs font-medium text-signal hover:bg-signal-soft disabled:text-muted disabled:hover:bg-transparent disabled:cursor-not-allowed px-2 py-2 rounded-sm transition-colors"
+              >
+                <Plus size={13} /> Add New Question
+              </button>
+            </div>
+          </div>
+        </aside>
+
+        {/* Main content */}
+        <div className="flex-1 min-w-0">
+          {!activeQuestion ? (
+            <Empty message="No questions yet — add one from the sidebar." />
+          ) : (
         <div>
           {/* Question header */}
           <div className="bg-surface-2 border border-hairline rounded-[14px] p-4 mb-5">
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
-                  <p className="text-xs text-muted font-medium uppercase tracking-wide">Question</p>
+                  <p className="text-xs text-muted font-medium uppercase tracking-wide">Question {activeTab + 1}</p>
                   <span className="text-xs bg-surface text-ink-2 border border-hairline font-medium px-1.5 py-0.5 rounded">
                     {questionTypeLabel(activeQuestion.type)}
                   </span>
                 </div>
+                {activeQuestion.title && (
+                  <p className="text-sm font-semibold text-ink mb-1">{activeQuestion.title}</p>
+                )}
                 <p className="text-ink font-medium">{activeQuestion.text}</p>
                 {data.status !== SessionStatus.ARCHIVED && (
                   <button
@@ -1019,7 +1068,9 @@ export default function SessionPage() {
             </div>
           )}
         </div>
-      )}
+          )}
+        </div>
+      </div>
 
       {/* Add question modal */}
       {showAddQuestion && (
@@ -1032,6 +1083,13 @@ export default function SessionPage() {
             <div className="space-y-4">
               <input
                 autoFocus
+                value={aqTitle}
+                onChange={(e) => setAqTitle(e.target.value)}
+                placeholder="Short title (optional) — shown in the sidebar"
+                maxLength={120}
+                className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
+              />
+              <input
                 value={aqText}
                 onChange={(e) => setAqText(e.target.value)}
                 placeholder="Question text…"
@@ -1113,6 +1171,13 @@ export default function SessionPage() {
               <div className="space-y-4">
                 <input
                   autoFocus
+                  value={eqTitle}
+                  onChange={(e) => setEqTitle(e.target.value)}
+                  placeholder="Short title (optional) — shown in the sidebar"
+                  maxLength={120}
+                  className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
+                />
+                <input
                   value={eqText}
                   onChange={(e) => setEqText(e.target.value)}
                   placeholder="Question text…"
