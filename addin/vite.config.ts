@@ -11,6 +11,7 @@ export default defineConfig({
       input: {
         taskpane: resolve(__dirname, 'taskpane.html'),
         auth: resolve(__dirname, 'auth.html'),
+        spike: resolve(__dirname, 'spike.html'),
       },
     },
   },

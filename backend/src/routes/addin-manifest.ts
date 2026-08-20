@@ -118,6 +118,61 @@ function manifestXml(baseUrl: string): string {
 `
 }
 
+/**
+ * Phase 0 spike manifest — a ContentApp, which embeds in a slide rather than docking as a
+ * task pane. Content add-ins are the only add-in surface that renders during a slide show,
+ * which is the assumption the in-situ results feature rests on and which the docs never
+ * state outright.
+ *
+ * A classic XML manifest declares one type at its root, so this cannot be folded into the
+ * task pane manifest above — it needs its own file and its own GUID.
+ *
+ * Disposable: delete with the spike once the answers are recorded.
+ */
+const SPIKE_ADDIN_ID = 'b7c3d94e-1a58-4f26-9d0b-3e8f5a2c7614'
+
+function spikeManifestXml(baseUrl: string): string {
+  const icon = `${baseUrl}/addin/icon-32.png`
+  const icon80 = `${baseUrl}/addin/icon-80.png`
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+  xsi:type="ContentApp">
+  <Id>${SPIKE_ADDIN_ID}</Id>
+  <Version>1.0.0.0</Version>
+  <ProviderName>Pulse</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="Pulse spike" />
+  <Description DefaultValue="Throwaway probe: does a content add-in run during a slide show?" />
+  <IconUrl DefaultValue="${icon}" />
+  <HighResolutionIconUrl DefaultValue="${icon80}" />
+  <SupportUrl DefaultValue="${baseUrl}" />
+  <AppDomains>
+    <AppDomain>${baseUrl}</AppDomain>
+  </AppDomains>
+  <Hosts>
+    <Host Name="Presentation" />
+  </Hosts>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="${baseUrl}/addin/spike.html" />
+    <RequestedWidth>400</RequestedWidth>
+    <RequestedHeight>360</RequestedHeight>
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+</OfficeApp>
+`
+}
+
+router.get('/spike-manifest.xml', (_req: Request, res: Response) => {
+  const baseUrl = config.baseUrl.replace(/\/$/, '')
+  res.type('application/xml')
+  res.setHeader('Content-Disposition', 'attachment; filename="pulse-spike-manifest.xml"')
+  res.send(spikeManifestXml(baseUrl))
+})
+
 router.get('/manifest.xml', (_req: Request, res: Response) => {
   // Office requires HTTPS for add-in content, so a localhost BASE_URL yields a manifest
   // that only works in a dev-cert setup. Trailing slash trimmed to keep URLs well-formed.

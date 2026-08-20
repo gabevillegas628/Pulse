@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pulse spike</title>
+    <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+    <style>
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: #111827;
+        color: #f9fafb;
+        font-size: 13px;
+        padding: 10px;
+      }
+      h1 { font-size: 14px; margin: 0 0 8px; color: #ee4d2e; }
+      table { width: 100%; border-collapse: collapse; }
+      td { padding: 3px 4px; vertical-align: top; border-bottom: 1px solid #1f2937; }
+      td.k { color: #9ca3af; white-space: nowrap; width: 40%; }
+      td.v { font-family: 'Courier New', monospace; word-break: break-all; }
+      .ok { color: #34d399; }
+      .bad { color: #f87171; }
+      .wait { color: #fbbf24; }
+      #tick { font-size: 26px; font-family: 'Courier New', monospace; color: #ee4d2e; }
+    </style>
+  </head>
+  <body>
+    <h1>Pulse content add-in spike</h1>
+    <!--
+      A live counter is the whole point: a frozen number means the add-in is being
+      shown as a stale bitmap rather than actually running during the slide show.
+    -->
+    <div id="tick">—</div>
+    <table>
+      <tr><td class="k">instance</td><td class="v" id="instance">—</td></tr>
+      <tr><td class="k">host / platform</td><td class="v" id="host">—</td></tr>
+      <tr><td class="k">active view</td><td class="v" id="view">—</td></tr>
+      <tr><td class="k">view changes seen</td><td class="v" id="viewlog">—</td></tr>
+      <tr><td class="k">fetch /api</td><td class="v" id="fetch">—</td></tr>
+      <tr><td class="k">socket</td><td class="v" id="socket">—</td></tr>
+      <tr><td class="k">addin token in localStorage</td><td class="v" id="token">—</td></tr>
+      <tr><td class="k">requirement sets</td><td class="v" id="reqs">—</td></tr>
+    </table>
+    <script type="module" src="./src/spike.ts"></script>
+  </body>
+</html>
