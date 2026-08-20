@@ -187,6 +187,7 @@ model Question {
   assignment    Assignment?     @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
   groupId       String?
   group         QuestionGroup?  @relation(fields: [groupId], references: [id])
+  title         String?
   text          String
   type          QuestionType    @default(FREE_TEXT)
   options       Json?

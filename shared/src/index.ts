@@ -70,6 +70,8 @@ export interface Question {
   sessionId: string | null
   assignmentId: string | null
   groupId: string | null
+  /** Professor-facing short label for navigation; students never see it */
+  title: string | null
   text: string
   type: QuestionType
   options: string[] | null
@@ -181,6 +183,7 @@ export interface CreateClassRequest {
 // Sessions
 
 export interface CreateQuestionInput {
+  title?: string
   text: string
   type: QuestionType
   options?: string[]

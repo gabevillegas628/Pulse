@@ -50,7 +50,8 @@ async function getAssignment(assignmentId: string, professorId: string) {
 router.post('/sessions/:id/questions', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
-    const { text, type, options, groupId, correctAnswer, tolerance, unit } = z.object({
+    const { title, text, type, options, groupId, correctAnswer, tolerance, unit } = z.object({
+      title: z.string().max(120).optional(),
       text: z.string().min(1),
       type: z.enum(['FREE_TEXT', 'MULTIPLE_CHOICE', 'RATING', 'YES_NO', 'NUMERIC', 'MULTI_SELECT', 'ORDERING', 'STRUCTURE']),
       options: z.array(z.string()).optional(),
@@ -78,6 +79,7 @@ router.post('/sessions/:id/questions', requireProfessor, async (req: Request, re
       data: {
         sessionId: session.id,
         groupId: groupId ?? null,
+        title: title?.trim() || null,
         text,
         type: type as import('@prisma/client').QuestionType,
         options: options && options.length > 0 ? options : undefined,
@@ -177,6 +179,7 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
       groupId: z.string().nullable().optional(),
       tolerance: z.number().nullable().optional(),
       unit: z.string().nullable().optional(),
+      title: z.string().max(120).nullable().optional(),
       text: z.string().min(1).optional(),
       options: z.array(z.string().min(1)).optional(),
     }).parse(req.body)
@@ -236,6 +239,10 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
 
     if (body.tolerance !== undefined) updateData.tolerance = body.tolerance
     if (body.unit !== undefined) updateData.unit = body.unit
+
+    // Title is professor-facing navigation metadata — never shown to students, so
+    // it stays editable regardless of run/assignment status.
+    if (body.title !== undefined) updateData.title = body.title?.trim() || null
 
     if (body.groupId !== undefined) {
       if (body.groupId !== null) {
@@ -356,7 +363,8 @@ router.put('/sessions/:id/groups/reorder', requireProfessor, async (req: Request
 router.post('/assignments/:id/questions', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
-    const { text, type, options, groupId, correctAnswer, tolerance, unit } = z.object({
+    const { title, text, type, options, groupId, correctAnswer, tolerance, unit } = z.object({
+      title: z.string().max(120).optional(),
       text: z.string().min(1),
       type: z.enum(['FREE_TEXT', 'MULTIPLE_CHOICE', 'RATING', 'YES_NO', 'NUMERIC', 'MULTI_SELECT', 'ORDERING', 'STRUCTURE']),
       options: z.array(z.string()).optional(),
@@ -383,6 +391,7 @@ router.post('/assignments/:id/questions', requireProfessor, async (req: Request,
       data: {
         assignmentId: assignment.id,
         groupId: groupId ?? null,
+        title: title?.trim() || null,
         text,
         type: type as import('@prisma/client').QuestionType,
         options: options && options.length > 0 ? options : undefined,
@@ -482,6 +491,7 @@ router.patch('/assignments/:assignmentId/questions/:questionId', requireProfesso
       groupId: z.string().nullable().optional(),
       tolerance: z.number().nullable().optional(),
       unit: z.string().nullable().optional(),
+      title: z.string().max(120).nullable().optional(),
       text: z.string().min(1).optional(),
       options: z.array(z.string().min(1)).optional(),
     }).parse(req.body)
@@ -543,6 +553,10 @@ router.patch('/assignments/:assignmentId/questions/:questionId', requireProfesso
 
     if (body.tolerance !== undefined) updateData.tolerance = body.tolerance
     if (body.unit !== undefined) updateData.unit = body.unit
+
+    // Title is professor-facing navigation metadata — never shown to students, so
+    // it stays editable regardless of run/assignment status.
+    if (body.title !== undefined) updateData.title = body.title?.trim() || null
 
     if (body.groupId !== undefined) {
       if (body.groupId !== null) {
