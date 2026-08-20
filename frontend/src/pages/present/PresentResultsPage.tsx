@@ -56,6 +56,9 @@ type Phase = 'loading' | 'no-session' | 'live' | 'unauthorised' | 'error'
 
 const NO_SESSION_POLL = 8000
 const LIVE_POLL = 30000
+// When the socket is down the poll is the only source of updates, so it has to be quick
+// enough to still feel live on a projector.
+const DEGRADED_POLL = 4000
 
 export default function PresentResultsPage() {
   const [phase, setPhase] = useState<Phase>('loading')
@@ -66,6 +69,8 @@ export default function PresentResultsPage() {
 
   const socketRef = useRef<Socket | null>(null)
   const joinedRef = useRef<string | null>(null)
+  const connectedRef = useRef(false)
+  const sessionIdRef = useRef<string | null>(null)
 
   // ── Load whatever is currently open ──────────────────────────────────────────
   useEffect(() => {
@@ -80,14 +85,16 @@ export default function PresentResultsPage() {
 
         if (!data.session) {
           setSession(null)
+          sessionIdRef.current = null
           setPhase('no-session')
         } else {
           setSession(data.session)
-          // Only follow the server's idea of the active question on a session change;
-          // once live, the socket is more current than a poll.
-          setActiveId((prev) =>
-            prev && data.session!.questions.some((q) => q.id === prev) ? prev : data.activeQuestionId
-          )
+          sessionIdRef.current = data.session.id
+          // Always take the server's answer. It is derived from the most recent response, so
+          // it is authoritative; the socket only fills the gaps between polls. An earlier
+          // version kept the existing value once set, which pinned the display to the first
+          // question forever whenever the socket was not delivering.
+          setActiveId(data.activeQuestionId)
           setPhase('live')
         }
       } catch (err) {
@@ -102,15 +109,21 @@ export default function PresentResultsPage() {
         }
       } finally {
         if (!cancelled) {
-          timer = window.setTimeout(load, session ? LIVE_POLL : NO_SESSION_POLL)
+          // Cadence from refs, so it reflects the live socket state rather than whatever
+          // was captured when this effect was created.
+          const delay = !sessionIdRef.current
+            ? NO_SESSION_POLL
+            : connectedRef.current ? LIVE_POLL : DEGRADED_POLL
+          timer = window.setTimeout(load, delay)
         }
       }
     }
 
     load()
     return () => { cancelled = true; window.clearTimeout(timer) }
-    // Re-arm the poll cadence when we move between "nothing open" and "live".
-  }, [session?.id])
+    // Runs once: the loop re-arms itself and reads current state from refs, so it must not
+    // be torn down and rebuilt every time the session object changes identity.
+  }, [])
 
   // ── Live updates ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -121,13 +134,22 @@ export default function PresentResultsPage() {
       socketRef.current = socket
 
       socket.on('connect', () => {
+        connectedRef.current = true
         setConnected(true)
         setMessage('')
         if (joinedRef.current) socket.emit('join_session', joinedRef.current)
       })
       socket.on('disconnect', () => {
+        connectedRef.current = false
         setConnected(false)
         setMessage('Reconnecting…')
+      })
+      socket.on('connect_error', (err) => {
+        connectedRef.current = false
+        setConnected(false)
+        // The server drops sockets with no valid token, which looks identical to being
+        // offline unless it is called out. Polling still works, so results stay current.
+        setMessage(/auth|token|unauthor/i.test(err.message) ? 'Sign-in expired' : 'Reconnecting…')
       })
 
       socket.on('new_response', (payload: {
@@ -189,7 +211,7 @@ export default function PresentResultsPage() {
               className="font-bold uppercase tracking-widest"
               style={{ fontSize: 'clamp(9px, 1.2vw, 11px)', color: connected ? 'var(--signal)' : 'var(--warn)' }}
             >
-              {connected ? 'Live' : 'Reconnecting'}
+              {connected ? 'Live' : (message || 'Reconnecting')}
             </span>
           </div>
         )}

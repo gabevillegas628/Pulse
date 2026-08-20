@@ -49,7 +49,14 @@ export function setStudentToken(token: string | null): void {
 }
 
 export function getProfessorToken(): string | null {
-  return localStorage.getItem('professor_token')
+  // Same precedence as the request interceptor. Pages rendered inside PowerPoint share an
+  // origin with the task pane, which signed in under the add-in key; the browser's own
+  // professor_token lives in a different storage partition and is not present there.
+  // Socket auth reads this too, so missing the fallback silently kills all live updates.
+  return (
+    localStorage.getItem('professor_token') ??
+    localStorage.getItem('pulse_addin_professor_token')
+  )
 }
 
 export function getStudentToken(): string | null {
