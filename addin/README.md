@@ -32,26 +32,109 @@ prints, and exports to PDF.
 
 ## Sideloading
 
-Get the manifest from your own Pulse instance, so its URLs already point at the right place:
+Everything below assumes the add-in is deployed and
+`https://<your-pulse-host>/addin/manifest.xml` opens in a browser. Check that first —
+if it 404s, nothing else will work.
 
+### Windows
+
+**Why a "shared folder" is involved at all:** Office on Windows will only load a
+sideloaded add-in from a *network path* like `\\COMPUTER\FolderName`. It will not accept
+a normal local path like `C:\Something`. So you take an ordinary folder on your own
+machine and share it **with yourself**. Nothing is exposed to anyone else, nothing leaves
+your computer, and no other machine needs to reach it. It is a quirk of how Office looks
+up catalogs, not a real networking step.
+
+The catalog is a **folder**, not a file. A common mistake is to paste the
+`https://.../manifest.xml` URL into the Trust Center — that silently never works.
+
+#### The scripted way
+
+From the repo:
+
+```powershell
+cd addin\scripts
+.\setup-windows.ps1 -PulseUrl https://pulse.recommate.net
 ```
-https://<your-pulse-host>/addin/manifest.xml
-```
 
-Save it as `pulse-manifest.xml`.
+It creates the folder, shares it, downloads the manifest into it, and registers it as a
+trusted catalog. Run it in an **elevated** PowerShell (right-click PowerShell → *Run as
+administrator*) and it does everything; run it unelevated and it will do the rest but ask
+you to make the share by hand, because creating a Windows share needs admin.
 
-**Windows** — put the manifest in a folder, share that folder, then in PowerPoint:
-File → Options → Trust Center → Trust Center Settings → Trusted Add-in Catalogs. Add the
-share's **path** (`\\MACHINE\share`), tick *Show in Menu*, restart PowerPoint, then
-Insert → My Add-ins → Shared Folder → Pulse.
+Then restart PowerPoint and skip to *Insert the add-in* below.
 
-**Mac** — copy the manifest into:
+#### By hand
 
-```
-~/Library/Containers/com.microsoft.Powerpoint/Data/Documents/wef
-```
+1. **Make a folder.** Anywhere. `C:\PulseAddinCatalog` is fine.
 
-Create the folder if it doesn't exist, restart PowerPoint, then Insert → My Add-ins → Pulse.
+2. **Put the manifest in it.** Open `https://<your-pulse-host>/addin/manifest.xml`,
+   save it into that folder. The filename doesn't matter; the extension must stay `.xml`.
+
+3. **Share the folder with yourself.**
+   - In File Explorer, right-click the folder → **Properties**
+   - Go to the **Sharing** tab
+   - Click the **Share...** button
+   - Your own username should be listed with **Read/Write** permission. If it isn't, pick
+     it from the dropdown and click *Add*.
+   - Click **Share**. Windows may ask for admin confirmation.
+   - The confirmation screen shows a **network path** under the folder name, like
+     `\\GABE_ZENDUO\PulseAddinCatalog`. **Write it down** — that is what Office wants.
+   - Click **Done**, then **Close**.
+
+   Lost the path? It's `\\` + your computer name + `\` + the share name. Your computer
+   name is in Settings → System → About, or run `hostname` in a terminal.
+
+4. **Tell Office to trust that folder.**
+   - Open PowerPoint (any presentation)
+   - **File** → **Options** → **Trust Center** → **Trust Center Settings...**
+   - Choose **Trusted Add-in Catalogs** in the left list
+   - Paste the network path from step 3 into **Catalog Url** — the `\\COMPUTER\Folder`
+     path, *not* the https link to the manifest
+   - Click **Add catalog**
+   - Tick the **Show in Menu** checkbox next to the row that just appeared
+   - **OK**, then **OK** again
+
+5. **Fully close and reopen PowerPoint.** Trust Center changes are only read at startup.
+
+#### Insert the add-in
+
+- **Home** tab → **Add-ins** → **Advanced**
+- Click **SHARED FOLDER** at the top of the dialog
+- Select **Pulse** → **Add**
+
+(On older builds this dialog is under *Insert* → *My Add-ins* instead.)
+
+#### When it doesn't appear
+
+- PowerPoint wasn't fully restarted — quit it entirely, not just the window
+- The manifest isn't in the shared folder, or got saved as `.txt`
+- The share doesn't resolve — paste `\\COMPUTER\FolderName` into File Explorer's address
+  bar; if it doesn't open, the share isn't set up
+- The catalog was added as an `https://.../manifest.xml` URL rather than a folder path
+- The task pane URL in the manifest isn't HTTPS — Office refuses add-in content over plain
+  HTTP. Check `BASE_URL` on the Pulse server.
+
+### Mac
+
+Simpler — no sharing, just a folder Office already watches.
+
+1. In Finder, press **⌘⇧G** and go to:
+
+   ```
+   ~/Library/Containers/com.microsoft.Powerpoint/Data/Documents/wef
+   ```
+
+   Create the `wef` folder if it isn't there.
+
+2. Save `https://<your-pulse-host>/addin/manifest.xml` into it.
+
+3. Restart PowerPoint, then **Insert** → **My Add-ins** → **Pulse**.
+
+### Removing it
+
+Clear the Office cache — see
+[Clear the Office cache](https://learn.microsoft.com/office/dev/add-ins/testing/clear-cache).
 
 ## Development
 
