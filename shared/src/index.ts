@@ -283,6 +283,29 @@ export interface SummaryCategory {
   count: number
 }
 
+/**
+ * A persisted live-theme category. A superset of SummaryCategory, so anything that
+ * renders the latter accepts these unchanged. `count` is derived server-side from the
+ * per-response assignments and is never stored, so it cannot go stale.
+ */
+export interface ThemeCategory extends SummaryCategory {
+  id: string
+  /** The "Still forming" bucket — low-confidence answers, never a real theme. */
+  isOther: boolean
+}
+
+export type ThemeSetStatus = 'WAITING' | 'BOOTSTRAPPING' | 'ACTIVE' | 'RECLUSTERING' | 'FAILED'
+
+/** Persisted themes for one question in one session run. */
+export interface ThemeSet {
+  status: ThemeSetStatus
+  categories: ThemeCategory[]
+  /** Responses with a category assigned. Lags `total` while classification catches up. */
+  classified: number
+  total: number
+  model: string | null
+}
+
 /** Aggregate stats shown on a student's class activity tab */
 export interface StudentStats {
   totalResponses: number

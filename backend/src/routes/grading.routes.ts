@@ -8,6 +8,7 @@ import { requireProfessor, ProfessorRequest } from '../middleware/auth.middlewar
 import { getIo } from '../socket.js'
 import { logger } from '../utils/logger.js'
 import { p } from '../utils/params.js'
+import { bootstrapThemeSet, readThemeSet, latestRunId } from '../services/themes.service.js'
 
 const anthropic = new Anthropic({ apiKey: config.anthropicApiKey })
 const BATCH_SIZE = 25
@@ -237,26 +238,59 @@ router.patch('/sessions/:sessionId/questions/:questionId/responses/:responseId',
   }
 })
 
-// AI summarize responses for a FREE_TEXT question in a session
+// ─── Session themes (live AI categorisation) ──────────────────────────────────
+
+/** Load a session question the professor owns, for the theme routes. */
+async function findOwnedSessionQuestion(sessionId: string, questionId: string, professorId: string) {
+  const question = await prisma.question.findFirst({
+    where: {
+      id: p(questionId),
+      sessionId: p(sessionId),
+      session: { class: { professorId } },
+    },
+    select: { id: true, text: true, type: true, sessionId: true },
+  })
+  if (!question) throw new AppError('Question not found', 404)
+  if (question.type !== 'FREE_TEXT') throw new AppError('Only free text questions can be summarized', 400)
+  return question
+}
+
+/**
+ * Derive and persist categories for a question. This is the professor's explicit
+ * "summarize" action, so it runs whether or not automatic theming is enabled for the
+ * question — the `liveThemes` toggle governs the unattended path, not this one.
+ *
+ * Themes are keyed to the session's most recent run: a re-run of the same session
+ * starts from a clean set rather than blending two lectures' answers.
+ */
 router.post('/sessions/:sessionId/questions/:questionId/summarize', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
-    const { sessionId, questionId } = req.params
+    const question = await findOwnedSessionQuestion(p(req.params.sessionId), p(req.params.questionId), professor.id)
 
-    const question = await prisma.question.findFirst({
-      where: {
-        id: p(questionId),
-        sessionId: p(sessionId),
-        session: { class: { professorId: professor.id } },
-      },
-      include: { responses: true },
-    })
-    if (!question) throw new AppError('Question not found', 404)
-    if (question.type !== 'FREE_TEXT') throw new AppError('Only free text questions can be summarized', 400)
-    if (question.responses.length === 0) throw new AppError('No responses to summarize', 400)
+    const runId = await latestRunId(question.sessionId!)
+    if (!runId) throw new AppError('Session has not been run yet', 400)
 
-    const categories = await runAiSummarize(question)
-    res.json({ success: true, data: { categories } })
+    const themes = await bootstrapThemeSet(question.id, runId, question.text)
+    // `categories` keeps the old key so existing callers keep working; the entries are a
+    // superset of SummaryCategory, carrying an id and isOther as well.
+    res.json({ success: true, data: { categories: themes.categories, themes } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Read persisted themes. This is what makes a summary survive a page reload.
+router.get('/sessions/:sessionId/questions/:questionId/themes', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+    const question = await findOwnedSessionQuestion(p(req.params.sessionId), p(req.params.questionId), professor.id)
+
+    const runId = await latestRunId(question.sessionId!)
+    if (!runId) return res.json({ success: true, data: { themes: null } })
+
+    const themes = await readThemeSet(question.id, runId)
+    res.json({ success: true, data: { themes } })
   } catch (err) {
     next(err)
   }

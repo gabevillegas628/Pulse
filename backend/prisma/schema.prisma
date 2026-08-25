@@ -8,12 +8,12 @@ datasource db {
 }
 
 model Professor {
-  id           String    @id @default(cuid())
-  email        String    @unique
+  id           String   @id @default(cuid())
+  email        String   @unique
   passwordHash String
   name         String
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
   classes      Class[]
 }
 
@@ -30,22 +30,25 @@ model Student {
 }
 
 model Class {
-  id             String        @id @default(cuid())
-  professorId    String
-  professor      Professor     @relation(fields: [professorId], references: [id], onDelete: Cascade)
-  name           String
-  description    String?
-  joinCode       String        @unique
-  textbookRepo   String?
-  textbookPath   String?
-  textbookBranch String?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  sessions       Session[]
-  assignments    Assignment[]
-  enrollments    Enrollment[]
-  sections       Section[]
-  textbookViews  TextbookView[]
+  id                String         @id @default(cuid())
+  professorId       String
+  professor         Professor      @relation(fields: [professorId], references: [id], onDelete: Cascade)
+  name              String
+  description       String?
+  joinCode          String         @unique
+  textbookRepo      String?
+  textbookPath      String?
+  textbookBranch    String?
+  // Default for live AI theming of FREE_TEXT answers. Per-question `liveThemes`
+  // overrides it; off by default so no lecture starts calling an LLM unasked.
+  liveThemesDefault Boolean        @default(false)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  sessions          Session[]
+  assignments       Assignment[]
+  enrollments       Enrollment[]
+  sections          Section[]
+  textbookViews     TextbookView[]
 }
 
 model TextbookView {
@@ -109,6 +112,7 @@ model SessionRun {
   closedAt  DateTime?
   createdAt DateTime      @default(now())
   responses Response[]
+  themeSets ThemeSet[]
 
   @@index([sessionId])
   @@index([sectionId])
@@ -180,23 +184,26 @@ enum QuestionType {
 }
 
 model Question {
-  id            String          @id @default(cuid())
+  id            String         @id @default(cuid())
   sessionId     String?
-  session       Session?        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session       Session?       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   assignmentId  String?
-  assignment    Assignment?     @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  assignment    Assignment?    @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
   groupId       String?
-  group         QuestionGroup?  @relation(fields: [groupId], references: [id])
+  group         QuestionGroup? @relation(fields: [groupId], references: [id])
   title         String?
   text          String
-  type          QuestionType    @default(FREE_TEXT)
+  type          QuestionType   @default(FREE_TEXT)
   options       Json?
   order         Int
-  accessCode    String          @unique
+  accessCode    String         @unique
   correctAnswer String?
   tolerance     Float?
   unit          String?
+  // null = inherit Class.liveThemesDefault. FREE_TEXT only; ignored for other types.
+  liveThemes    Boolean?
   responses     Response[]
+  themeSets     ThemeSet[]
 
   @@index([sessionId])
   @@index([assignmentId])
@@ -204,22 +211,95 @@ model Question {
 }
 
 model Response {
-  id           String      @id @default(cuid())
+  id           String         @id @default(cuid())
   questionId   String
   studentId    String
   runId        String?
-  question     Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
-  student      Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  run          SessionRun? @relation(fields: [runId], references: [id])
+  question     Question       @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  student      Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  run          SessionRun?    @relation(fields: [runId], references: [id])
   responseText String
   wordCount    Int
-  isFlagged    Boolean     @default(false)
+  isFlagged    Boolean        @default(false)
   aiScore      Float?
-  isDraft      Boolean     @default(true)
-  submittedAt  DateTime    @default(now())
+  isDraft      Boolean        @default(true)
+  submittedAt  DateTime       @default(now())
+  theme        ResponseTheme?
 
   @@unique([questionId, studentId])
   @@index([questionId])
   @@index([runId])
   @@index([studentId])
+}
+
+// ─── Live AI themes ───────────────────────────────────────────────────────────
+//
+// Categories for a FREE_TEXT question, derived once from the first answers and then
+// assigned to each subsequent answer as it lands. See live_ai_themes_spec.md.
+//
+// Keyed to the run, not the question: re-teaching the same session next term starts
+// from a clean set rather than inheriting last term's categories.
+
+enum ThemeSetStatus {
+  WAITING // enabled, not enough answers yet
+  BOOTSTRAPPING // deriving categories now
+  ACTIVE // categories exist, classifying incrementally
+  RECLUSTERING // re-deriving categories
+  FAILED // gave up; the projector falls back to plain counts
+}
+
+enum ThemeSource {
+  AI
+  PROFESSOR
+}
+
+model ThemeSet {
+  id              String          @id @default(cuid())
+  questionId      String
+  runId           String
+  question        Question        @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  run             SessionRun      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  status          ThemeSetStatus  @default(WAITING)
+  model           String? // which model produced the categories, for the record
+  bootstrapN      Int? // how many answers seeded it
+  classifyCalls   Int             @default(0) // cost ceiling counter
+  lastClusteredAt DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  categories      ThemeCategory[]
+
+  @@unique([questionId, runId])
+  @@index([runId])
+}
+
+model ThemeCategory {
+  id          String          @id @default(cuid())
+  themeSetId  String
+  themeSet    ThemeSet        @relation(fields: [themeSetId], references: [id], onDelete: Cascade)
+  label       String
+  description String
+  order       Int
+  // Exactly one per set, created server-side and never invented by the model.
+  // Low-confidence answers land here instead of being forced into a wrong bin.
+  isOther     Boolean         @default(false)
+  assignments ResponseTheme[]
+
+  @@index([themeSetId])
+}
+
+// A response's category assignment. Deliberately a separate table rather than a column
+// on Response: Response is hot and widely selected — including by the identity-stripped
+// /addin/live payload — so an AI-feature foreign key there would widen every query that
+// touches it. Counts come from a groupBy here, so they can never go stale.
+model ResponseTheme {
+  id         String        @id @default(cuid())
+  responseId String        @unique
+  categoryId String
+  response   Response      @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  category   ThemeCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  confidence Float?
+  source     ThemeSource   @default(AI)
+  assignedAt DateTime      @default(now())
+
+  @@index([categoryId])
 }

@@ -9,7 +9,7 @@ import Card from '@/components/ui/Card'
 import Empty from '@/components/ui/Empty'
 import { Check, ChevronLeft, Copy, Download, Flag, GraduationCap, Pencil, PictureInPicture2, Plus, Sparkles, Trash2, X } from 'lucide-react'
 import { io } from 'socket.io-client'
-import type { SessionDetail, QuestionWithResponses, ResponseWithStudent, SummaryCategory } from 'shared'
+import type { SessionDetail, QuestionWithResponses, ResponseWithStudent, SummaryCategory, ThemeSet } from 'shared'
 import { SessionStatus } from 'shared'
 import ResultsSummary from '@/components/ResultsSummary'
 import LiveMonitorPanel from '@/components/LiveMonitorPanel'
@@ -29,6 +29,9 @@ export default function SessionPage() {
 
   const [summary, setSummary] = useState<SummaryCategory[] | null>(null)
   const [summaryQuestionId, setSummaryQuestionId] = useState<string | null>(null)
+  // Dismiss now only collapses the panel — the themes stay on the server. Without this,
+  // the effect that seeds `summary` from the server would immediately restore them.
+  const [dismissedThemesFor, setDismissedThemesFor] = useState<string | null>(null)
 
   const [copiedQrId, setCopiedQrId] = useState<string | null>(null)
   const [rubricDraft, setRubricDraft] = useState<Record<string, string>>({})
@@ -165,8 +168,30 @@ export default function SessionPage() {
     onSuccess: (categories: SummaryCategory[], questionId: string) => {
       setSummary(categories)
       setSummaryQuestionId(questionId)
+      // The server now holds these, so keep the cached copy honest for the next reload.
+      qc.invalidateQueries({ queryKey: ['themes', sessionId, questionId] })
     },
   })
+
+  // Themes persisted for the question in view. This is what makes a summary survive a
+  // page reload — it used to live only in component state and vanished on refresh.
+  const themesQuestion = data?.questions[activeTab]
+  const themesQuestionId = themesQuestion?.id ?? null
+  const { data: persistedThemes } = useQuery<ThemeSet | null>({
+    queryKey: ['themes', sessionId, themesQuestionId],
+    queryFn: () =>
+      api.get(`/sessions/${sessionId}/questions/${themesQuestionId}/themes`).then((r) => r.data.data.themes),
+    enabled: !!themesQuestionId && themesQuestion?.type === 'FREE_TEXT',
+  })
+
+  // Seed the panel from the server, unless it is already showing or was dismissed here.
+  useEffect(() => {
+    if (!themesQuestionId || !persistedThemes) return
+    if (dismissedThemesFor === themesQuestionId) return
+    if (summaryQuestionId === themesQuestionId) return
+    setSummary(persistedThemes.categories)
+    setSummaryQuestionId(themesQuestionId)
+  }, [themesQuestionId, persistedThemes, dismissedThemesFor, summaryQuestionId])
 
   const [gradeReasons, setGradeReasons] = useState<Record<string, string>>({})
   const [gradingState, setGradingState] = useState<Record<string, { graded: number; total: number }>>({})
@@ -863,6 +888,7 @@ export default function SessionPage() {
                   onClick={() => {
                     setSummary(null)
                     setSummaryQuestionId(null)
+                    setDismissedThemesFor(null)
                     summarizeMutation.mutate(activeQuestion.id)
                   }}
                   disabled={summarizeMutation.isPending}
@@ -878,7 +904,11 @@ export default function SessionPage() {
                       <Sparkles size={14} className="text-signal" /> AI Theme Summary
                     </p>
                     <button
-                      onClick={() => { setSummary(null); setSummaryQuestionId(null) }}
+                      onClick={() => {
+                        setSummary(null)
+                        setSummaryQuestionId(null)
+                        setDismissedThemesFor(activeQuestion.id)
+                      }}
                       className="text-xs text-muted hover:text-ink transition-colors"
                     >
                       Dismiss
