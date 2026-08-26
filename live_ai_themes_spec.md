@@ -451,6 +451,24 @@ non-free-text questions.
 minutes. Run it after any change to a prompt, a model, the output schema, or the worker's
 timing constants.
 
+**`npm run rehearse -- --code <4-digit code>`** is not a test — it is a dress rehearsal. The two
+suites above prove correctness with nobody watching; this drives a real question at a realistic
+pace and leaves the data standing so a human can watch the projector.
+
+It reads whatever question the code resolves to and generates a class's worth of answers *for that
+question*, so it works on a real slide rather than only where someone wrote fixtures. The mix is
+deliberately uneven — roughly 60% sound, 20% partial, 10% confused, 10% no effort — because a
+rehearsal where every answer is thoughtful says nothing about how the Forming bucket behaves.
+
+Arrivals are modelled, not simultaneous: a few seconds of silence while the room reads the slide,
+then a burst, then a widening tail. Submitting all at once would classify in a single batch and
+prove nothing about how the bars actually move. `--speed N` compresses it; `--dry-run` prints the
+generated answers without submitting.
+
+It refuses to touch a question that already holds answers from real accounts unless `--force` is
+passed, and `--cleanup` removes the fake accounts, their responses and the theme set, leaving the
+question exactly as it was found.
+
 `npm run test:e2e:qr` is at **58 assertions** (was 50 before phase 3) and must stay green. It is
 deliberately LLM-free: the theming assertions stay below the bootstrap threshold so the suite
 remains fast and free to run. Added in phase 3:

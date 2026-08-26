@@ -14,7 +14,8 @@
     "db:studio": "prisma studio",
     "db:seed": "prisma db seed",
     "test:e2e:qr": "tsx scripts/e2e-qr.ts",
-    "test:smoke:themes": "tsx scripts/smoke-themes.ts"
+    "test:smoke:themes": "tsx scripts/smoke-themes.ts",
+    "rehearse": "tsx scripts/rehearse.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
