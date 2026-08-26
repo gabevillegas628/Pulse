@@ -184,21 +184,39 @@ async function resolveTarget(code: string) {
 // ─── Cleanup ──────────────────────────────────────────────────────────────────
 
 /**
- * Remove the fake class. Responses cascade from the students, and the theme set for
- * this question's run goes too, so the question is left exactly as it was found.
+ * Remove the fake students — the cohort, never the class, session or question.
+ *
+ * Deletes only Student rows carrying the rehearsal prefix; their enrolments and answers
+ * cascade with them. Nothing owned by a real student is touched.
+ *
+ * The theme set is a separate judgement. Dropping it restores a rehearsed question to
+ * untouched, but if real answers are also on that question the categories may have been
+ * derived from them, so it is left alone in that case — better a stale set the professor
+ * can regenerate than quietly deleting their real work.
  */
 async function cleanup(questionId: string | null) {
   const students = await prisma.student.findMany({
     where: { netId: { startsWith: PREFIX } },
-    select: { id: true, netId: true },
+    select: { id: true },
   })
-  console.log(`  ${students.length} rehearsal accounts to remove`)
+  const answers = await prisma.response.count({
+    where: { student: { netId: { startsWith: PREFIX } } },
+  })
+  console.log(`  ${students.length} rehearsal account(s), ${answers} rehearsal answer(s)`)
+  console.log('  (classes, sessions, questions and real students are not touched)')
 
   if (questionId) {
-    const sets = await prisma.themeSet.findMany({ where: { questionId }, select: { id: true } })
-    if (sets.length) {
+    const realLeft = await prisma.response.count({
+      where: { questionId, student: { netId: { not: { startsWith: PREFIX } } } },
+    })
+    const sets = await prisma.themeSet.count({ where: { questionId } })
+    if (sets === 0) {
+      // nothing to say
+    } else if (realLeft > 0) {
+      console.log(`  keeping ${sets} theme set(s): the question also holds ${realLeft} real answer(s)`)
+    } else {
       await prisma.themeSet.deleteMany({ where: { questionId } })
-      console.log(`  removed ${sets.length} theme set(s) for the question`)
+      console.log(`  removed ${sets} theme set(s) — no real answers remain on that question`)
     }
   }
 
@@ -207,16 +225,16 @@ async function cleanup(questionId: string | null) {
     await prisma.student.delete({ where: { id: s.id } }).catch(() => {})
     removed++
   }
-  console.log(`  removed ${removed} accounts and their responses`)
+  console.log(`  removed ${removed} account(s) and their answers`)
 
   const left = await prisma.student.count({ where: { netId: { startsWith: PREFIX } } })
-  console.log(left === 0 ? '  clean' : `  WARNING: ${left} accounts remain`)
+  console.log(left === 0 ? '  clean' : `  WARNING: ${left} account(s) remain`)
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
-  if (!CODE) {
+  if (!CODE && !CLEANUP) {
     console.error('Usage: npx tsx scripts/rehearse.ts --code <4-digit code> [--students 30] [--speed 1] [--preview] [--cleanup]')
     console.error('')
     console.error('Run it directly rather than through `npm run`: PowerShell drops the `--`')
@@ -224,7 +242,16 @@ async function main() {
     process.exit(1)
   }
 
-  const question = await resolveTarget(CODE)
+  // Cleanup without a code is the common case after an aborted run: sweep the accounts
+  // and leave every question alone, including any themes on them.
+  if (CLEANUP && !CODE) {
+    console.log('Pulse rehearsal — cleanup (accounts only, no question named)')
+    await cleanup(null)
+    await prisma.$disconnect()
+    return
+  }
+
+  const question = await resolveTarget(CODE!)
   const session = question.session!
 
   console.log('Pulse rehearsal')
