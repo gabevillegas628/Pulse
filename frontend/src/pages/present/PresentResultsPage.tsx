@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { io, type Socket } from 'socket.io-client'
 import { api, getProfessorToken } from '@/api/client'
+import { apiError } from '@/lib/errors'
 import ResultsSummary from '@/components/ResultsSummary'
 import ThemeBars from '@/components/ThemeBars'
 import PulseMark from '@/components/ui/PulseMark'
@@ -369,10 +370,16 @@ export default function PresentResultsPage() {
 
 /** Every non-live state still paints something legible — a blank projector is the worst outcome. */
 function Placeholder({ phase, message }: { phase: Phase; message: string }) {
+  // Signing in here rather than sending the user to the task pane. Depending on a
+  // *different* add-in having signed in on a *matching* origin has no reason to hold:
+  // localStorage is per-origin, so changing BASE_URL, or installing this object without
+  // the task pane, silently strands it with no way forward from the slide.
+  if (phase === 'unauthorised') return <SignIn />
+
   const copy: Record<Phase, { head: string; sub: string }> = {
     loading: { head: 'Connecting…', sub: 'Looking for an open session' },
     'no-session': { head: 'No session open', sub: 'Open a session in Pulse and results will appear here' },
-    unauthorised: { head: 'Not signed in', sub: 'Sign in from the Pulse task pane, then reopen this slide' },
+    unauthorised: { head: '', sub: '' },
     error: { head: 'Cannot reach Pulse', sub: message || 'Retrying…' },
     live: { head: '', sub: '' },
   }
@@ -381,6 +388,84 @@ function Placeholder({ phase, message }: { phase: Phase; message: string }) {
     <div className="flex-1 flex flex-col items-center justify-center text-center gap-2">
       <p className="font-semibold" style={{ fontSize: 'clamp(16px, 3vw, 56px)' }}>{head}</p>
       <p className="text-muted" style={{ fontSize: 'clamp(11px, 1.8vw, 34px)' }}>{sub}</p>
+      <Origin />
+    </div>
+  )
+}
+
+/**
+ * Which origin this object is actually running on.
+ *
+ * A content add-in already placed on a slide keeps the URL it was inserted with, so after a
+ * BASE_URL change it can quietly run on the old host — which still serves, still renders, and
+ * still reaches the API, but is a different origin and therefore sees none of the task pane's
+ * sign-in. That failure is invisible without this line.
+ */
+function Origin() {
+  return (
+    <p className="text-muted" style={{ fontSize: 'clamp(8px, 1vw, 13px)', opacity: 0.5, marginTop: 4 }}>
+      {window.location.origin}
+    </p>
+  )
+}
+
+/** Sign in from the slide itself, so this object never depends on another add-in's state. */
+function SignIn() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      const res = await api.post('/auth/professor/login', { email, password })
+      const token = res.data?.data?.token
+      if (!token) throw new Error('No token returned')
+      // Same key the task pane uses, so signing in from either place fixes both when they
+      // do share an origin.
+      localStorage.setItem('pulse_addin_professor_token', token)
+      // Reload rather than patching state: the socket was opened on mount without a token
+      // and was dropped by the server, so it needs rebuilding anyway.
+      window.location.reload()
+    } catch (err) {
+      setError(apiError(err, 'Sign in failed'))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-3 w-full">
+      <p className="font-semibold" style={{ fontSize: 'clamp(14px, 2.4vw, 32px)' }}>Sign in to Pulse</p>
+      <form onSubmit={submit} className="w-full flex flex-col gap-2" style={{ maxWidth: 320 }}>
+        <input
+          type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+          placeholder="Email" autoComplete="username" required
+          className="w-full rounded-sm px-3 py-2 bg-surface-2 text-ink border border-hairline focus:outline-none focus:ring-2 focus:ring-signal"
+          style={{ fontSize: 'clamp(11px, 1.5vw, 15px)' }}
+        />
+        <input
+          type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+          placeholder="Password" autoComplete="current-password" required
+          className="w-full rounded-sm px-3 py-2 bg-surface-2 text-ink border border-hairline focus:outline-none focus:ring-2 focus:ring-signal"
+          style={{ fontSize: 'clamp(11px, 1.5vw, 15px)' }}
+        />
+        <button
+          type="submit" disabled={busy}
+          className="w-full rounded-sm px-3 py-2 font-bold text-white disabled:opacity-50"
+          style={{ background: 'var(--signal)', fontSize: 'clamp(11px, 1.5vw, 15px)' }}
+        >
+          {busy ? 'Signing in…' : 'Sign in'}
+        </button>
+        {error && (
+          <p className="text-center" style={{ color: 'var(--warn)', fontSize: 'clamp(10px, 1.3vw, 14px)' }}>
+            {error}
+          </p>
+        )}
+      </form>
+      <Origin />
     </div>
   )
 }

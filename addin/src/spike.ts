@@ -29,6 +29,9 @@ const viewLog: string[] = []
 let socket: Socket | null = null
 
 Office.onReady((info) => {
+  // The whole point after a BASE_URL change: an object placed on a slide keeps the URL it
+  // was inserted with, so it can still be running on the old host.
+  set('origin', window.location.origin)
   set('instance', INSTANCE)
   set('host', `${info.host ?? 'unknown'} / ${info.platform ?? 'unknown'}`)
 
