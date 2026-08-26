@@ -1,18 +1,22 @@
 /**
- * Smoke test for live AI themes (phase 1: bootstrap + persistence).
+ * Smoke test for live AI themes.
  *
  * The point of this script is that it needs no real students and no clicking. It
- * fabricates a class of 13 answers whose grouping is known in advance, runs the real
- * summarize route over HTTP, and checks both the shape of what comes back and whether
- * the clustering actually makes sense.
+ * fabricates classes whose grouping is known in advance and checks that the clustering
+ * is *sensible*, not merely that some JSON parsed.
  *
- * The answers are built as three genuinely distinct framings of one question —
- * entropy, heat transfer, phase stability — plus two junk answers. That lets the test
- * assert semantics, not just that some JSON parsed: the entropy answers should end up
- * together, and "idk" should land in Forming rather than distorting a real category.
+ * The answers are three genuinely distinct framings of one question — entropy, heat
+ * transfer, phase stability — plus junk. So the entropy answers should end up together,
+ * and "idk" should reach Forming rather than distorting a real category.
  *
- * Costs one Opus 5 call (~$0.01) and writes to whatever DATABASE_URL points at,
- * deleting everything it created afterwards.
+ * Three fixtures, because the paths fail differently:
+ *   1-5  batch     — responses seeded directly, driven by the summarize button
+ *   6    live      — submitted through the real student route, so the worker's hook fires
+ *   7    scale     — 120 answers, past both the bootstrap sample cap and the catch-up
+ *                    threshold, where junk is numerous enough to cluster on its own
+ *
+ * Costs roughly four Opus 5 calls and eight Haiku calls, takes about four minutes, and
+ * writes to whatever DATABASE_URL points at, deleting everything it created afterwards.
  *
  * Usage:
  *   npm run test:smoke:themes            # against http://localhost:3001
@@ -117,6 +121,9 @@ const ANSWERS: Array<{ group: 'entropy' | 'heat' | 'phase' | 'junk'; text: strin
  */
 const LIVE_ORDER = [0, 4, 8, 1, 5, 9, 2, 6, 10, 3, 7, 11, 12]
 
+/** Well past the 40-answer bootstrap cap, and past the catch-up threshold too. */
+const SCALE_N = 120
+
 interface FixtureOpts {
   /** Turn on automatic theming for the question. */
   liveThemes?: boolean
@@ -208,6 +215,82 @@ async function waitForThemes(
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
+// ─── Scale fixture ────────────────────────────────────────────────────────────
+
+/** Surface variety over the same three positions, so the groups stay knowable. */
+const PREFIXES = ['', 'I think ', 'Basically ', 'In my view ', 'Honestly ', 'My answer is that ']
+
+function scaleAnswers(n: number) {
+  const out: Array<{ group: (typeof ANSWERS)[number]['group']; text: string }> = []
+  for (let i = 0; i < n; i++) {
+    const base = ANSWERS[i % ANSWERS.length]!
+    const prefix = PREFIXES[Math.floor(i / ANSWERS.length) % PREFIXES.length]!
+    const text = prefix ? prefix + base.text.charAt(0).toLowerCase() + base.text.slice(1) : base.text
+    out.push({ group: base.group, text })
+  }
+  return out
+}
+
+/**
+ * A class far larger than the bootstrap sample. Written straight to the database with
+ * createMany — this section is about what the clustering call does with a big class, not
+ * about the submit route, which section 6 already covers.
+ */
+async function createScaleFixture(n: number) {
+  const hash = await bcrypt.hash(`pw-${RUN_ID}`, 4)
+  const answers = scaleAnswers(n)
+
+  const professor = await prisma.professor.create({
+    data: { email: `${TAG}-scale@example.invalid`, name: `Smoke ${RUN_ID}`, passwordHash: hash },
+  })
+  const cls = await prisma.class.create({
+    data: {
+      professorId: professor.id,
+      name: `Smoke Class ${RUN_ID} scale`,
+      joinCode: `SMX${RUN_ID.slice(-5).toUpperCase()}`,
+    },
+  })
+  const session = await prisma.session.create({
+    data: { classId: cls.id, title: `Smoke Scale ${RUN_ID}`, accessCode: await freeCode(), status: 'OPEN' },
+  })
+  const question = await prisma.question.create({
+    data: { sessionId: session.id, text: QUESTION_TEXT, type: 'FREE_TEXT', order: 0, accessCode: await freeCode() },
+  })
+  const run = await prisma.sessionRun.create({ data: { sessionId: session.id, status: 'OPEN' } })
+
+  await prisma.student.createMany({
+    data: answers.map((_, i) => ({
+      netId: `${TAG}-scale-${i}`,
+      email: `${TAG}-scale-${i}@example.invalid`,
+      passwordHash: hash,
+    })),
+  })
+  const students = await prisma.student.findMany({
+    where: { netId: { startsWith: `${TAG}-scale-` } },
+    select: { id: true, netId: true },
+  })
+  const byIndex = new Map(students.map((s) => [Number(s.netId.split('-').pop()), s.id]))
+
+  await prisma.response.createMany({
+    data: answers.map((a, i) => {
+      const wordCount = a.text.trim().split(/\s+/).filter(Boolean).length
+      return {
+        questionId: question.id,
+        studentId: byIndex.get(i)!,
+        runId: run.id,
+        responseText: a.text,
+        wordCount,
+        isFlagged: wordCount < 10,
+        isDraft: false,
+        // Spread submission times so the even sample has an order to spread across.
+        submittedAt: new Date(Date.now() - (answers.length - i) * 1000),
+      }
+    }),
+  })
+
+  return { professor, session, question, run, studentIds: students.map((s) => s.id), answers }
+}
+
 async function destroyFixture(professorId: string, studentIds: string[]) {
   // Class → session → question → themeSet → categories all cascade from the professor;
   // responses and their theme assignments cascade from the students.
@@ -261,8 +344,9 @@ async function main() {
   const studentIds = students.map((s) => s.id)
   console.log(`  fixture: question ${question.id}`)
 
-  // Section 6 builds its own fixture; declared here so cleanup can reach it either way.
+  // Sections 6 and 7 build their own fixtures; declared here so cleanup reaches them.
   let live: Awaited<ReturnType<typeof createFixture>> | null = null
+  let scale: Awaited<ReturnType<typeof createScaleFixture>> | null = null
 
   try {
     // ── 1. Bootstrap ──────────────────────────────────────────────────────────
@@ -458,10 +542,67 @@ async function main() {
       'the classifier placed junk in a real category'
     )
 
+    // ── 7. A class far bigger than the clustering call can hold ───────────────
+    section(`7. Scale — ${SCALE_N} answers`)
+    scale = await createScaleFixture(SCALE_N)
+    const sq = scale.question.id
+    const ss = scale.session.id
+    const sTok2 = tokenFor(scale.professor.id, 'professor')
+
+    const t0scale = Date.now()
+    const bigPost = await http<any>('POST', `/api/sessions/${ss}/questions/${sq}/summarize`, { token: sTok2 })
+    check('summarize returns promptly on a large class', bigPost.status === 200, `status ${bigPost.status}`)
+    const firstReturn = Date.now() - t0scale
+    console.log(`  (button returned in ${(firstReturn / 1000).toFixed(1)}s)`)
+
+    const bigSet = await prisma.themeSet.findFirst({ where: { questionId: sq }, select: { bootstrapN: true } })
+    check(
+      'clustering sampled a capped subset, not the whole class',
+      (bigSet?.bootstrapN ?? 0) <= 40 && (bigSet?.bootstrapN ?? 0) >= 8,
+      `bootstrapN was ${bigSet?.bootstrapN} of ${SCALE_N}`
+    )
+    check(
+      'the button did not wait for every answer to be classified',
+      (bigPost.body?.data?.themes?.classified ?? 0) < SCALE_N,
+      'it classified everything inline, which would block the request on a big class'
+    )
+
+    const bigSettled = await waitForThemes(ss, sq, sTok2, (t) => t?.classified >= SCALE_N, 240_000)
+    check(
+      'every answer is eventually classified',
+      bigSettled?.classified === SCALE_N,
+      `classified ${bigSettled?.classified} of ${SCALE_N}`
+    )
+    console.log(`  (all ${SCALE_N} classified ${((Date.now() - t0scale) / 1000).toFixed(1)}s after the click)`)
+
+    if (bigSettled) {
+      console.log('  distribution:')
+      for (const c of bigSettled.categories) console.log(`    ${String(c.count).padStart(4)}  ${c.label}${c.isOther ? '  (forming)' : ''}`)
+      const bigSum = bigSettled.categories.reduce((s: number, c: any) => s + c.count, 0)
+      check('counts still sum correctly at scale', bigSum === SCALE_N, `sum ${bigSum} vs ${SCALE_N}`)
+    }
+
+    const bigCalls = await prisma.themeSet.findFirst({ where: { questionId: sq }, select: { classifyCalls: true } })
+    // Unbatched would be ~80 calls for the leftovers; batching should keep it near 6.
+    check(
+      `the backlog was batched, not sent one at a time (${bigCalls?.classifyCalls} calls)`,
+      (bigCalls?.classifyCalls ?? 999) <= 10,
+      `${bigCalls?.classifyCalls} calls for ${SCALE_N - (bigSet?.bootstrapN ?? 0)} leftover answers`
+    )
+
+    const bigOther = (bigSettled?.categories ?? []).find((c: any) => c.isOther)
+    const expectedJunk = scale.answers.filter((a) => a.group === 'junk').length
+    check(
+      `junk still lands in Forming at scale (${bigOther?.count} vs ${expectedJunk} junk answers)`,
+      (bigOther?.count ?? 0) >= expectedJunk * 0.8,
+      'Forming holds far fewer than the junk answers submitted'
+    )
+
   } finally {
     section('Cleanup')
     await destroyFixture(professor.id, studentIds)
     if (live) await destroyFixture(live.professor.id, live.students.map((s) => s.id))
+    if (scale) await destroyFixture(scale.professor.id, scale.studentIds)
     const leftover = await prisma.class.count({ where: { name: { contains: RUN_ID } } })
     check('all fixture data removed', leftover === 0, `${leftover} classes remain`)
   }

@@ -156,13 +156,39 @@ Constants:
 | Name | Value | Note |
 |---|---|---|
 | `BOOTSTRAP_N` | 8 | answers before categories are derived |
+| `BOOTSTRAP_SAMPLE_MAX` | 40 | most answers the clustering call ever sees — see below |
 | `CLASSIFY_BATCH` | 8 | small, so bars step visibly rather than lurching |
+| `CLASSIFY_BATCH_CATCHUP` | 25 | larger batch for working through a backlog |
+| `CATCHUP_THRESHOLD` | 50 | backlog size that switches to the larger batch |
 | `DEBOUNCE_MS` | 2000 | quiet period after the last answer |
 | `MAX_WAIT_MS` | 6000 | ceiling, so a steady stream still fires |
 | `RECLUSTER_OTHER_RATIO` | 0.30 | share in the Forming bucket that triggers a re-cluster |
 | `RECLUSTER_MIN_TOTAL` | 20 | don't re-cluster on thin data |
 | `RECLUSTER_COOLDOWN_MS` | 60000 | never churn labels on the projector |
-| `MAX_CLASSIFY_CALLS` | 60 | hard cost ceiling per theme set (~480 answers) |
+| `MAX_CLASSIFY_CALLS` | 80 | hard ceiling per theme set (~2,000 answers at catch-up size) |
+
+### Batching, and the one call that cannot be batched
+
+Classification is batched and **sequential**: the worker awaits each drain before scheduling
+the next, and a `running` guard blocks a second concurrent pass, so there is never more than
+one in-flight request per question. Request-rate limits are therefore unreachable on this path
+— the failure mode that forced batching on the AI grader (one call per response) does not exist
+here. The SDK also retries 429s twice with backoff by default.
+
+Bootstrap is the exception. Clustering means looking at everything at once, so it cannot be
+split — it is **capped** instead, at `BOOTSTRAP_SAMPLE_MAX`. Without the cap its output grows
+with the class: at roughly 15 tokens per assignment, a 500-answer lecture would truncate against
+`max_tokens` and dump the overflow into Forming. Forty answers cluster as well as four hundred.
+
+The sample is spread evenly across submission order rather than taken from the front. The
+students who answer first are not a random sample of the room.
+
+Everything outside the sample is left unassigned on purpose and picked up by the batched
+classifier on the next drain. The manual summarize button therefore returns as soon as
+categories exist and hands the remainder to the worker, rather than holding an HTTP request
+open for a minute. **Measured at 120 answers:** button returns in 11.9s, all 120 classified
+32.2s after the click, 6 classify calls for the 80 leftovers. Extrapolates to roughly a minute
+and ~14 calls at 300.
 
 Debounce state is a module-level `Map` keyed by `questionId` + `runId`, holding the pending timer
 and the timestamp of the first queued item (so `MAX_WAIT_MS` can be enforced).
@@ -259,6 +285,17 @@ const parsed = res.parsed_output   // null if parsing failed — guard, don't as
 
 Anything with `confidence < 0.6`, and any response the model omits from its answer, goes to the
 Forming bucket. Never guess.
+
+> **Junk clusters once there is enough of it.** At 13 answers with 2 junk, the clusterer sent junk
+> to Forming as intended. At 120 answers with 18 junk, the same prompt promoted it to a named
+> category — "Non-answers, 16" — because it had become one of the larger groups. Every junk answer
+> was still *identified* correctly; only the bucketing differed.
+>
+> That is defensible clustering and wrong for this feature. Counting disengagement by name on a
+> lecture-hall projector is hostile to the room, and a feature that behaves differently at 13
+> answers than at 120 is not predictable enough to teach with. The bootstrap prompt now forbids a
+> category for non-answers explicitly, "however many of them there are". The information is not
+> lost — it is the Forming count, presented neutrally.
 
 **Prompt caching does not apply here** and should not be built for: question text plus four category
 descriptions is ~300–400 tokens, well under the ~1024-token minimum cacheable prefix. The handoff
@@ -398,8 +435,15 @@ The interleaving matters. `ANSWERS` is grouped, so its first eight would be four
 heat with no phase answers at all, and bootstrap would derive categories that miss a third of the
 class. `LIVE_ORDER` interleaves them so the first eight span all three groups.
 
-36 assertions. Costs about three Opus 5 calls and one Haiku call. Run it after any change to a
-prompt, a model, the output schema, or the worker's timing constants.
+A third fixture covers **scale**: 120 answers seeded directly, then the summarize button. It
+asserts the clustering call sampled a capped subset rather than the whole class, that the button
+returned without waiting for every answer, that everything is classified eventually, that the
+backlog was batched (6 calls, not 80), and that junk still reaches Forming at a scale where it
+would otherwise cluster.
+
+43 assertions. Costs roughly four Opus 5 calls and eight Haiku calls, and takes about four
+minutes. Run it after any change to a prompt, a model, the output schema, or the worker's
+timing constants.
 
 `npm run test:e2e:qr` is at **50 assertions** and must stay green. Add:
 

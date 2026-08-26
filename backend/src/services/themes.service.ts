@@ -33,8 +33,25 @@ const MIN_CONFIDENCE = 0.6
 // Tuning. See live_ai_themes_spec.md §3.1 for the reasoning behind each.
 /** Answers required before categories are derived at all. */
 export const BOOTSTRAP_N = 8
+/**
+ * Most answers the clustering call ever sees at once.
+ *
+ * Bootstrap is the one call that cannot be batched — clustering means looking at
+ * everything together — so it is capped instead. Without this its output grows with the
+ * class: at roughly 15 tokens per assignment, a 500-answer lecture would truncate
+ * against max_tokens and dump the overflow into Forming. Forty answers cluster just as
+ * well as four hundred, and everyone else goes through the batched classifier.
+ */
+const BOOTSTRAP_SAMPLE_MAX = 40
 /** Small, so bars step visibly in the room rather than lurching in one jump. */
 const CLASSIFY_BATCH = 8
+/**
+ * Bigger batch for working through a backlog, where smooth growth does not matter and
+ * finishing does — pressing summarize on a lecture that has already ended, say.
+ */
+const CLASSIFY_BATCH_CATCHUP = 25
+/** Backlog size that switches to the larger batch. */
+const CATCHUP_THRESHOLD = 50
 /** Quiet period after the last answer before work starts. */
 const DEBOUNCE_MS = 2000
 /** Ceiling on that quiet period, so a steady stream of answers still gets processed. */
@@ -45,8 +62,12 @@ const RECLUSTER_OTHER_RATIO = 0.3
 const RECLUSTER_MIN_TOTAL = 20
 /** Labels must never churn on a projector. */
 const RECLUSTER_COOLDOWN_MS = 60_000
-/** Hard ceiling per theme set — bounds a bug, not the bill. */
-const MAX_CLASSIFY_CALLS = 60
+/**
+ * Hard ceiling per theme set — bounds a bug, not the bill. At the catch-up batch size
+ * this covers roughly 2,000 answers, so it will only ever be hit by a loop that is
+ * failing to make progress. Shared with re-clusters, which inherit the count.
+ */
+const MAX_CLASSIFY_CALLS = 80
 
 export const OTHER_LABEL = 'Still forming'
 const OTHER_DESCRIPTION = 'Answers that do not yet fit a category cleanly.'
@@ -169,6 +190,15 @@ interface AnswerRow {
   responseText: string
 }
 
+/** At most `max` items, spread evenly across the list rather than taken from one end. */
+function evenSample<T>(rows: T[], max: number): T[] {
+  if (rows.length <= max) return rows
+  const step = rows.length / max
+  const out: T[] = []
+  for (let i = 0; i < max; i++) out.push(rows[Math.floor(i * step)]!)
+  return out
+}
+
 async function callBootstrap(questionText: string, answers: AnswerRow[]) {
   const list = answers.map((a, i) => `[${i}] ${a.responseText}`).join('\n')
 
@@ -191,7 +221,9 @@ ${list}
 Rules:
 - Give each category a short label and a one-sentence description of what those students said. Be concise and objective.
 - Categories must describe what students actually said, not what a correct answer would be.
+- Every category must describe a genuine attempt to answer the question.
 - Do NOT create a catch-all or "other" category. If a response fits none of your categories, assign it category -1.
+- Do NOT create a category for non-answers — blank, off-topic, joke, keyboard-mash, or "I don't know" responses. Assign every one of those category -1, however many of them there are. This holds even if they would form one of the largest groups.
 - Use confidence below 0.6 when you are unsure rather than guessing.
 - Return exactly one assignment for every index from 0 to ${answers.length - 1}.`,
       },
@@ -215,12 +247,17 @@ export async function bootstrapThemeSet(
   // re-clustering cannot be used to reset the per-set spend ceiling.
   carryClassifyCalls = 0
 ): Promise<ThemeSetDto> {
-  const answers = await prisma.response.findMany({
+  const all = await prisma.response.findMany({
     where: { questionId, runId },
     orderBy: { submittedAt: 'asc' },
     select: { id: true, responseText: true },
   })
-  if (answers.length === 0) throw new AppError('No responses to categorise', 400)
+  if (all.length === 0) throw new AppError('No responses to categorise', 400)
+
+  // Spread the sample across submission order rather than taking the first N. The
+  // students who answer first are not a random sample of the room, and categories
+  // derived only from them would miss where the rest of the class went.
+  const answers = evenSample(all, BOOTSTRAP_SAMPLE_MAX)
 
   const parsed = await callBootstrap(questionText, answers)
 
@@ -286,7 +323,11 @@ export async function bootstrapThemeSet(
     questionId,
     runId,
     categories: parsed.categories.length,
-    answers: answers.length,
+    sampled: answers.length,
+    total: all.length,
+    // Anything beyond the sample is left unassigned on purpose; the batched classifier
+    // picks it up on the next drain.
+    awaitingClassification: all.length - answers.length,
     forming: dto.categories.find((c) => c.isOther)?.count ?? 0,
   })
 
@@ -365,8 +406,14 @@ async function classifyNextBatch(
   setId: string,
   questionId: string,
   runId: string,
-  questionText: string
+  questionText: string,
+  backlog: number
 ): Promise<number> {
+  // A trickle of answers during a lecture wants small batches so the bars step visibly.
+  // A large backlog — summarising a finished session, or a bootstrap that sampled only
+  // part of a big class — just wants to be done.
+  const take = backlog > CATCHUP_THRESHOLD ? CLASSIFY_BATCH_CATCHUP : CLASSIFY_BATCH
+
   const [categories, answers] = await Promise.all([
     prisma.themeCategory.findMany({
       where: { themeSetId: setId },
@@ -376,7 +423,7 @@ async function classifyNextBatch(
     prisma.response.findMany({
       where: { questionId, runId, theme: { is: null } },
       orderBy: { submittedAt: 'asc' },
-      take: CLASSIFY_BATCH,
+      take,
       select: { id: true, responseText: true },
     }),
   ])
@@ -579,7 +626,10 @@ async function drainThemeWork(questionId: string, runId: string, sessionId: stri
     logger.info('Bootstrapping themes', { questionId, runId, answers: total })
     await bootstrapThemeSet(questionId, runId, question.text)
     await emitThemes(sessionId, questionId, runId)
-    return false
+    // Bootstrap only assigns the answers it sampled. On a large class the rest are still
+    // unassigned, so keep going rather than stopping with most of the room uncounted.
+    const left = await prisma.response.count({ where: { questionId, runId, theme: { is: null } } })
+    return left > 0
   }
 
   if (set.status === 'FAILED') return false
@@ -593,7 +643,7 @@ async function drainThemeWork(questionId: string, runId: string, sessionId: stri
       logger.warn('Classify ceiling reached for theme set', { questionId, runId, calls: set.classifyCalls })
       return false
     }
-    const done = await classifyNextBatch(set.id, questionId, runId, question.text)
+    const done = await classifyNextBatch(set.id, questionId, runId, question.text, unclassified)
     await emitThemes(sessionId, questionId, runId)
     return done > 0 && unclassified > done
   }

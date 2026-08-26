@@ -8,7 +8,7 @@ import { requireProfessor, ProfessorRequest } from '../middleware/auth.middlewar
 import { getIo } from '../socket.js'
 import { logger } from '../utils/logger.js'
 import { p } from '../utils/params.js'
-import { bootstrapThemeSet, readThemeSet, latestRunId } from '../services/themes.service.js'
+import { bootstrapThemeSet, readThemeSet, latestRunId, scheduleThemeWork } from '../services/themes.service.js'
 
 const anthropic = new Anthropic({ apiKey: config.anthropicApiKey })
 const BATCH_SIZE = 25
@@ -272,6 +272,14 @@ router.post('/sessions/:sessionId/questions/:questionId/summarize', requireProfe
     if (!runId) throw new AppError('Session has not been run yet', 400)
 
     const themes = await bootstrapThemeSet(question.id, runId, question.text)
+
+    // Bootstrap clusters from a capped sample, so on a large class most answers are not
+    // assigned yet. Hand the remainder to the batched worker rather than holding the
+    // request open for a minute — it fills the counts in and pushes them over the socket.
+    if (themes.classified < themes.total) {
+      scheduleThemeWork(question.id, runId, question.sessionId!)
+    }
+
     // `categories` keeps the old key so existing callers keep working; the entries are a
     // superset of SummaryCategory, carrying an id and isOther as well.
     res.json({ success: true, data: { categories: themes.categories, themes } })
