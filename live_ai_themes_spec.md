@@ -441,7 +441,13 @@ returned without waiting for every answer, that everything is classified eventua
 backlog was batched (6 calls, not 80), and that junk still reaches Forming at a scale where it
 would otherwise cluster.
 
-43 assertions. Costs roughly four Opus 5 calls and eight Haiku calls, and takes about four
+A fourth fixture covers the **enablement gate**, which is the guard keeping this off for
+everyone by default: ten answers on a question with themes off must produce no theme set at
+all, then turning it on through the real PATCH route must backfill the answers already in.
+It also checks the class-level default persists and that `liveThemes` is refused on
+non-free-text questions.
+
+52 assertions. Costs roughly five Opus 5 calls and nine Haiku calls, and takes about five
 minutes. Run it after any change to a prompt, a model, the output schema, or the worker's
 timing constants.
 
@@ -477,9 +483,15 @@ Each phase is independently shippable and useful on its own.
 | Phase | Contents | Value even if the next phase slips |
 |---|---|---|
 | **1** | Schema, migration, config columns, bootstrap persisted behind the existing summarize button | Summaries survive a page reload — fixes a real annoyance today. No new AI behaviour |
-| **2** | Debounced worker, classify step, auto-bootstrap, `themes_updated` | Live themes visible in the task pane |
+| **2** | Debounced worker, classify step, auto-bootstrap, `themes_updated`, **the authoring toggles** | Live themes visible in the task pane |
 | **3** | `/addin/live` changes, `ThemeBars` extraction, `/present` rendering, full-screen ceilings | The projector feature. **This is the talk** |
-| **4** | Professor override, manual re-cluster, authoring toggles, the ten e2e assertions | What makes it survive real lectures |
+| **4** | Professor override, manual re-cluster, the ten e2e assertions | What makes it survive real lectures |
+
+> **Sequencing corrected during phase 2.** The authoring toggles were originally phase 4, filed as
+> polish. They are not polish — they are the on-switch. With `liveThemes` and `liveThemesDefault`
+> writable by no route and settable in no UI, every phase 2 behaviour was unreachable outside a
+> direct database edit, and phase 3 would have put a projector view on top of a feature nobody
+> could enable. Moved into phase 2 and built there.
 
 Phase 3 is the demo; phase 4 is what the "real feature, not a prop" decision actually buys. With
 three months both fit comfortably — do not let phase 4 be the thing that slips, because it is the

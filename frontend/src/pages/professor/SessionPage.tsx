@@ -219,6 +219,12 @@ export default function SessionPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['session', sessionId] }),
   })
 
+  const liveThemesMutation = useMutation({
+    mutationFn: ({ questionId, liveThemes }: { questionId: string; liveThemes: boolean | null }) =>
+      api.patch(`/sessions/${sessionId}/questions/${questionId}`, { liveThemes }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['session', sessionId] }),
+  })
+
   const overrideScoreMutation = useMutation({
     mutationFn: ({ questionId, responseId, aiScore }: { questionId: string; responseId: string; aiScore: number }) =>
       api.patch(`/sessions/${sessionId}/questions/${questionId}/responses/${responseId}`, { aiScore }),
@@ -706,6 +712,47 @@ export default function SessionPage() {
                 )}
               </div>
             </div>
+
+            {/* Live AI themes — FREE_TEXT, settable while authoring (before any run) */}
+            {activeQuestion.type === 'FREE_TEXT' && (
+              <div className="mt-3 pt-3 border-t border-hairline">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted font-medium mb-0.5">
+                      <Sparkles size={11} className="inline mb-0.5 mr-1 text-signal" />
+                      Live AI themes
+                    </p>
+                    <p className="text-[11px] text-muted leading-snug">
+                      Group answers into themes as they arrive, without pressing anything.
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 rounded-sm border border-hairline overflow-hidden">
+                    {([
+                      { v: null, label: `Class default${data.class.liveThemesDefault ? ' (on)' : ' (off)'}` },
+                      { v: true, label: 'On' },
+                      { v: false, label: 'Off' },
+                    ] as const).map(({ v, label }) => {
+                      const selected = (activeQuestion.liveThemes ?? null) === v
+                      return (
+                        <button
+                          key={String(v)}
+                          onClick={() => liveThemesMutation.mutate({ questionId: activeQuestion.id, liveThemes: v })}
+                          disabled={liveThemesMutation.isPending}
+                          className={`px-2.5 py-1 text-[11px] font-medium transition-colors disabled:opacity-50 ${
+                            selected ? 'bg-signal-soft text-signal' : 'text-muted hover:text-ink'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+                {liveThemesMutation.isError && (
+                  <p className="text-xs text-red-500 mt-2">Could not change that — try again.</p>
+                )}
+              </div>
+            )}
 
             {/* Rubric hint — FREE_TEXT, after at least one run */}
             {(hasBeenRun || data.status === SessionStatus.ARCHIVED) &&

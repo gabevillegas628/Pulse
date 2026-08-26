@@ -9,13 +9,14 @@
  * transfer, phase stability — plus junk. So the entropy answers should end up together,
  * and "idk" should reach Forming rather than distorting a real category.
  *
- * Three fixtures, because the paths fail differently:
+ * Four fixtures, because the paths fail differently:
  *   1-5  batch     — responses seeded directly, driven by the summarize button
  *   6    live      — submitted through the real student route, so the worker's hook fires
  *   7    scale     — 120 answers, past both the bootstrap sample cap and the catch-up
  *                    threshold, where junk is numerous enough to cluster on its own
+ *   8    gate      — themes off, to prove nothing runs until a professor switches it on
  *
- * Costs roughly four Opus 5 calls and eight Haiku calls, takes about four minutes, and
+ * Costs roughly five Opus 5 calls and nine Haiku calls, takes about five minutes, and
  * writes to whatever DATABASE_URL points at, deleting everything it created afterwards.
  *
  * Usage:
@@ -129,11 +130,13 @@ interface FixtureOpts {
   liveThemes?: boolean
   /** Write responses straight to the database, bypassing the submit route and its hook. */
   seedResponses?: boolean
+  /** Distinguishes fixtures that would otherwise collide on email and join code. */
+  tag?: string
 }
 
-async function createFixture({ liveThemes = false, seedResponses = true }: FixtureOpts = {}) {
+async function createFixture({ liveThemes = false, seedResponses = true, tag }: FixtureOpts = {}) {
   const hash = await bcrypt.hash(`pw-${RUN_ID}`, 4)
-  const suffix = liveThemes ? 'live' : 'batch'
+  const suffix = tag ?? (liveThemes ? 'live' : 'batch')
 
   const professor = await prisma.professor.create({
     data: { email: `${TAG}-${suffix}@example.invalid`, name: `Smoke ${RUN_ID}`, passwordHash: hash },
@@ -347,6 +350,7 @@ async function main() {
   // Sections 6 and 7 build their own fixtures; declared here so cleanup reaches them.
   let live: Awaited<ReturnType<typeof createFixture>> | null = null
   let scale: Awaited<ReturnType<typeof createScaleFixture>> | null = null
+  let gate: Awaited<ReturnType<typeof createFixture>> | null = null
 
   try {
     // ── 1. Bootstrap ──────────────────────────────────────────────────────────
@@ -598,11 +602,82 @@ async function main() {
       'Forming holds far fewer than the junk answers submitted'
     )
 
+    // ── 8. The enablement gate ────────────────────────────────────────────────
+    // themesEnabled() is what keeps this feature off for everyone by default. Until now
+    // it was only ever exercised by setting the flag directly in the database.
+    section('8. Enablement gate, through the API')
+    gate = await createFixture({ liveThemes: false, seedResponses: false, tag: 'gate' })
+    const gq = gate.question.id
+    const gs = gate.session.id
+    const gTok = tokenFor(gate.professor.id, 'professor')
+
+    check('question starts with liveThemes unset', gate.question.liveThemes === null, `got ${gate.question.liveThemes}`)
+
+    // Well past BOOTSTRAP_N — only the gate should be stopping this.
+    for (const i of LIVE_ORDER.slice(0, 10)) {
+      const r = await http<any>('POST', '/api/responses', {
+        token: tokenFor(gate.students[i]!.id, 'student'),
+        body: { questionId: gq, responseText: ANSWERS[i]!.text },
+      })
+      if (r.status !== 201) check(`gate answer ${i} accepted`, false, `status ${r.status}`)
+    }
+    await sleep(9000)
+
+    const gatedSets = await prisma.themeSet.count({ where: { questionId: gq } })
+    check(
+      '10 answers with themes off produce no theme set at all',
+      gatedSets === 0,
+      `${gatedSets} sets — the gate is not holding, and every lecture would be calling an LLM`
+    )
+
+    // Turning it on through the real route, the way the new UI does.
+    const patch = await http<any>('PATCH', `/api/sessions/${gs}/questions/${gq}`, {
+      token: gTok,
+      body: { liveThemes: true },
+    })
+    check('the question route accepts liveThemes', patch.status === 200, `status ${patch.status}`)
+    const stored = await prisma.question.findUnique({ where: { id: gq }, select: { liveThemes: true } })
+    check('liveThemes persisted as true', stored?.liveThemes === true, `stored ${stored?.liveThemes}`)
+
+    // One more answer, and the backlog that was ignored should now be picked up.
+    const r11 = await http<any>('POST', '/api/responses', {
+      token: tokenFor(gate.students[LIVE_ORDER[10]!]!.id, 'student'),
+      body: { questionId: gq, responseText: ANSWERS[LIVE_ORDER[10]!]!.text },
+    })
+    check('11th answer accepted', r11.status === 201, `status ${r11.status}`)
+
+    const gateSettled = await waitForThemes(gs, gq, gTok, (t) => t?.status === 'ACTIVE' && t.classified >= 11)
+    check(
+      'enabling mid-session catches up on answers already in',
+      gateSettled?.classified === 11,
+      `classified ${gateSettled?.classified} of 11 — the earlier answers were not backfilled`
+    )
+
+    // The class-level default, also through its real route.
+    const clsPatch = await http<any>('PATCH', `/api/classes/${gate.cls.id}`, {
+      token: gTok,
+      body: { liveThemesDefault: true },
+    })
+    check('the class route accepts liveThemesDefault', clsPatch.status === 200, `status ${clsPatch.status}`)
+    const storedCls = await prisma.class.findUnique({ where: { id: gate.cls.id }, select: { liveThemesDefault: true } })
+    check('liveThemesDefault persisted', storedCls?.liveThemesDefault === true, `stored ${storedCls?.liveThemesDefault}`)
+
+    // And it must refuse types where it would mean nothing.
+    const mcq = await prisma.question.create({
+      data: { sessionId: gs, text: 'Pick one', type: 'MULTIPLE_CHOICE', options: ['a', 'b'], order: 9, accessCode: await freeCode() },
+    })
+    const badPatch = await http<any>('PATCH', `/api/sessions/${gs}/questions/${mcq.id}`, {
+      token: gTok,
+      body: { liveThemes: true },
+    })
+    check('liveThemes is refused on non-free-text questions', badPatch.status === 400, `status ${badPatch.status}`)
+
   } finally {
     section('Cleanup')
     await destroyFixture(professor.id, studentIds)
     if (live) await destroyFixture(live.professor.id, live.students.map((s) => s.id))
     if (scale) await destroyFixture(scale.professor.id, scale.studentIds)
+    if (gate) await destroyFixture(gate.professor.id, gate.students.map((s) => s.id))
     const leftover = await prisma.class.count({ where: { name: { contains: RUN_ID } } })
     check('all fixture data removed', leftover === 0, `${leftover} classes remain`)
   }

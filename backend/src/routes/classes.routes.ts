@@ -22,6 +22,9 @@ const createClassSchema = z.object({
   textbookRepo: z.string().optional().nullable(),
   textbookPath: z.string().optional().nullable(),
   textbookBranch: z.string().optional().nullable(),
+  // Default for live AI theming of free-text answers in this class. Individual
+  // questions can override it; off unless the professor turns it on.
+  liveThemesDefault: z.boolean().optional(),
 })
 
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {

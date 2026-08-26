@@ -117,7 +117,7 @@ router.get('/sessions/:id', requireProfessor, async (req: Request, res: Response
     const session = await prisma.session.findFirst({
       where: { id: p(req.params.id), class: { professorId: professor.id } },
       include: {
-        class: { select: { id: true, name: true, _count: { select: { enrollments: true } } } },
+        class: { select: { id: true, name: true, liveThemesDefault: true, _count: { select: { enrollments: true } } } },
         groups: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] },
         runs: {
           orderBy: { openedAt: 'desc' },

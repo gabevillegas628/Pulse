@@ -49,6 +49,8 @@ export interface Class {
   textbookRepo: string | null
   textbookPath: string | null
   textbookBranch: string | null
+  /** Default for live AI theming of free-text answers; questions may override it. */
+  liveThemesDefault: boolean
   createdAt: string
   updatedAt: string
 }
@@ -84,6 +86,11 @@ export interface Question {
   correctAnswer: string | null
   tolerance: number | null
   unit: string | null
+  /**
+   * Live AI theming for this question's free-text answers.
+   * null inherits the class default; true/false override it. FREE_TEXT only.
+   */
+  liveThemes: boolean | null
 }
 
 /** One class meeting — the event entity for IN_CLASS sessions */
@@ -248,7 +255,7 @@ export interface QuestionWithResponses extends Question {
 export interface SessionDetail extends Session {
   questions: QuestionWithResponses[]
   groups: QuestionGroup[]
-  class: Pick<Class, 'id' | 'name'>
+  class: Pick<Class, 'id' | 'name' | 'liveThemesDefault'>
   runs: SessionRun[]
   enrolledCount: number
 }

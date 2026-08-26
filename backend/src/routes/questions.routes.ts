@@ -50,7 +50,7 @@ async function getAssignment(assignmentId: string, professorId: string) {
 router.post('/sessions/:id/questions', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
-    const { title, text, type, options, groupId, correctAnswer, tolerance, unit } = z.object({
+    const { title, text, type, options, groupId, correctAnswer, tolerance, unit, liveThemes } = z.object({
       title: z.string().max(120).optional(),
       text: z.string().min(1),
       type: z.enum(['FREE_TEXT', 'MULTIPLE_CHOICE', 'RATING', 'YES_NO', 'NUMERIC', 'MULTI_SELECT', 'ORDERING', 'STRUCTURE']),
@@ -59,6 +59,8 @@ router.post('/sessions/:id/questions', requireProfessor, async (req: Request, re
       correctAnswer: z.string().optional(),
       tolerance: z.number().optional(),
       unit: z.string().optional(),
+      // null (or absent) inherits the class default. FREE_TEXT only.
+      liveThemes: z.boolean().nullable().optional(),
     }).parse(req.body)
 
     const session = await getSession(p(req.params.id), professor.id)
@@ -91,6 +93,9 @@ router.post('/sessions/:id/questions', requireProfessor, async (req: Request, re
           : undefined,
         tolerance: type === 'NUMERIC' ? (tolerance ?? null) : undefined,
         unit: type === 'NUMERIC' ? (unit ?? null) : undefined,
+        // Meaningless on other types — themesEnabled() ignores them regardless, but
+        // storing it only where it applies keeps the column honest.
+        liveThemes: type === 'FREE_TEXT' ? (liveThemes ?? null) : null,
       },
     })
 
@@ -182,6 +187,8 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
       title: z.string().max(120).nullable().optional(),
       text: z.string().min(1).optional(),
       options: z.array(z.string().min(1)).optional(),
+      // null inherits the class default; true/false override it. FREE_TEXT only.
+      liveThemes: z.boolean().nullable().optional(),
     }).parse(req.body)
 
     const question = await prisma.question.findFirst({
@@ -283,6 +290,16 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
           } catch { /* malformed stored value — leave as-is */ }
         }
       }
+    }
+
+    if (body.liveThemes !== undefined) {
+      if (question.type !== 'FREE_TEXT')
+        throw new AppError('Live themes only apply to free text questions', 400)
+      // Deliberately allowed while a run is open. The design intends this to be set
+      // while authoring, but refusing it mid-lecture would leave a professor who forgot
+      // to switch it on stuck for the whole session — and turning it on late is safe:
+      // the worker bootstraps from a sample and catches up on everything already in.
+      updateData.liveThemes = body.liveThemes
     }
 
     const updated = await prisma.question.update({ where: { id: question.id }, data: updateData })
