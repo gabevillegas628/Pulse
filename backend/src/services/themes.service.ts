@@ -219,7 +219,8 @@ Student responses (${answers.length} total, indexed 0 to ${answers.length - 1}):
 ${list}
 
 Rules:
-- Give each category a short label and a one-sentence description of what those students said. Be concise and objective.
+- Give each category a short label of 2-5 words — a handle for the group, not the finding itself.
+- Also give one sentence saying what those students actually claimed. This sentence is projected in front of the class, so it has to carry real content: state the reasoning, not the topic it concerns. "Argued the ratio only holds while substrate stays well below saturation" tells a room something; "discussed limitations of the ratio" tells them nothing they did not already know. Someone who has not read the answers should learn what this group thinks from that one sentence. Write it as the claim itself with no preamble — "Argued that…", not "These students argued that…" — since four of these stack on a projector and the repeated opening wastes the line.
 - Categories must describe what students actually said, not what a correct answer would be.
 - Every category must describe a genuine attempt to answer the question.
 - Do NOT create a catch-all or "other" category. If a response fits none of your categories, assign it category -1.

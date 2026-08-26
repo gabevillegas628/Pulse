@@ -115,11 +115,12 @@ export default function ThemeBars({
                   }}
                 />
               </div>
-              {variant === 'panel' && (
-                <p className="text-muted leading-snug italic line-clamp-2 mt-1.5" style={{ fontSize: t.desc }}>
-                  “{cat.description}”
-                </p>
-              )}
+              {/* The label is a handle; this sentence is the actual finding. Worth the
+                  vertical space on a projector too — a room reads "Caveats and limits of
+                  the ratio" and learns nothing it did not already know. */}
+              <p className="text-muted leading-snug italic line-clamp-2 mt-1.5" style={{ fontSize: t.desc }}>
+                {cat.description}
+              </p>
             </div>
           )
         })}
