@@ -40,7 +40,15 @@ import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { prisma } from '../src/db/index.js'
 import { config } from '../src/config/index.js'
 
-const BASE = process.env.E2E_BASE ?? 'http://localhost:3001'
+/**
+ * Where to submit answers. Its own variable on purpose.
+ *
+ * Not `BASE_URL` — that is the public address baked into QR codes, so it points at the
+ * deployed app. Sending there mints tokens with the local JWT_SECRET and hands them to a
+ * server running a different one, which rejects every submission as 401. This wants a
+ * server that shares this .env, which in practice means the local dev server.
+ */
+const BASE = process.env.REHEARSE_BASE ?? 'http://127.0.0.1:3001'
 
 /** Every account this script creates carries this prefix, and cleanup keys off it. */
 const PREFIX = 'rehearsal-'
@@ -181,6 +189,59 @@ async function resolveTarget(code: string) {
   return question
 }
 
+// ─── Preflight ────────────────────────────────────────────────────────────────
+
+/**
+ * Prove a student can actually submit, before building a class of thirty who cannot.
+ *
+ * Uses one throwaway account against a read-only route, then deletes it. This catches
+ * the three ways the run dies partway through — nothing listening, a server whose
+ * JWT_SECRET differs from this .env, and a session that is not open — and reports which,
+ * rather than leaving thirty orphaned accounts and a wall of identical errors.
+ */
+async function preflight(code: string): Promise<void> {
+  const probe = await prisma.student.create({
+    data: {
+      netId: `${PREFIX}probe-${Date.now().toString(36)}`,
+      email: `${PREFIX}probe-${Date.now().toString(36)}@example.invalid`,
+      passwordHash: await bcrypt.hash('probe', 4),
+    },
+  })
+
+  try {
+    let res: Awaited<ReturnType<typeof fetch>>
+    try {
+      res = await fetch(`${BASE}/api/questions/by-code/${code}`, {
+        headers: { Authorization: `Bearer ${tokenFor(probe.id, 'student')}` },
+      })
+    } catch {
+      throw new Error(
+        `Cannot reach ${BASE}.\n` +
+        `Start the backend with \`npm run dev\` first, or set REHEARSE_BASE to a server that shares this .env.`
+      )
+    }
+
+    if (res.status === 401) {
+      throw new Error(
+        `${BASE} rejected a freshly minted student token (401).\n` +
+        `That server verifies with a different JWT_SECRET than this .env holds — it is almost\n` +
+        `certainly a deployed instance rather than your local dev server. Rehearsal needs one\n` +
+        `that shares this .env, so run \`npm run dev\` and leave REHEARSE_BASE unset.`
+      )
+    }
+    if (res.status === 409) {
+      const body = await res.json().catch(() => null)
+      throw new Error(`The server will not accept answers yet: ${(body as any)?.error ?? 'session not open'}`)
+    }
+    if (!res.ok) {
+      const body = await res.json().catch(() => null)
+      throw new Error(`Unexpected ${res.status} from ${BASE}: ${(body as any)?.error ?? ''}`)
+    }
+  } finally {
+    await prisma.student.delete({ where: { id: probe.id } }).catch(() => {})
+  }
+}
+
 // ─── Cleanup ──────────────────────────────────────────────────────────────────
 
 /**
@@ -297,6 +358,14 @@ async function main() {
   if (existing.length > real) {
     console.log(`  note     : ${existing.length - real} rehearsal answers already present; they cannot answer twice`)
   }
+
+  // Before spending a model call or writing a single account, prove a student can submit.
+  console.log(`  target   : ${BASE}`)
+  if (!/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(BASE)) {
+    console.log('  WARNING  : that is not a local server. Fake answers will land in whatever it serves.')
+  }
+  await preflight(CODE!)
+  console.log('  preflight: a student can submit')
 
   const answers = await generateAnswers(question.text, STUDENTS)
   const spread = answers.reduce<Record<string, number>>((acc, a) => {
