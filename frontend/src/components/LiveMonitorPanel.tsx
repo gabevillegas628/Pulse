@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import type { QuestionWithResponses, SummaryCategory } from 'shared'
+import type { QuestionWithResponses, ThemeSet } from 'shared'
 import PulseMark from '@/components/ui/PulseMark'
 import LiveDot from '@/components/ui/LiveDot'
 import ResultsSummary from '@/components/ResultsSummary'
+import ThemeBars from '@/components/ThemeBars'
 import { X, Sparkles } from 'lucide-react'
 
 interface Props {
@@ -11,8 +12,8 @@ interface Props {
   totalQuestions: number
   sessionTitle: string
   enrolledCount: number
-  summary: SummaryCategory[] | null
-  summaryQuestionId: string | null
+  themes: ThemeSet | null
+  themesQuestionId: string | null
   isSummarizing: boolean
   onSummarize: () => void
   onClose: () => void
@@ -24,7 +25,7 @@ const CHART_TYPES = new Set(['MULTIPLE_CHOICE', 'RATING', 'YES_NO', 'MULTI_SELEC
 
 export default function LiveMonitorPanel({
   question, questionNumber, totalQuestions, sessionTitle,
-  enrolledCount, summary, summaryQuestionId, isSummarizing, onSummarize, onClose,
+  enrolledCount, themes, themesQuestionId, isSummarizing, onSummarize, onClose,
 }: Props) {
   const [mode, setMode] = useState<Mode>('themes')
 
@@ -33,7 +34,7 @@ export default function LiveMonitorPanel({
   const stillOut = enrolledCount > 0 ? Math.max(0, enrolledCount - answered) : null
 
   const isFreeText = question?.type === 'FREE_TEXT'
-  const hasSummary = isFreeText && summary != null && summaryQuestionId === question?.id
+  const hasThemes = isFreeText && themes != null && themesQuestionId === question?.id
 
   return (
     <div className="pulse-dark flex flex-col min-h-screen bg-surface" style={{ fontFamily: 'var(--font-ui)' }}>
@@ -137,9 +138,8 @@ export default function LiveMonitorPanel({
               <p className="text-center text-muted text-sm py-8">Waiting for the room…</p>
             ) : mode === 'themes' ? (
               <ThemesBody
-                summary={hasSummary ? summary : null}
+                themes={hasThemes ? themes : null}
                 isSummarizing={isSummarizing}
-                answered={answered}
                 onSummarize={onSummarize}
               />
             ) : (
@@ -172,36 +172,21 @@ export default function LiveMonitorPanel({
 
 // ── Themes body ───────────────────────────────────────────────────────────────
 
-function ThemesBody({ summary, isSummarizing, answered, onSummarize }: {
-  summary: SummaryCategory[] | null
+function ThemesBody({ themes, isSummarizing, onSummarize }: {
+  themes: ThemeSet | null
   isSummarizing: boolean
-  answered: number
   onSummarize: () => void
 }) {
-  if (summary) {
+  if (themes) {
     return (
-      <div className="space-y-4">
-        {summary.map((cat, i) => {
-          const barPct = answered > 0 ? Math.round((cat.count / answered) * 100) : 0
-          return (
-            <div key={i}>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-semibold text-ink">{cat.label}</span>
-                <span className="text-sm font-bold font-mono text-ink">{cat.count}</span>
-              </div>
-              <div className="h-0.5 rounded-full bg-surface-2 overflow-hidden mb-1.5">
-                <div
-                  className="h-full rounded-full"
-                  style={{ width: `${barPct}%`, background: 'var(--signal)' }}
-                />
-              </div>
-              <p className="text-xs text-muted leading-snug italic line-clamp-2">
-                "{cat.description}"
-              </p>
-            </div>
-          )
-        })}
-      </div>
+      <ThemeBars
+        variant="panel"
+        categories={themes.categories}
+        classified={themes.classified}
+        total={themes.total}
+        status={themes.status}
+        need={themes.need}
+      />
     )
   }
 

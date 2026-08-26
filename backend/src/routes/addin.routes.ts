@@ -7,6 +7,7 @@ import { generateUniqueCode } from '../utils/codes.js'
 import { generateQuestionQr } from '../utils/qr.js'
 import { p } from '../utils/params.js'
 import { customAlphabet } from 'nanoid'
+import { readThemeSetsForRun } from '../services/themes.service.js'
 
 const nanoidDigits = customAlphabet('0123456789', 4)
 
@@ -348,7 +349,9 @@ router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
       select: {
         id: true,
         title: true,
-        class: { select: { name: true, _count: { select: { enrollments: true } } } },
+        class: {
+          select: { name: true, liveThemesDefault: true, _count: { select: { enrollments: true } } },
+        },
         questions: {
           orderBy: { order: 'asc' },
           select: {
@@ -359,6 +362,7 @@ router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
             options: true,
             order: true,
             correctAnswer: true,
+            liveThemes: true,
             responses: {
               orderBy: { submittedAt: 'desc' },
               // No student relation: identity must not reach the projector.
@@ -387,6 +391,24 @@ router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
     // Before anyone has answered, show the first question rather than nothing.
     if (!activeQuestionId) activeQuestionId = session.questions[0]?.id ?? null
 
+    const themesByQuestion = await readThemeSetsForRun(run.id, session.questions, session.class)
+
+    const questions = session.questions.map((q) => {
+      const isFreeText = q.type === 'FREE_TEXT'
+      return {
+        ...q,
+        // Free text answers are quasi-identifying — "as I said in office hours" names a
+        // student as surely as a netID does. The projector only ever needs counts and
+        // categories for them, so the words do not travel at all. Every other type needs
+        // responseText: ResultsSummary buckets choices and numbers by it.
+        responses: isFreeText
+          ? q.responses.map(({ responseText: _drop, ...rest }) => rest)
+          : q.responses,
+        // null means theming is off for this question, not that it has no categories yet.
+        themes: isFreeText ? themesByQuestion.get(q.id) ?? null : null,
+      }
+    })
+
     res.json({
       success: true,
       data: {
@@ -395,7 +417,7 @@ router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
           title: session.title,
           className: session.class.name,
           enrolledCount: session.class._count.enrollments,
-          questions: session.questions,
+          questions,
         },
         activeQuestionId,
         runId: run.id,

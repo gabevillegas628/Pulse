@@ -451,20 +451,20 @@ non-free-text questions.
 minutes. Run it after any change to a prompt, a model, the output schema, or the worker's
 timing constants.
 
-`npm run test:e2e:qr` is at **50 assertions** and must stay green. Add:
+`npm run test:e2e:qr` is at **58 assertions** (was 50 before phase 3) and must stay green. It is
+deliberately LLM-free: the theming assertions stay below the bootstrap threshold so the suite
+remains fast and free to run. Added in phase 3:
 
-1. `/addin/live` FREE_TEXT payload contains no `responseText` *(tightens the existing invariant)*
-2. `themes` object contains no `studentId`
-3. `themes` object contains no `responseId`
-4. `themes` is `null` when `liveThemes` is off
-5. No LLM call fires below `BOOTSTRAP_N` (status stays `WAITING`, `bootstrapN` null)
-6. Categories appear once `BOOTSTRAP_N` is crossed
-7. Exactly one category has `isOther: true`
-8. Category counts sum to `classified`
-9. A professor override sets `source: PROFESSOR` and moves the counts
-10. A second run of the same session starts with a fresh, empty theme set
+1. FREE_TEXT payload contains no `responseText` *(tightens the existing invariant)* ✅
+2. The payload does not contain the submitted answer text ✅
+3. `themes` is `null` when `liveThemes` is off — "off" is distinguishable from "not started" ✅
+4. Theming can be switched on mid-run ✅
+5. `themes` reports `WAITING` with a `need` count before the threshold ✅
+6. The themed payload still contains no `netId` or `studentId` ✅
+7. `themes` carries no `responseId` ✅
 
-Target: **60 assertions**.
+Still owed, in phase 4: a professor override sets `source: PROFESSOR` and moves the counts, and a
+second run of the same session starts with a fresh, empty theme set.
 
 End to end, unchanged from the handoff: open a session, project a deck with the results object,
 answer from several phones, confirm categories appear and bars grow **without leaving the slide

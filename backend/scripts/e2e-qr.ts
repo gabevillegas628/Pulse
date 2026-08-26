@@ -387,6 +387,31 @@ async function main() {
     check('payload contains no studentId', !payload.includes('studentId'))
     check('payload contains no student object', !/"student"\s*:/.test(payload))
 
+    // Free text is quasi-identifying even without a netID — "as I said in office hours"
+    // names someone. The projector needs counts and categories, never the words.
+    check('payload contains no responseText for free text', !payload.includes('responseText'))
+    check('payload does not contain the submitted answer', !payload.includes('projected answer'))
+
+    // Themes are off by default, and "off" must be distinguishable from "not started".
+    const liveQ = live.body?.data?.session?.questions?.find((q: any) => q.id === liveQs[1].id)
+    check('themes are null while theming is off', liveQ?.themes === null, `got ${JSON.stringify(liveQ?.themes)}`)
+
+    // Turn it on and the shape appears — still with nothing identifying in it. Stays
+    // below the bootstrap threshold on purpose, so this suite never calls an LLM.
+    const enable = await http<any>('PATCH', `/api/sessions/${sessions[1].id}/questions/${liveQs[1].id}`, {
+      token: pTok, body: { liveThemes: true },
+    })
+    check('theming can be switched on mid-run', enable.status === 200, `status ${enable.status}`)
+
+    live = await http<any>('GET', '/api/addin/live', { token: pTok })
+    const themed = live.body?.data?.session?.questions?.find((q: any) => q.id === liveQs[1].id)
+    check('themes report progress before the threshold', themed?.themes?.status === 'WAITING',
+      `status ${themed?.themes?.status}`)
+    check('themes say how many answers are still needed', typeof themed?.themes?.need === 'number')
+    const themedPayload = JSON.stringify(live.body)
+    check('themed payload still contains no identity', !themedPayload.includes('netId') && !themedPayload.includes('studentId'))
+    check('themes carry no per-response detail', !themedPayload.includes('responseId'))
+
     const liveRunId = liveRun.body?.data?.run?.id
     if (liveRunId) {
       await http('PATCH', `/api/sessions/${sessions[1].id}/runs/${liveRunId}`, { token: pTok, body: { status: 'CLOSED' } })

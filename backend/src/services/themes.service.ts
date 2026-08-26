@@ -686,3 +686,77 @@ async function maybeRecluster(
   await bootstrapThemeSet(questionId, runId, questionText, set.classifyCalls + 1)
   return true
 }
+
+/**
+ * Theme sets for every eligible question in a run, in three queries regardless of how
+ * many questions there are.
+ *
+ * `/present` re-polls every few seconds as a safety net behind the socket, so the
+ * per-question version of this (three queries each) would have turned a projected
+ * lecture into steady database load for no reason.
+ */
+export async function readThemeSetsForRun(
+  runId: string,
+  questions: Array<{ id: string; type: string; liveThemes: boolean | null }>,
+  cls: { liveThemesDefault: boolean }
+): Promise<Map<string, ThemeSetDto>> {
+  const out = new Map<string, ThemeSetDto>()
+  const eligible = questions.filter((q) => themesEnabled(q, cls))
+  if (eligible.length === 0) return out
+
+  const ids = eligible.map((q) => q.id)
+
+  const [sets, totals] = await Promise.all([
+    prisma.themeSet.findMany({
+      where: { runId, questionId: { in: ids } },
+      include: { categories: { orderBy: { order: 'asc' } } },
+    }),
+    prisma.response.groupBy({
+      by: ['questionId'],
+      where: { runId, questionId: { in: ids } },
+      _count: { _all: true },
+    }),
+  ])
+
+  const categoryIds = sets.flatMap((s) => s.categories.map((c) => c.id))
+  const counts = categoryIds.length
+    ? await prisma.responseTheme.groupBy({
+        by: ['categoryId'],
+        where: { categoryId: { in: categoryIds } },
+        _count: { _all: true },
+      })
+    : []
+
+  const countByCategory = new Map(counts.map((c) => [c.categoryId, c._count._all]))
+  const totalByQuestion = new Map(totals.map((t) => [t.questionId, t._count._all]))
+  const setByQuestion = new Map(sets.map((s) => [s.questionId, s]))
+
+  for (const q of eligible) {
+    const total = totalByQuestion.get(q.id) ?? 0
+    const set = setByQuestion.get(q.id)
+
+    // Enabled but not yet clustered: synthesised, because no row is written until there
+    // are enough answers to cluster. The projector still needs something to count toward.
+    if (!set) {
+      out.set(q.id, { status: 'WAITING', categories: [], classified: 0, total, model: null, need: BOOTSTRAP_N })
+      continue
+    }
+
+    const categories = set.categories.map((c) => ({
+      id: c.id,
+      label: c.label,
+      description: c.description,
+      count: countByCategory.get(c.id) ?? 0,
+      isOther: c.isOther,
+    }))
+    out.set(q.id, {
+      status: set.status,
+      categories,
+      classified: categories.reduce((sum, c) => sum + c.count, 0),
+      total,
+      model: set.model,
+    })
+  }
+
+  return out
+}

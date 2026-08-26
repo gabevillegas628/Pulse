@@ -9,9 +9,10 @@ import Card from '@/components/ui/Card'
 import Empty from '@/components/ui/Empty'
 import { Check, ChevronLeft, Copy, Download, Flag, GraduationCap, Pencil, PictureInPicture2, Plus, Sparkles, Trash2, X } from 'lucide-react'
 import { io } from 'socket.io-client'
-import type { SessionDetail, QuestionWithResponses, ResponseWithStudent, SummaryCategory, ThemeSet } from 'shared'
+import type { SessionDetail, QuestionWithResponses, ResponseWithStudent, ThemeSet } from 'shared'
 import { SessionStatus } from 'shared'
 import ResultsSummary from '@/components/ResultsSummary'
+import ThemeBars from '@/components/ThemeBars'
 import LiveMonitorPanel from '@/components/LiveMonitorPanel'
 import { apiError } from '@/lib/errors'
 import { downloadCsv } from '@/lib/downloadCsv'
@@ -27,15 +28,9 @@ export default function SessionPage() {
   const [activeTab, setActiveTab] = useState(0)
   const [expandedQr, setExpandedQr] = useState<string | null>(null)
 
-  const [summary, setSummary] = useState<SummaryCategory[] | null>(null)
-  const [summaryQuestionId, setSummaryQuestionId] = useState<string | null>(null)
-  // Dismiss now only collapses the panel — the themes stay on the server. Without this,
-  // the effect that seeds `summary` from the server would immediately restore them.
+  // Themes live in the query cache, written by the fetch, the summarize mutation and the
+  // socket alike. Dismiss only collapses the panel, so that stays local.
   const [dismissedThemesFor, setDismissedThemesFor] = useState<string | null>(null)
-  // The socket effect is set up once, so it cannot read `summaryQuestionId` directly
-  // without capturing a stale value.
-  const summaryQuestionIdRef = useRef<string | null>(null)
-  useEffect(() => { summaryQuestionIdRef.current = summaryQuestionId }, [summaryQuestionId])
 
   const [copiedQrId, setCopiedQrId] = useState<string | null>(null)
   const [rubricDraft, setRubricDraft] = useState<Record<string, string>>({})
@@ -168,11 +163,11 @@ export default function SessionPage() {
 
   const summarizeMutation = useMutation({
     mutationFn: (questionId: string) =>
-      api.post(`/sessions/${sessionId}/questions/${questionId}/summarize`).then((r) => r.data.data.categories),
-    onSuccess: (categories: SummaryCategory[], questionId: string) => {
-      setSummary(categories)
-      setSummaryQuestionId(questionId)
-      // The server now holds these, so keep the cached copy honest for the next reload.
+      api.post(`/sessions/${sessionId}/questions/${questionId}/summarize`).then((r) => r.data.data.themes),
+    onSuccess: (themes: ThemeSet, questionId: string) => {
+      qc.setQueryData<ThemeSet | null>(['themes', sessionId, questionId], themes)
+      // A large class comes back only partly classified; the worker finishes it and
+      // pushes the rest over the socket, so keep the cached copy honest either way.
       qc.invalidateQueries({ queryKey: ['themes', sessionId, questionId] })
     },
   })
@@ -187,15 +182,6 @@ export default function SessionPage() {
       api.get(`/sessions/${sessionId}/questions/${themesQuestionId}/themes`).then((r) => r.data.data.themes),
     enabled: !!themesQuestionId && themesQuestion?.type === 'FREE_TEXT',
   })
-
-  // Seed the panel from the server, unless it is already showing or was dismissed here.
-  useEffect(() => {
-    if (!themesQuestionId || !persistedThemes) return
-    if (dismissedThemesFor === themesQuestionId) return
-    if (summaryQuestionId === themesQuestionId) return
-    setSummary(persistedThemes.categories)
-    setSummaryQuestionId(themesQuestionId)
-  }, [themesQuestionId, persistedThemes, dismissedThemesFor, summaryQuestionId])
 
   const [gradeReasons, setGradeReasons] = useState<Record<string, string>>({})
   const [gradingState, setGradingState] = useState<Record<string, { graded: number; total: number }>>({})
@@ -384,8 +370,6 @@ export default function SessionPage() {
       const { questionId, runId, ...themes } = payload
       void runId
       qc.setQueryData<ThemeSet | null>(['themes', sessionId, questionId], themes)
-      // Only follow along if this question's panel is the one on screen and open.
-      setSummary((prev) => (summaryQuestionIdRef.current === questionId ? themes.categories : prev))
     })
 
     socket.on('run_status', ({ runId, status, sectionId }: { runId: string; status: SessionStatus; sectionId: string | null }) => {
@@ -449,6 +433,11 @@ export default function SessionPage() {
 
   const totalResponses = data.questions.reduce((sum, q) => sum + q.responses.length, 0)
   const activeQuestion = data.questions[activeTab] as QuestionWithResponses | undefined
+  // The panel shows the server's themes for the question in view, unless collapsed here.
+  const shownThemes =
+    persistedThemes && themesQuestionId === activeQuestion?.id && dismissedThemesFor !== activeQuestion?.id
+      ? persistedThemes
+      : null
 
   // Derive live state from runs
   const openRun = data.runs.find((r) => r.status === SessionStatus.OPEN) ?? null
@@ -944,11 +933,9 @@ export default function SessionPage() {
                   </div>
                 )
               })()}
-              {summaryQuestionId !== activeQuestion.id || !summary ? (
+              {!shownThemes ? (
                 <button
                   onClick={() => {
-                    setSummary(null)
-                    setSummaryQuestionId(null)
                     setDismissedThemesFor(null)
                     summarizeMutation.mutate(activeQuestion.id)
                   }}
@@ -965,35 +952,26 @@ export default function SessionPage() {
                       <Sparkles size={14} className="text-signal" /> AI Theme Summary
                     </p>
                     <button
-                      onClick={() => {
-                        setSummary(null)
-                        setSummaryQuestionId(null)
-                        setDismissedThemesFor(activeQuestion.id)
-                      }}
+                      onClick={() => setDismissedThemesFor(activeQuestion.id)}
                       className="text-xs text-muted hover:text-ink transition-colors"
                     >
                       Dismiss
                     </button>
                   </div>
-                  <div className="space-y-3">
-                    {summary.map((cat) => (
-                      <div key={cat.label} className="flex items-start gap-3">
-                        <span className="shrink-0 bg-signal-soft text-signal text-xs font-semibold px-2 py-0.5 rounded-full mt-0.5 font-mono">
-                          {cat.count}
-                        </span>
-                        <div>
-                          <p className="text-sm font-medium text-ink">{cat.label}</p>
-                          <p className="text-xs text-muted">{cat.description}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <ThemeBars
+                    variant="panel"
+                    categories={shownThemes.categories}
+                    classified={shownThemes.classified}
+                    total={shownThemes.total}
+                    status={shownThemes.status}
+                    need={shownThemes.need}
+                  />
                   {summarizeMutation.isError && (
                     <p className="text-xs text-red-500 mt-3">Failed to summarize — try again.</p>
                   )}
                 </Card>
               )}
-              {summarizeMutation.isError && !summary && (
+              {summarizeMutation.isError && !shownThemes && (
                 <p className="text-xs text-red-500 mt-2">Failed to summarize — try again.</p>
               )}
             </div>
@@ -1245,8 +1223,8 @@ export default function SessionPage() {
             totalQuestions={data.questions.length}
             sessionTitle={data.title}
             enrolledCount={data.enrolledCount ?? 0}
-            summary={summary}
-            summaryQuestionId={summaryQuestionId}
+            themes={persistedThemes ?? null}
+            themesQuestionId={themesQuestionId}
             isSummarizing={summarizeMutation.isPending}
             onSummarize={() => {
               const q = data.questions[pipActiveTab]

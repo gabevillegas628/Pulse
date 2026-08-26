@@ -3,9 +3,10 @@ import { flushSync } from 'react-dom'
 import { io, type Socket } from 'socket.io-client'
 import { api, getProfessorToken } from '@/api/client'
 import ResultsSummary from '@/components/ResultsSummary'
+import ThemeBars from '@/components/ThemeBars'
 import PulseMark from '@/components/ui/PulseMark'
 import LiveDot from '@/components/ui/LiveDot'
-import type { QuestionWithResponses } from 'shared'
+import type { QuestionWithResponses, ThemeSet } from 'shared'
 
 /**
  * Room-facing live results, rendered inside a PowerPoint content add-in on a slide.
@@ -27,7 +28,8 @@ import type { QuestionWithResponses } from 'shared'
 
 interface LiveResponse {
   id: string
-  responseText: string
+  /** Absent for FREE_TEXT — the server does not send answer text to the projector. */
+  responseText?: string
   wordCount: number
   isFlagged: boolean
   submittedAt: string
@@ -43,6 +45,8 @@ interface LiveQuestion {
   order: number
   correctAnswer: string | null
   responses: LiveResponse[]
+  /** null when live theming is off for this question, not merely unstarted. */
+  themes: ThemeSet | null
 }
 
 interface LiveSession {
@@ -175,6 +179,23 @@ export default function PresentResultsPage() {
     // A run opening or closing changes what should be on screen; refetch immediately.
     socket.on('run_status', () => fetchRef.current())
 
+    // Themes rebuild themselves as answers are classified. Aggregate only — the payload
+    // carries counts and labels, never a response or a student.
+    socket.on('themes_updated', (payload: ThemeSet & { questionId: string; runId: string }) => {
+      const { questionId, runId: _runId, ...themes } = payload
+      // flushSync for the same reason as below: an unfocused add-in frame does not
+      // reliably commit, and bars that stop growing are worse than bars that never start.
+      flushSync(() => {
+        setSession((prev) => {
+          if (!prev) return prev
+          return {
+            ...prev,
+            questions: prev.questions.map((q) => (q.id === questionId ? { ...q, themes } : q)),
+          }
+        })
+      })
+    })
+
     socket.on('new_response', (payload: {
       questionId: string
       response: { id: string; responseText: string; wordCount: number; isFlagged: boolean; submittedAt: string; aiScore: number | null }
@@ -190,11 +211,23 @@ export default function PresentResultsPage() {
           if (!prev) return prev
           return {
             ...prev,
-            questions: prev.questions.map((q) =>
-              q.id !== payload.questionId || q.responses.some((r) => r.id === id)
-                ? q
-                : { ...q, responses: [{ id, responseText, wordCount, isFlagged, submittedAt, aiScore }, ...q.responses] }
-            ),
+            questions: prev.questions.map((q) => {
+              if (q.id !== payload.questionId || q.responses.some((r) => r.id === id)) return q
+              // `/addin/live` strips answer text for FREE_TEXT; the socket does not, so
+              // drop it here too or a dropped connection would quietly reintroduce what
+              // the endpoint refuses to send. Nothing on this page renders it: free text
+              // shows as counts and themes.
+              const keepText = q.type !== 'FREE_TEXT'
+              const next: LiveResponse = {
+                id,
+                ...(keepText ? { responseText } : {}),
+                wordCount,
+                isFlagged,
+                submittedAt,
+                aiScore,
+              }
+              return { ...q, responses: [next, ...q.responses] }
+            }),
           }
         })
       })
@@ -220,17 +253,20 @@ export default function PresentResultsPage() {
   const answered = question?.responses.length ?? 0
   const enrolled = session?.enrolledCount ?? 0
   const pct = enrolled > 0 ? Math.round((answered / enrolled) * 100) : 0
+  // Themes take over the free-text panel once they exist. A failed set falls back to the
+  // plain counts, which are still correct — never a blank projector.
+  const showThemes = !!question?.themes && question.themes.status !== 'FAILED'
 
   return (
     <div
       className="pulse-dark flex flex-col bg-surface text-ink"
-      style={{ minHeight: '100vh', fontFamily: 'var(--font-ui)', padding: 'clamp(12px, 3vw, 28px)' }}
+      style={{ minHeight: '100vh', fontFamily: 'var(--font-ui)', padding: 'clamp(12px, 3vw, 52px)' }}
     >
       {/* Header */}
       <div className="flex items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <PulseMark size={18} color="var(--signal-bright)" />
-          <span className="text-muted truncate" style={{ fontSize: 'clamp(10px, 1.6vw, 14px)' }}>
+          <span className="text-muted truncate" style={{ fontSize: 'clamp(10px, 1.6vw, 28px)' }}>
             {session ? `${session.className} · ${session.title}` : 'Pulse'}
           </span>
         </div>
@@ -239,7 +275,7 @@ export default function PresentResultsPage() {
             {connected ? <LiveDot /> : <span className="w-1.5 h-1.5 rounded-full bg-warn" />}
             <span
               className="font-bold uppercase tracking-widest"
-              style={{ fontSize: 'clamp(9px, 1.2vw, 11px)', color: connected ? 'var(--signal)' : 'var(--warn)' }}
+              style={{ fontSize: 'clamp(9px, 1.2vw, 20px)', color: connected ? 'var(--signal)' : 'var(--warn)' }}
             >
               {connected ? 'Live' : (message || 'Reconnecting')}
             </span>
@@ -252,7 +288,7 @@ export default function PresentResultsPage() {
           {/* Question */}
           <p
             className="font-semibold leading-snug mt-3 shrink-0"
-            style={{ fontSize: 'clamp(15px, 2.8vw, 30px)' }}
+            style={{ fontSize: 'clamp(15px, 2.8vw, 54px)' }}
           >
             {question.text}
           </p>
@@ -262,12 +298,12 @@ export default function PresentResultsPage() {
             <div className="flex items-baseline gap-2">
               <span
                 className="font-mono font-bold leading-none"
-                style={{ fontSize: 'clamp(38px, 9vw, 96px)', letterSpacing: '-0.02em' }}
+                style={{ fontSize: 'clamp(38px, 9vw, 170px)', letterSpacing: '-0.02em' }}
               >
                 {answered}
               </span>
               {enrolled > 0 && (
-                <span className="font-mono font-semibold text-muted" style={{ fontSize: 'clamp(14px, 3vw, 32px)' }}>
+                <span className="font-mono font-semibold text-muted" style={{ fontSize: 'clamp(14px, 3vw, 56px)' }}>
                   / {enrolled}
                 </span>
               )}
@@ -276,11 +312,11 @@ export default function PresentResultsPage() {
               <div className="text-right shrink-0">
                 <p
                   className="font-mono font-bold leading-none"
-                  style={{ fontSize: 'clamp(18px, 4vw, 44px)', color: 'var(--signal-bright)' }}
+                  style={{ fontSize: 'clamp(18px, 4vw, 76px)', color: 'var(--signal-bright)' }}
                 >
                   {pct}%
                 </p>
-                <p className="text-muted" style={{ fontSize: 'clamp(9px, 1.4vw, 13px)' }}>answered</p>
+                <p className="text-muted" style={{ fontSize: 'clamp(9px, 1.4vw, 26px)' }}>answered</p>
               </div>
             )}
           </div>
@@ -298,11 +334,29 @@ export default function PresentResultsPage() {
               individual responses, and the payload carries no student identity. */}
           <div className="flex-1 overflow-y-auto mt-5 min-h-0">
             {answered === 0 ? (
-              <p className="text-muted text-center py-6" style={{ fontSize: 'clamp(12px, 2vw, 18px)' }}>
+              <p className="text-muted text-center py-6" style={{ fontSize: 'clamp(12px, 2vw, 30px)' }}>
                 Waiting for the room…
               </p>
+            ) : showThemes ? (
+              <ThemeBars
+                variant="stage"
+                categories={question.themes!.categories}
+                classified={question.themes!.classified}
+                total={question.themes!.total}
+                status={question.themes!.status}
+                need={question.themes!.need}
+              />
             ) : (
-              <ResultsSummary question={question as unknown as QuestionWithResponses} />
+              <>
+                <ResultsSummary question={question as unknown as QuestionWithResponses} />
+                {/* Themes gave up. Counts are still true, so show those and say why the
+                    rest is missing rather than leaving a gap nobody can interpret. */}
+                {question.themes?.status === 'FAILED' && (
+                  <p className="text-muted" style={{ fontSize: 'clamp(9px, 1.3vw, 22px)' }}>
+                    Themes unavailable
+                  </p>
+                )}
+              </>
             )}
           </div>
         </>
@@ -325,8 +379,8 @@ function Placeholder({ phase, message }: { phase: Phase; message: string }) {
   const { head, sub } = copy[phase]
   return (
     <div className="flex-1 flex flex-col items-center justify-center text-center gap-2">
-      <p className="font-semibold" style={{ fontSize: 'clamp(16px, 3vw, 28px)' }}>{head}</p>
-      <p className="text-muted" style={{ fontSize: 'clamp(11px, 1.8vw, 15px)' }}>{sub}</p>
+      <p className="font-semibold" style={{ fontSize: 'clamp(16px, 3vw, 56px)' }}>{head}</p>
+      <p className="text-muted" style={{ fontSize: 'clamp(11px, 1.8vw, 34px)' }}>{sub}</p>
     </div>
   )
 }
