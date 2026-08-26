@@ -488,8 +488,14 @@ remains fast and free to run. Added in phase 3:
 6. The themed payload still contains no `netId` or `studentId` ✅
 7. `themes` carries no `responseId` ✅
 
-Still owed, in phase 4: a professor override sets `source: PROFESSOR` and moves the counts, and a
-second run of the same session starts with a fresh, empty theme set.
+Phase 4 added the run-keying assertions, seeded directly rather than derived so the suite stays
+LLM-free — what is under test is the keying, not the clustering:
+
+8. A run's own theme set is reported on the projector ✅
+9. A second run over the same question starts with a clean set ✅
+10. The first run keeps its own themes — scoped away, not deleted ✅
+
+**62 assertions.** The override assertion is dropped along with the feature.
 
 End to end, unchanged from the handoff: open a session, project a deck with the results object,
 answer from several phones, confirm categories appear and bars grow **without leaving the slide
@@ -510,8 +516,20 @@ Each phase is independently shippable and useful on its own.
 | **1** | Schema, migration, config columns, bootstrap persisted behind the existing summarize button | Summaries survive a page reload — fixes a real annoyance today. No new AI behaviour |
 | **2** | Debounced worker, classify step, auto-bootstrap, `themes_updated`, **the authoring toggles** | Live themes visible in the task pane |
 | **3** | `/addin/live` changes, `ThemeBars` extraction, `/present` rendering, full-screen ceilings | The projector feature. **This is the talk** |
-| **4** | Professor override, manual re-cluster, the ten e2e assertions | What makes it survive real lectures |
+| **4** | A visible regenerate control, run-keying assertions | What makes it survive real lectures |
 
+> **Per-response override was cut in phase 4, deliberately.** The original argument — "the AI
+> miscategorised an answer in front of 30 students needs an answer" — conflated two failures. One
+> answer in the wrong bucket is invisible: it shifts a bar by one in thirty, changes no grade,
+> appears in no export, and `ResponseTheme` is read nowhere outside `themes.service.ts`. What *is*
+> visible is the whole category set missing where the class went, and the repair for that is
+> re-clustering, not moving answers one at a time.
+>
+> Grading is a separate system with its own correction already: the score pill cycles 1.0 / 0.5 / 0
+> per response, and "Give all full credit" covers the participation case. Nothing about themes
+> touches it. `ThemeSource.PROFESSOR` is left in the schema unused — removing it would cost a
+> migration for no benefit, and it documents the hook if this is ever revisited.
+>
 > **Sequencing corrected during phase 2.** The authoring toggles were originally phase 4, filed as
 > polish. They are not polish — they are the on-switch. With `liveThemes` and `liveThemesDefault`
 > writable by no route and settable in no UI, every phase 2 behaviour was unreachable outside a

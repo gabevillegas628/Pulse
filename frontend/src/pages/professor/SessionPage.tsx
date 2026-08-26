@@ -7,7 +7,7 @@ import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
 import Empty from '@/components/ui/Empty'
-import { Check, ChevronLeft, Copy, Download, Flag, GraduationCap, Pencil, PictureInPicture2, Plus, Sparkles, Trash2, X } from 'lucide-react'
+import { Check, ChevronLeft, Copy, Download, Flag, GraduationCap, Pencil, PictureInPicture2, Plus, RefreshCw, Sparkles, Trash2, X } from 'lucide-react'
 import { io } from 'socket.io-client'
 import type { SessionDetail, QuestionWithResponses, ResponseWithStudent, ThemeSet } from 'shared'
 import { SessionStatus } from 'shared'
@@ -951,12 +951,35 @@ export default function SessionPage() {
                     <p className="text-sm font-semibold text-ink-2 flex items-center gap-1.5">
                       <Sparkles size={14} className="text-signal" /> AI Theme Summary
                     </p>
-                    <button
-                      onClick={() => setDismissedThemesFor(activeQuestion.id)}
-                      className="text-xs text-muted hover:text-ink transition-colors"
-                    >
-                      Dismiss
-                    </button>
+                    <div className="flex items-center gap-3">
+                      {/*
+                        The only correction this feature has. Re-running replaces the set
+                        outright, which is the fix when the categories miss where the class
+                        actually went — a single answer in the wrong bucket shifts a bar by
+                        one and is not worth a control. Until now this lived behind Dismiss,
+                        so the one repair anyone would reach for read as "hide this".
+                      */}
+                      <button
+                        onClick={() => {
+                          if (!window.confirm(
+                            'Re-derive the themes from scratch? The current labels and counts are replaced — if a projector is showing them, the room will see them change.'
+                          )) return
+                          summarizeMutation.mutate(activeQuestion.id)
+                        }}
+                        disabled={summarizeMutation.isPending}
+                        className="flex items-center gap-1 text-xs text-muted hover:text-signal disabled:opacity-50 transition-colors"
+                        title="Group the answers again from scratch"
+                      >
+                        <RefreshCw size={11} className={summarizeMutation.isPending ? 'animate-spin' : ''} />
+                        {summarizeMutation.isPending ? 'Regrouping…' : 'Regenerate'}
+                      </button>
+                      <button
+                        onClick={() => setDismissedThemesFor(activeQuestion.id)}
+                        className="text-xs text-muted hover:text-ink transition-colors"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
                   </div>
                   <ThemeBars
                     variant="panel"

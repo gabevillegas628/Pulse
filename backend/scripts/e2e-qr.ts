@@ -413,10 +413,56 @@ async function main() {
     check('themes carry no per-response detail', !themedPayload.includes('responseId'))
 
     const liveRunId = liveRun.body?.data?.run?.id
+
+    // ── Themes belong to a run, not a question ────────────────────────────────
+    // Re-teaching a session must start from a clean set rather than inheriting last
+    // time's categories. Seeded directly rather than derived, so this suite stays
+    // LLM-free — what is under test is the keying, not the clustering.
     if (liveRunId) {
+      const seeded = await prisma.themeSet.create({
+        data: {
+          questionId: liveQs[1].id,
+          runId: liveRunId,
+          status: 'ACTIVE',
+          model: 'seeded-by-e2e',
+          bootstrapN: 1,
+          categories: {
+            create: [
+              { label: 'Seeded theme', description: 'Planted by the e2e suite', order: 0 },
+              { label: 'Still forming', description: 'Planted by the e2e suite', order: 1, isOther: true },
+            ],
+          },
+        },
+        include: { categories: true },
+      })
+
+      live = await http<any>('GET', '/api/addin/live', { token: pTok })
+      const seenNow = live.body?.data?.session?.questions?.find((q: any) => q.id === liveQs[1].id)
+      check('the run’s own theme set is reported', seenNow?.themes?.categories?.length === 2,
+        `got ${seenNow?.themes?.categories?.length} categories`)
+
+      // Close this run and open a fresh one over the same question.
       await http('PATCH', `/api/sessions/${sessions[1].id}/runs/${liveRunId}`, { token: pTok, body: { status: 'CLOSED' } })
       live = await http<any>('GET', '/api/addin/live', { token: pTok })
       check('stops reporting a session once the run closes', live.body?.data?.session === null)
+
+      const secondRun = await http<any>('POST', `/api/sessions/${sessions[1].id}/runs`, { token: pTok, body: {} })
+      check('a second run opens over the same question', secondRun.status === 201 || secondRun.status === 200)
+
+      live = await http<any>('GET', '/api/addin/live', { token: pTok })
+      const fresh = live.body?.data?.session?.questions?.find((q: any) => q.id === liveQs[1].id)
+      check(
+        'a second run starts with a clean theme set',
+        fresh?.themes?.status === 'WAITING' && (fresh?.themes?.categories?.length ?? 0) === 0,
+        `status ${fresh?.themes?.status}, ${fresh?.themes?.categories?.length ?? 0} categories carried over`
+      )
+      check('the first run keeps its own themes', 
+        (await prisma.themeSet.count({ where: { id: seeded.id } })) === 1)
+
+      const secondRunId = secondRun.body?.data?.run?.id
+      if (secondRunId) {
+        await http('PATCH', `/api/sessions/${sessions[1].id}/runs/${secondRunId}`, { token: pTok, body: { status: 'CLOSED' } })
+      }
     }
 
   } finally {
