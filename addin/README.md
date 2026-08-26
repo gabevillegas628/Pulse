@@ -232,7 +232,11 @@ the payload entirely, so a rendering bug cannot expose it.
 - It needs the network at lecture time. Unlike a QR card there is no offline fallback, so the
   page always paints a readable status ("Connecting…", "Waiting for the room…", "Reconnecting…")
   and holds the last known counts through a dropout rather than going blank.
-- Sign in through the task pane once; the results object shares that session.
+- **Sign in on the results object itself.** Office isolates `localStorage` per add-in, not per
+  origin, so the task pane's sign-in is *not* visible to the Live Results object even though both
+  run on the same host. Each add-in signs in separately, and the object shows its own sign-in form
+  when it needs one. It also prints the origin it is running on, which is the quickest way to spot
+  a stale object still bound to an old `BASE_URL`.
 
 ## Development
 
