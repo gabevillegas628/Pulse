@@ -6,12 +6,26 @@
  * pace and leaves the data standing, so you can sit in front of the projector and watch
  * categories assemble the way a room would make them.
  *
- * It exercises the whole chain — student submit, the debounced worker, the Opus
- * bootstrap, the Haiku classifier, the socket, /present, and the add-in if you have the
- * deck open — against a question you actually intend to ask.
+ * It exercises the whole chain — student submit, the socket, /present, and the add-in if
+ * you have the deck open — against a question you actually intend to ask. On FREE_TEXT it
+ * also drives the theme chain: the debounced worker, the Opus bootstrap, the Haiku
+ * classifier.
  *
  * Answers are generated for whatever question the code resolves to, so this works on
  * your real slide rather than only on a question someone wrote fixtures for.
+ *
+ * Every question type is playable except STRUCTURE:
+ *
+ *   FREE_TEXT        Opus writes a class's worth of answers to this specific question.
+ *   MULTIPLE_CHOICE  A leader, a distractor that pulled people, and a thin tail.
+ *   MULTI_SELECT     Mostly the correct set, with dropped and spurious picks around it.
+ *   YES_NO           Roughly two to one, leaning toward the correct side when one is set.
+ *   RATING           A bell centred on the correct value, or on 4 when none is set.
+ *   ORDERING         The right order, near-misses an adjacent swap away, a few shuffles.
+ *   NUMERIC          A cluster inside tolerance, near misses, decimal-place errors.
+ *
+ * Only FREE_TEXT costs a model call. The rest are shaped locally, so iterating on how a
+ * type looks on the projector is instant and free.
  *
  * Usage (run it directly — see the note below):
  *   npx tsx scripts/rehearse.ts --code 4821                 # 30 students, realistic pace
@@ -157,6 +171,235 @@ Return exactly ${n}.`,
   return parsed.answers.slice(0, n)
 }
 
+// ─── Answer generation: every other type ──────────────────────────────────────
+
+/**
+ * The remaining types are shaped here rather than by a model.
+ *
+ * For a fixed set of options a model call buys nothing and costs a wait: what makes a
+ * distribution worth looking at on a projector is its shape, not its prose. Shaping it
+ * here also means the shape is deliberate — a leader, a distractor that genuinely pulled
+ * people, a thin tail — rather than whatever the sampler felt like on that run. A flat
+ * five-way split reads as a bug from the back of a room.
+ */
+
+const OPTION_TYPES = ['MULTIPLE_CHOICE', 'MULTI_SELECT', 'ORDERING']
+
+type Generated = { text: string; kind: string }
+
+/** Question.options is a Json column, so it arrives as unknown and has to be narrowed. */
+function optionList(raw: unknown): string[] {
+  return Array.isArray(raw) ? raw.filter((o): o is string => typeof o === 'string') : []
+}
+
+/** A JSON array of strings, or null when the column holds anything else. */
+function jsonList(raw: string | null): string[] | null {
+  if (!raw) return null
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    return Array.isArray(parsed) && parsed.every((v) => typeof v === 'string')
+      ? (parsed as string[])
+      : null
+  } catch {
+    return null
+  }
+}
+
+/** One weighted draw. Weights are relative; they need not sum to anything. */
+function weightedPick<T>(entries: [T, number][]): T {
+  const total = entries.reduce((s, [, w]) => s + w, 0)
+  let r = Math.random() * total
+  for (const [value, w] of entries) {
+    r -= w
+    if (r <= 0) return value
+  }
+  return entries[entries.length - 1]![0]
+}
+
+function shuffled<T>(xs: T[]): T[] {
+  return [...xs].sort(() => Math.random() - 0.5)
+}
+
+function multipleChoice(opts: string[], correct: string | null, n: number): Generated[] {
+  // With no correct answer there is still a leader — just an arbitrary one. Drawing it
+  // rather than taking opts[0] keeps option A from winning every rehearsal.
+  const leader = correct && opts.includes(correct)
+    ? correct
+    : opts[Math.floor(Math.random() * opts.length)]!
+  const rest = opts.filter((o) => o !== leader)
+  const distractor = rest.length > 0 ? rest[Math.floor(Math.random() * rest.length)]! : null
+  const tail = Math.max(1, rest.length - 1)
+  const weights: [string, number][] = opts.map((o) => [
+    o,
+    o === leader ? 46 : o === distractor ? 24 : 30 / tail,
+  ])
+  return Array.from({ length: n }, () => {
+    const text = weightedPick<string>(weights)
+    return { text, kind: !correct ? 'answer' : text === correct ? 'correct' : 'incorrect' }
+  })
+}
+
+function multiSelect(opts: string[], correct: string | null, n: number): Generated[] {
+  // Option order throughout, not pick order, so the same set always serialises the same
+  // way and the per-option tally lines up.
+  const declared = jsonList(correct)
+  // No declared set, so the class still converges on something — just not on anything
+  // meaningful. Drawn rather than taken off the front, so option A does not win every
+  // rehearsal. Either way the result is re-read in option order below.
+  const wanted = declared ?? shuffled(opts).slice(0, Math.max(1, Math.round(opts.length / 2)))
+  const target = opts.filter((o) => wanted.includes(o))
+
+  return Array.from({ length: n }, () => {
+    const move = weightedPick<'exact' | 'dropped' | 'extra' | 'wild'>([
+      ['exact', 44], ['dropped', 24], ['extra', 20], ['wild', 12],
+    ])
+    let chosen = [...target]
+    if (move === 'dropped' && chosen.length > 1) {
+      chosen.splice(Math.floor(Math.random() * chosen.length), 1)
+    } else if (move === 'extra') {
+      const spare = opts.filter((o) => !chosen.includes(o))
+      if (spare.length > 0) chosen.push(spare[Math.floor(Math.random() * spare.length)]!)
+    } else if (move === 'wild') {
+      chosen = shuffled(opts).slice(0, 1 + Math.floor(Math.random() * opts.length))
+    }
+    // The answer page will not submit an empty selection, so neither does this.
+    if (chosen.length === 0) chosen = [opts[0]!]
+
+    const ordered = opts.filter((o) => chosen.includes(o))
+    // Judge the result, not the intent: dropping from a single-item set is a no-op, and
+    // two swaps can land back where they started.
+    const exact = ordered.length === target.length && ordered.every((o, i) => o === target[i])
+    // Only call it correct when the question says what correct is. Otherwise this is the
+    // set the room happened to converge on, which is not the same claim.
+    return {
+      text: JSON.stringify(ordered),
+      kind: !declared ? 'answer' : exact ? 'correct' : 'incorrect',
+    }
+  })
+}
+
+function yesNo(correct: string | null, n: number): Generated[] {
+  // Leans toward the correct side when there is one, and otherwise picks a side to lean,
+  // so the two bars are never a dead heat.
+  const yesWeight = correct === 'Yes' ? 66 : correct === 'No' ? 34 : Math.random() < 0.5 ? 62 : 38
+  return Array.from({ length: n }, () => {
+    const text = weightedPick<string>([['yes', yesWeight], ['no', 100 - yesWeight]])
+    return {
+      text,
+      kind: !correct ? 'answer' : text === correct.toLowerCase() ? 'correct' : 'incorrect',
+    }
+  })
+}
+
+function rating(correct: string | null, n: number): Generated[] {
+  // Centred on the correct value when one is set, otherwise on 4: a class asked to rate
+  // something rates it generously, and a bell centred on 3 looks synthetic.
+  const parsed = Number(correct)
+  const centre = Number.isInteger(parsed) && parsed >= 1 && parsed <= 5 ? parsed : 4
+  const weights: [string, number][] = [1, 2, 3, 4, 5].map((v) => {
+    const d = Math.abs(v - centre)
+    return [String(v), d === 0 ? 42 : d === 1 ? 22 : d === 2 ? 8 : 3]
+  })
+  return Array.from({ length: n }, () => {
+    const text = weightedPick<string>(weights)
+    return { text, kind: `rated ${text}` }
+  })
+}
+
+function ordering(opts: string[], correct: string | null, n: number): Generated[] {
+  // The editor writes the right sequence into correctAnswer as JSON; option order is the
+  // same thing when it has not been set.
+  const declared = jsonList(correct)
+  const known = !!declared && declared.length === opts.length && declared.every((o) => opts.includes(o))
+  const seq = known ? declared! : opts
+
+  function swapAdjacent(xs: string[]): string[] {
+    if (xs.length < 2) return xs
+    const i = Math.floor(Math.random() * (xs.length - 1))
+    const out = [...xs]
+    const held = out[i]!
+    out[i] = out[i + 1]!
+    out[i + 1] = held
+    return out
+  }
+
+  return Array.from({ length: n }, () => {
+    // Adjacent swaps rather than free permutations. Wrong answers then land on each other,
+    // so the panel shows a few orderings with counts instead of n groups of one — which is
+    // both what a real class produces and the only version that reads on a slide.
+    const move = weightedPick<'exact' | 'one' | 'two' | 'wild'>([
+      ['exact', 34], ['one', 36], ['two', 18], ['wild', 12],
+    ])
+    let out = [...seq]
+    if (move === 'one') out = swapAdjacent(out)
+    else if (move === 'two') out = swapAdjacent(swapAdjacent(out))
+    else if (move === 'wild') out = shuffled(out)
+    const exact = out.every((o, i) => o === seq[i])
+    // Option order is a guess at the right order, not a statement of it.
+    return { text: JSON.stringify(out), kind: !known ? 'answer' : exact ? 'correct' : 'incorrect' }
+  })
+}
+
+function numeric(correct: string | null, unit: string | null, tolerance: number | null, n: number): Generated[] {
+  const parsed = Number(correct)
+  // With no correct answer there is nothing to be near, so the spread gets an arbitrary
+  // centre. The shape stays representative even though the value means nothing — and
+  // nothing generated against it gets called right or wrong.
+  const known = !!correct && correct.trim() !== '' && Number.isFinite(parsed)
+  const target = known ? parsed : 100
+  const band = tolerance && tolerance > 0 ? tolerance : Math.abs(target) * 0.02 || 1
+
+  const tidy = (v: number) => {
+    const s = Number(v.toPrecision(4)).toString()
+    return unit ? `${s} ${unit}` : s
+  }
+
+  return Array.from({ length: n }, () => {
+    const move = weightedPick<'inside' | 'near' | 'decimal' | 'wild'>([
+      ['inside', 58], ['near', 17], ['decimal', 15], ['wild', 10],
+    ])
+    const sign = Math.random() < 0.5 ? -1 : 1
+    let v: number
+    if (move === 'inside') v = target + sign * Math.random() * band
+    else if (move === 'near') v = target + sign * band * (1.2 + Math.random())
+    // Right digits, wrong place. The most common real wrong answer there is.
+    else if (move === 'decimal') v = target * (Math.random() < 0.5 ? 10 : 0.1)
+    else v = target * (0.2 + Math.random() * 3)
+    return { text: tidy(v), kind: !known ? 'answer' : move === 'inside' ? 'correct' : move }
+  })
+}
+
+/** Whatever this question needs, by type. Only FREE_TEXT reaches for a model. */
+async function buildAnswers(
+  q: { type: string; text: string; options: unknown; correctAnswer: string | null; unit: string | null; tolerance: number | null },
+  n: number
+): Promise<Generated[]> {
+  const opts = optionList(q.options)
+  switch (q.type) {
+    case 'FREE_TEXT': return generateAnswers(q.text, n)
+    case 'MULTIPLE_CHOICE': return multipleChoice(opts, q.correctAnswer, n)
+    case 'MULTI_SELECT': return multiSelect(opts, q.correctAnswer, n)
+    case 'YES_NO': return yesNo(q.correctAnswer, n)
+    case 'RATING': return rating(q.correctAnswer, n)
+    case 'ORDERING': return ordering(opts, q.correctAnswer, n)
+    case 'NUMERIC': return numeric(q.correctAnswer, q.unit, q.tolerance, n)
+    default: throw new Error(`Rehearsal does not know how to answer a ${q.type} question.`)
+  }
+}
+
+/** JSON-encoded answers are unreadable in a terminal; everything else is already fine. */
+function readable(text: string): string {
+  const list = jsonList(text)
+  return list ? list.join(' → ') : text
+}
+
+/** Identical answers counted together, commonest first. */
+function tally(texts: string[]): [string, number][] {
+  const counts = new Map<string, number>()
+  for (const t of texts) counts.set(t, (counts.get(t) ?? 0) + 1)
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])
+}
+
 // ─── Target lookup ────────────────────────────────────────────────────────────
 
 async function resolveTarget(code: string) {
@@ -166,6 +409,10 @@ async function resolveTarget(code: string) {
       id: true,
       text: true,
       type: true,
+      options: true,
+      correctAnswer: true,
+      unit: true,
+      tolerance: true,
       liveThemes: true,
       sessionId: true,
       session: {
@@ -183,9 +430,20 @@ async function resolveTarget(code: string) {
   if (!question.sessionId || !question.session) {
     throw new Error('That code belongs to an assignment question. Rehearsal only drives in-class sessions.')
   }
-  if (question.type !== 'FREE_TEXT') {
-    throw new Error(`That question is ${question.type}. Live themes only apply to FREE_TEXT.`)
+  // STRUCTURE is the one type worth refusing. A submission is a molfile that the server
+  // runs through Indigo to get an InChI, so a fake answer means a real drawing rather than
+  // a shaped value — and the results panel renders nothing for STRUCTURE anyway, so there
+  // would be nothing on the projector to look at.
+  if (question.type === 'STRUCTURE') {
+    throw new Error('That question is STRUCTURE. Rehearsal cannot draw molecules, and results show nothing for it.')
   }
+
+  // Fail here rather than generating a class's worth of answers to options that do not
+  // exist and watching the server take every one of them.
+  if (OPTION_TYPES.includes(question.type) && optionList(question.options).length === 0) {
+    throw new Error(`That ${question.type} question has no options set. Add them in Pulse first.`)
+  }
+
   return question
 }
 
@@ -319,6 +577,7 @@ async function main() {
   console.log(`  class    : ${session.class.name}`)
   console.log(`  session  : ${session.title}`)
   console.log(`  question : ${question.text}`)
+  console.log(`  type     : ${question.type}`)
 
   if (CLEANUP) {
     console.log('\n=== Cleanup ===')
@@ -333,15 +592,20 @@ async function main() {
     throw new Error('No run is open for that session. Open it in Pulse first — that is what a student scanning would need too.')
   }
 
-  const themesOn = question.liveThemes ?? session.class.liveThemesDefault
-  if (!themesOn) {
-    if (!ENABLE_THEMES) {
-      throw new Error('Live themes are off for this question. Turn them on in Pulse, or re-run with --enable-themes.')
+  // Themes are a FREE_TEXT concern only — the flag is ignored for every other type, so
+  // demanding it would block the types this script was just taught to drive.
+  const isFreeText = question.type === 'FREE_TEXT'
+  if (isFreeText) {
+    const themesOn = question.liveThemes ?? session.class.liveThemesDefault
+    if (!themesOn) {
+      if (!ENABLE_THEMES) {
+        throw new Error('Live themes are off for this question. Turn them on in Pulse, or re-run with --enable-themes.')
+      }
+      await prisma.question.update({ where: { id: question.id }, data: { liveThemes: true } })
+      console.log('  themes   : switched on for this question')
+    } else {
+      console.log('  themes   : on')
     }
-    await prisma.question.update({ where: { id: question.id }, data: { liveThemes: true } })
-    console.log('  themes   : switched on for this question')
-  } else {
-    console.log('  themes   : on')
   }
 
   // Never pollute a question that has real answers in it.
@@ -367,7 +631,7 @@ async function main() {
   await preflight(CODE!)
   console.log('  preflight: a student can submit')
 
-  const answers = await generateAnswers(question.text, STUDENTS)
+  const answers = await buildAnswers(question, STUDENTS)
   const spread = answers.reduce<Record<string, number>>((acc, a) => {
     acc[a.kind] = (acc[a.kind] ?? 0) + 1
     return acc
@@ -376,38 +640,80 @@ async function main() {
 
   if (DRY_RUN) {
     console.log('\n--- generated answers (nothing submitted) ---')
-    answers.forEach((a, i) => console.log(`  [${String(i).padStart(2)}] (${a.kind}) ${a.text}`))
+    answers.forEach((a, i) => console.log(`  [${String(i).padStart(2)}] (${a.kind}) ${readable(a.text)}`))
+    // Only where answers repeat. A tally of free text is just the list again.
+    if (!isFreeText) {
+      console.log('\n--- distribution ---')
+      for (const [text, n] of tally(answers.map((a) => a.text))) {
+        console.log(`  ${String(n).padStart(4)}  ${readable(text)}`)
+      }
+    }
     await prisma.$disconnect()
     return
   }
 
-  // ── Build the fake class ────────────────────────────────────────────────────
-  const stamp = Date.now().toString(36)
-  const hash = await bcrypt.hash(`rehearse-${stamp}`, 4)
-  console.log(`\n  creating ${STUDENTS} accounts…`)
+  // ── Assemble the fake class ─────────────────────────────────────────────────
+  /*
+   * Reuse accounts left by earlier rehearsals and mint only the shortfall.
+   *
+   * Driving one question after another otherwise creates a fresh cohort every run, and
+   * the pile cleanup has to sweep is the only thing that grows. Since the whole point of
+   * this script is to iterate without hand-making students, it should not quietly
+   * hand-make thirty more each time.
+   *
+   * Anyone who already answered *this* question is passed over. The route rejects a
+   * second answer from the same student — correctly — so reusing them would spend the run
+   * collecting 409s.
+   */
+  const alreadyHere = new Set(
+    (await prisma.response.findMany({
+      where: { questionId: question.id },
+      select: { studentId: true },
+    })).map((r) => r.studentId)
+  )
 
-  await prisma.student.createMany({
-    data: answers.map((_, i) => ({
-      netId: `${PREFIX}${stamp}-${i}`,
-      email: `${PREFIX}${stamp}-${i}@example.invalid`,
-      passwordHash: hash,
-    })),
-  })
-  const students = await prisma.student.findMany({
-    where: { netId: { startsWith: `${PREFIX}${stamp}-` } },
-    select: { id: true, netId: true },
-  })
-  const byIndex = new Map(students.map((s) => [Number(s.netId.split('-').pop()), s.id]))
+  const spare = (await prisma.student.findMany({
+    where: { netId: { startsWith: PREFIX } },
+    select: { id: true },
+    orderBy: { netId: 'asc' },
+  })).filter((s) => !alreadyHere.has(s.id))
 
-  // Match the open run's section, or a section-specific run would reject every answer.
-  await prisma.enrollment.createMany({
-    data: students.map((s) => ({
-      studentId: s.id,
-      classId: session.classId,
-      sectionId: openRun.sectionId,
-    })),
-    skipDuplicates: true,
-  })
+  const roster = spare.slice(0, answers.length).map((s) => s.id)
+  const shortfall = answers.length - roster.length
+  console.log(
+    `\n  cohort   : ${answers.length} (${[
+      roster.length > 0 ? `${roster.length} reused` : null,
+      shortfall > 0 ? `${shortfall} new` : null,
+    ].filter(Boolean).join(', ')})`
+  )
+
+  if (shortfall > 0) {
+    const stamp = Date.now().toString(36)
+    const hash = await bcrypt.hash(`rehearse-${stamp}`, 4)
+    await prisma.student.createMany({
+      data: Array.from({ length: shortfall }, (_, i) => ({
+        netId: `${PREFIX}${stamp}-${i}`,
+        email: `${PREFIX}${stamp}-${i}@example.invalid`,
+        passwordHash: hash,
+      })),
+    })
+    const fresh = await prisma.student.findMany({
+      where: { netId: { startsWith: `${PREFIX}${stamp}-` } },
+      select: { id: true },
+    })
+    roster.push(...fresh.map((s) => s.id))
+  }
+
+  // Match the open run's section, or a section-specific run rejects every answer. Upsert
+  // rather than createMany: a reused account may already be enrolled in this class from a
+  // run against a different section, and skipDuplicates would leave it pointed there.
+  for (const studentId of roster) {
+    await prisma.enrollment.upsert({
+      where: { studentId_classId: { studentId, classId: session.classId } },
+      create: { studentId, classId: session.classId, sectionId: openRun.sectionId },
+      update: { sectionId: openRun.sectionId },
+    })
+  }
 
   // ── Play the class in ───────────────────────────────────────────────────────
   const offsets = arrivalOffsets(answers.length)
@@ -423,7 +729,7 @@ async function main() {
     const wait = offsets[i]! - (Date.now() - started)
     if (wait > 0) await sleep(wait)
 
-    const studentId = byIndex.get(i)
+    const studentId = roster[i]
     if (!studentId) continue
 
     try {
@@ -452,36 +758,52 @@ async function main() {
 
   console.log('\n')
 
-  // ── Let the worker finish, then report what the room produced ───────────────
-  console.log('  waiting for classification to settle…')
-  let last: any = null
-  for (let i = 0; i < 90; i++) {
-    await sleep(2000)
-    const set = await prisma.themeSet.findFirst({
-      where: { questionId: question.id, runId: openRun.id },
-      include: { categories: { orderBy: { order: 'asc' } } },
-    })
-    if (!set) continue
-    const counts = await prisma.responseTheme.groupBy({
-      by: ['categoryId'],
-      where: { category: { themeSetId: set.id } },
-      _count: { _all: true },
-    })
-    const classified = counts.reduce((s, c) => s + c._count._all, 0)
-    const total = await prisma.response.count({ where: { questionId: question.id, runId: openRun.id } })
-    last = { set, counts: new Map(counts.map((c) => [c.categoryId, c._count._all])), classified, total }
-    if (classified >= total) break
-  }
-
-  console.log('\n=== What the room produced ===')
-  if (!last) {
-    console.log('  No themes were derived. Fewer than 8 answers landed, or the worker failed — check the server log.')
-  } else {
-    for (const c of last.set.categories) {
-      const n = last.counts.get(c.id) ?? 0
-      console.log(`  ${String(n).padStart(4)}  ${c.label}${c.isOther ? '  (forming)' : ''}`)
+  // ── Report what the room produced ───────────────────────────────────────────
+  if (isFreeText) {
+    // Let the worker finish before reporting, or the tally is of a half-sorted set.
+    console.log('  waiting for classification to settle…')
+    let last: any = null
+    for (let i = 0; i < 90; i++) {
+      await sleep(2000)
+      const set = await prisma.themeSet.findFirst({
+        where: { questionId: question.id, runId: openRun.id },
+        include: { categories: { orderBy: { order: 'asc' } } },
+      })
+      if (!set) continue
+      const counts = await prisma.responseTheme.groupBy({
+        by: ['categoryId'],
+        where: { category: { themeSetId: set.id } },
+        _count: { _all: true },
+      })
+      const classified = counts.reduce((s, c) => s + c._count._all, 0)
+      const total = await prisma.response.count({ where: { questionId: question.id, runId: openRun.id } })
+      last = { set, counts: new Map(counts.map((c) => [c.categoryId, c._count._all])), classified, total }
+      if (classified >= total) break
     }
-    console.log(`\n  ${last.classified} of ${last.total} classified · model ${last.set.model} · ${last.set.classifyCalls} classify call(s)`)
+
+    console.log('\n=== What the room produced ===')
+    if (!last) {
+      console.log('  No themes were derived. Fewer than 8 answers landed, or the worker failed — check the server log.')
+    } else {
+      for (const c of last.set.categories) {
+        const n = last.counts.get(c.id) ?? 0
+        console.log(`  ${String(n).padStart(4)}  ${c.label}${c.isOther ? '  (forming)' : ''}`)
+      }
+      console.log(`\n  ${last.classified} of ${last.total} classified · model ${last.set.model} · ${last.set.classifyCalls} classify call(s)`)
+    }
+  } else {
+    // Nothing to wait for — the distribution is simply whatever landed. Read it back from
+    // the database rather than from what was generated, so this reports what the projector
+    // is actually showing, rejections and all.
+    const landed = await prisma.response.findMany({
+      where: { questionId: question.id, runId: openRun.id },
+      select: { responseText: true },
+    })
+    console.log('\n=== What the room produced ===')
+    for (const [text, n] of tally(landed.map((r) => r.responseText))) {
+      console.log(`  ${String(n).padStart(4)}  ${readable(text)}`)
+    }
+    console.log(`\n  ${landed.length} answer(s) on this run`)
   }
 
   console.log(`\nThe fake class is still in place so you can look at it.`)
