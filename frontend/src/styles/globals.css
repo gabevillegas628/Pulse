@@ -73,12 +73,29 @@
   to   { transform: scaleX(1); }
 }
 
+@keyframes pip-in {
+  0%   { transform: scale(.2); opacity: .35; }
+  55%  { transform: scale(1.35); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  * { animation-duration: .001ms !important; }
+  /* Delay as well as duration: a staggered entrance zeroes its animation but keeps its
+     offset otherwise, so the later rows still sit invisible waiting for a turn that now
+     takes no time. */
+  * { animation-duration: .001ms !important; animation-delay: 0s !important; }
 }
 
 .rise-in  { animation: rise-in 0.42s cubic-bezier(.2,.7,.2,1) both; }
 .live-dot { animation: live-dot 1.4s ease-in-out infinite; }
+
+/* Projector motion. Every one of these is a declarative keyframe animating only
+   transform/opacity: a slide show backgrounds the add-in frame, where timers are
+   throttled and requestAnimationFrame cannot be relied on, so anything that moves
+   has to move without JavaScript driving it frame by frame. */
+.count-pop { animation: count-pop .5s cubic-bezier(.2,.7,.2,1) both; }
+.bar-grow  { animation: bar-grow .7s cubic-bezier(.2,.7,.2,1) both; transform-origin: left center; }
+.pip-in    { animation: pip-in .42s cubic-bezier(.2,.7,.2,1) both; }
 
 .pulse-scroll::-webkit-scrollbar        { width: 8px; height: 8px; }
 .pulse-scroll::-webkit-scrollbar-thumb  { background: var(--hairline-strong); border-radius: 99px; }

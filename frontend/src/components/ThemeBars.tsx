@@ -82,45 +82,53 @@ export default function ThemeBars({
   return (
     <div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: t.gap }}>
-        {ordered.map((cat) => {
+        {ordered.map((cat, i) => {
           // Share of every answer received, not of those sorted so far. Bars then only
           // ever grow toward their true share instead of rescaling under each other as
           // classification catches up.
           const pct = Math.round((cat.count / denominator) * 100)
           return (
+            // Two elements rather than one: `rise-in` ends at opacity 1 and holds it, so
+            // a category that carries its own dimming needs that dimming on a parent the
+            // animation is not touching, or Forming would quietly brighten to full.
             <div key={cat.id} style={{ opacity: cat.isOther ? 0.55 : 1 }}>
-              <div className="flex items-baseline justify-between gap-3 mb-1">
-                <span
-                  className="font-semibold text-ink truncate"
-                  style={{ fontSize: t.label }}
-                >
-                  {cat.label}
-                </span>
-                <span
-                  className="font-mono font-bold text-ink shrink-0 tabular-nums"
-                  style={{ fontSize: t.count }}
-                >
-                  {cat.count}
-                </span>
-              </div>
-              <div
-                className="rounded-full bg-surface-2 overflow-hidden"
-                style={{ height: t.bar }}
-              >
+              <div className="rise-in" style={{ animationDelay: `${i * 70}ms` }}>
+                <div className="flex items-baseline justify-between gap-3 mb-1">
+                  <span
+                    className="font-semibold text-ink truncate"
+                    style={{ fontSize: t.label }}
+                  >
+                    {cat.label}
+                  </span>
+                  <span
+                    className="font-mono font-bold text-ink shrink-0 tabular-nums"
+                    style={{ fontSize: t.count }}
+                  >
+                    {cat.count}
+                  </span>
+                </div>
                 <div
-                  className="h-full rounded-full transition-all duration-700 ease-out"
-                  style={{
-                    width: `${pct}%`,
-                    background: cat.isOther ? 'var(--muted)' : 'var(--signal)',
-                  }}
-                />
+                  className="rounded-full bg-surface-2 overflow-hidden"
+                  style={{ height: t.bar }}
+                >
+                  <div
+                    // Sweeps out from zero the first time this category exists, then hands
+                    // over to the width transition for every later change. Both land on
+                    // scaleX(1), so the animation holding its end state costs nothing.
+                    className="h-full rounded-full bar-grow transition-all duration-700 ease-out"
+                    style={{
+                      width: `${pct}%`,
+                      background: cat.isOther ? 'var(--muted)' : 'var(--signal)',
+                    }}
+                  />
+                </div>
+                {/* The label is a handle; this sentence is the actual finding. Worth the
+                    vertical space on a projector too — a room reads "Caveats and limits of
+                    the ratio" and learns nothing it did not already know. */}
+                <p className="text-muted leading-snug italic line-clamp-2 mt-1.5" style={{ fontSize: t.desc }}>
+                  {cat.description}
+                </p>
               </div>
-              {/* The label is a handle; this sentence is the actual finding. Worth the
-                  vertical space on a projector too — a room reads "Caveats and limits of
-                  the ratio" and learns nothing it did not already know. */}
-              <p className="text-muted leading-snug italic line-clamp-2 mt-1.5" style={{ fontSize: t.desc }}>
-                {cat.description}
-              </p>
             </div>
           )
         })}

@@ -5,6 +5,7 @@ import { api, getProfessorToken } from '@/api/client'
 import { apiError } from '@/lib/errors'
 import ResultsSummary from '@/components/ResultsSummary'
 import ThemeBars from '@/components/ThemeBars'
+import PresenceGrid from '@/components/PresenceGrid'
 import PulseMark from '@/components/ui/PulseMark'
 import LiveDot from '@/components/ui/LiveDot'
 import type { QuestionWithResponses, ThemeSet } from 'shared'
@@ -69,6 +70,9 @@ const NO_SESSION_POLL = 5000
 const LIVE_POLL = 6000
 // With the socket down the poll is the only source of updates, so it tightens.
 const DEGRADED_POLL = 2500
+// Past this roster size a dot per student stops being readable and starts being a wall,
+// so participation falls back to the plain bar.
+const PRESENCE_LIMIT = 140
 
 export default function PresentResultsPage() {
   const [phase, setPhase] = useState<Phase>('loading')
@@ -298,7 +302,12 @@ export default function PresentResultsPage() {
           <div className="flex items-end justify-between gap-4 mt-4 shrink-0">
             <div className="flex items-baseline gap-2">
               <span
-                className="font-mono font-bold leading-none"
+                // Remounting on a new total is what re-fires the pop. The animation is
+                // declarative once it starts, so the count kicks without a frame loop for
+                // the slide show to throttle. inline-block because transforms do not
+                // apply to inline boxes.
+                key={answered}
+                className={`font-mono font-bold leading-none inline-block ${answered > 0 ? 'count-pop' : ''}`}
                 style={{ fontSize: 'clamp(38px, 9vw, 170px)', letterSpacing: '-0.02em' }}
               >
                 {answered}
@@ -322,12 +331,21 @@ export default function PresentResultsPage() {
             )}
           </div>
 
+          {/* Participation, as one dot per student where that is legible. A bar creeping
+              by a percent is easy to miss from the back of a hall; a dot lighting up is
+              not, and it is the same fact told in a way the room reads as its own. */}
           {enrolled > 0 && (
-            <div className="h-2 rounded-full bg-surface-2 overflow-hidden mt-3 shrink-0">
-              <div
-                className="h-full rounded-full transition-all duration-500 ease-out"
-                style={{ width: `${pct}%`, background: 'var(--signal-bright)' }}
-              />
+            <div className="mt-3 shrink-0">
+              {enrolled <= PRESENCE_LIMIT ? (
+                <PresenceGrid answered={answered} enrolled={enrolled} />
+              ) : (
+                <div className="h-2 rounded-full bg-surface-2 overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500 ease-out"
+                    style={{ width: `${pct}%`, background: 'var(--signal-bright)' }}
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -349,7 +367,7 @@ export default function PresentResultsPage() {
               />
             ) : (
               <>
-                <ResultsSummary question={question as unknown as QuestionWithResponses} />
+                <ResultsSummary question={question as unknown as QuestionWithResponses} variant="stage" />
                 {/* Themes gave up. Counts are still true, so show those and say why the
                     rest is missing rather than leaving a gap nobody can interpret. */}
                 {question.themes?.status === 'FAILED' && (
