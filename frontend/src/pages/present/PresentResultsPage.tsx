@@ -70,9 +70,10 @@ const NO_SESSION_POLL = 5000
 const LIVE_POLL = 6000
 // With the socket down the poll is the only source of updates, so it tightens.
 const DEGRADED_POLL = 2500
-// Past this roster size a dot per student stops being readable and starts being a wall,
-// so participation falls back to the plain bar.
-const PRESENCE_LIMIT = 140
+// Lectures here run to roughly 800, and at 60 dots per row that is a block a room can
+// read rather than a wall. The bar is now a guard against a roster far outside anything
+// a hall holds, not a limit real classes cross.
+const PRESENCE_LIMIT = 1000
 
 export default function PresentResultsPage() {
   const [phase, setPhase] = useState<Phase>('loading')

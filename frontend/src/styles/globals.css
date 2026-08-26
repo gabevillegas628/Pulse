@@ -20,6 +20,11 @@
     --hairline: #e8e3da;
     --hairline-strong: #d8d2c6;
 
+    /* Unfilled seat in PresenceGrid. Its own token because the value is a projector
+       judgement, not a surface: --surface-2 was correct in kind and invisible in fact,
+       barely eight points off the page behind it. Tune it here. */
+    --pip-empty: #c9c2b4;
+
     --good: #1f8a5b;
     --good-soft: #e7f4ee;
     --warn: #b9791b;
@@ -40,6 +45,7 @@
     --muted: #968d7f;
     --hairline: rgba(255,255,255,.09);
     --hairline-strong: rgba(255,255,255,.16);
+    --pip-empty: rgba(255,255,255,.28);
     --signal-soft: rgba(255,90,54,.14);
     --good-soft: rgba(31,138,91,.16);
     --warn-soft: rgba(185,121,27,.18);
