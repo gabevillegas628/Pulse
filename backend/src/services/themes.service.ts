@@ -4,6 +4,7 @@ import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { prisma } from '../db/index.js'
 import { config } from '../config/index.js'
 import { AppError } from '../middleware/error.middleware.js'
+import { getIo } from '../socket.js'
 import { logger } from '../utils/logger.js'
 
 /**
@@ -23,9 +24,29 @@ const anthropic = new Anthropic({ apiKey: config.anthropicApiKey })
 
 /** Bootstrap is the one call where a bad result poisons everything downstream. */
 const BOOTSTRAP_MODEL = 'claude-opus-5'
+/** Classification is high-volume, short-output and easy. Spend accordingly. */
+const CLASSIFY_MODEL = 'claude-haiku-4-5'
 
 /** Below this, the model's choice is not trusted and the answer goes to Forming. */
 const MIN_CONFIDENCE = 0.6
+
+// Tuning. See live_ai_themes_spec.md §3.1 for the reasoning behind each.
+/** Answers required before categories are derived at all. */
+export const BOOTSTRAP_N = 8
+/** Small, so bars step visibly in the room rather than lurching in one jump. */
+const CLASSIFY_BATCH = 8
+/** Quiet period after the last answer before work starts. */
+const DEBOUNCE_MS = 2000
+/** Ceiling on that quiet period, so a steady stream of answers still gets processed. */
+const MAX_WAIT_MS = 6000
+/** Share sitting in Forming that suggests the categories are wrong. */
+const RECLUSTER_OTHER_RATIO = 0.3
+/** Never re-cluster on thin data. */
+const RECLUSTER_MIN_TOTAL = 20
+/** Labels must never churn on a projector. */
+const RECLUSTER_COOLDOWN_MS = 60_000
+/** Hard ceiling per theme set — bounds a bug, not the bill. */
+const MAX_CLASSIFY_CALLS = 60
 
 export const OTHER_LABEL = 'Still forming'
 const OTHER_DESCRIPTION = 'Answers that do not yet fit a category cleanly.'
@@ -46,6 +67,8 @@ export interface ThemeSetDto {
   classified: number
   total: number
   model: string | null
+  /** WAITING only: how many answers are needed before categories appear. */
+  need?: number
 }
 
 // ─── Enablement ───────────────────────────────────────────────────────────────
@@ -187,7 +210,10 @@ Rules:
 export async function bootstrapThemeSet(
   questionId: string,
   runId: string,
-  questionText: string
+  questionText: string,
+  // Carried across a re-cluster: the replacement set inherits the old call count, so
+  // re-clustering cannot be used to reset the per-set spend ceiling.
+  carryClassifyCalls = 0
 ): Promise<ThemeSetDto> {
   const answers = await prisma.response.findMany({
     where: { questionId, runId },
@@ -213,6 +239,7 @@ export async function bootstrapThemeSet(
         status: 'ACTIVE',
         model: BOOTSTRAP_MODEL,
         bootstrapN: answers.length,
+        classifyCalls: carryClassifyCalls,
         lastClusteredAt: new Date(),
       },
     })
@@ -264,4 +291,348 @@ export async function bootstrapThemeSet(
   })
 
   return dto
+}
+
+// ─── Classification ───────────────────────────────────────────────────────────
+
+/**
+ * Assign answers to categories that already exist.
+ *
+ * The category id is constrained to an enum of the real ids plus "other", so a drifting
+ * or invented label is impossible by construction rather than by parsing. Note that
+ * "other" comes back with high confidence when the model is *sure* an answer fits
+ * nothing — so "other" means Forming regardless of its score, and the confidence floor
+ * applies only to the real categories.
+ */
+const classifySchema = (categoryIds: string[]) =>
+  z4.object({
+    assignments: z4.array(
+      z4.object({
+        index: z4.number().int(),
+        categoryId: z4.enum(['other', ...categoryIds] as [string, ...string[]]),
+        confidence: z4.number().min(0).max(1),
+      })
+    ),
+  })
+
+async function callClassify(
+  questionText: string,
+  categories: Array<{ id: string; label: string; description: string }>,
+  answers: AnswerRow[]
+) {
+  const catList = categories.map((c) => `- ${c.id}: ${c.label} — ${c.description}`).join('\n')
+  const list = answers.map((a, i) => `[${i}] ${a.responseText}`).join('\n')
+
+  const res = await anthropic.messages.parse({
+    model: CLASSIFY_MODEL,
+    max_tokens: 1024,
+    temperature: 0,
+    output_config: { format: zodOutputFormat(classifySchema(categories.map((c) => c.id))) },
+    messages: [
+      {
+        role: 'user',
+        content: `Assign each student answer to one of the existing categories for this question.
+
+Question: "${questionText}"
+
+Categories:
+${catList}
+
+Answers (${answers.length} total, indexed 0 to ${answers.length - 1}):
+${list}
+
+Rules:
+- Use the category id exactly as written above.
+- Use "other" when an answer genuinely fits none of the categories, including when it is junk, empty of content, or off topic.
+- Do not stretch a category to fit. "other" is the right answer more often than a bad match is.
+- Use confidence below 0.6 when you are unsure rather than guessing.
+- Return exactly one assignment for every index from 0 to ${answers.length - 1}.`,
+      },
+    ],
+  })
+
+  const parsed = res.parsed_output
+  if (!parsed) throw new Error('classify returned no parsable output')
+  return parsed
+}
+
+/**
+ * Classify one batch of not-yet-assigned answers. Returns how many were assigned.
+ * A batch that fails twice takes the whole set to FAILED — the projector then falls
+ * back to plain counts rather than showing a half-built picture forever.
+ */
+async function classifyNextBatch(
+  setId: string,
+  questionId: string,
+  runId: string,
+  questionText: string
+): Promise<number> {
+  const [categories, answers] = await Promise.all([
+    prisma.themeCategory.findMany({
+      where: { themeSetId: setId },
+      orderBy: { order: 'asc' },
+      select: { id: true, label: true, description: true, isOther: true },
+    }),
+    prisma.response.findMany({
+      where: { questionId, runId, theme: { is: null } },
+      orderBy: { submittedAt: 'asc' },
+      take: CLASSIFY_BATCH,
+      select: { id: true, responseText: true },
+    }),
+  ])
+  if (answers.length === 0) return 0
+
+  const real = categories.filter((c) => !c.isOther)
+  const other = categories.find((c) => c.isOther)
+  if (!other || real.length === 0) throw new Error('theme set is missing its categories')
+
+  let parsed: Awaited<ReturnType<typeof callClassify>>
+  try {
+    parsed = await callClassify(questionText, real, answers)
+  } catch (first) {
+    logger.warn('Classify batch failed, retrying once', {
+      questionId,
+      error: first instanceof Error ? first.message : String(first),
+    })
+    try {
+      parsed = await callClassify(questionText, real, answers)
+    } catch (second) {
+      logger.error('Classify batch failed twice, marking set FAILED', {
+        questionId,
+        error: second instanceof Error ? second.message : String(second),
+      })
+      await prisma.themeSet.update({ where: { id: setId }, data: { status: 'FAILED' } })
+      return 0
+    }
+  }
+
+  const byIndex = new Map(parsed.assignments.map((a) => [a.index, a]))
+  const realById = new Map(real.map((c) => [c.id, c]))
+
+  await prisma.$transaction([
+    prisma.responseTheme.createMany({
+      data: answers.map((answer, i) => {
+        const a = byIndex.get(i)
+        // "other", an unknown id, a missing entry, or low confidence on a real category
+        // all mean the same thing: not confidently placed, so it waits in Forming.
+        const target =
+          a && a.categoryId !== 'other' && realById.has(a.categoryId) && a.confidence >= MIN_CONFIDENCE
+            ? a.categoryId
+            : other.id
+        return {
+          responseId: answer.id,
+          categoryId: target,
+          confidence: a?.confidence ?? null,
+          source: 'AI' as const,
+        }
+      }),
+      skipDuplicates: true,
+    }),
+    prisma.themeSet.update({ where: { id: setId }, data: { classifyCalls: { increment: 1 } } }),
+  ])
+
+  return answers.length
+}
+
+// ─── Emitting ─────────────────────────────────────────────────────────────────
+
+/**
+ * The set as the projector should see it, including the pre-bootstrap state. No row is
+ * written before there are enough answers to cluster, so "waiting" is synthesised
+ * rather than stored — the progress line still needs something to render.
+ */
+export async function readOrWaiting(questionId: string, runId: string): Promise<ThemeSetDto> {
+  const dto = await readThemeSet(questionId, runId)
+  if (dto) return dto
+  const total = await prisma.response.count({ where: { questionId, runId } })
+  return { status: 'WAITING', categories: [], classified: 0, total, model: null, need: BOOTSTRAP_N }
+}
+
+/** Aggregate only — this reaches a lecture-hall projector, so no identity may ride along. */
+async function emitThemes(sessionId: string, questionId: string, runId: string): Promise<void> {
+  try {
+    const themes = await readOrWaiting(questionId, runId)
+    getIo().to(`${sessionId}:professor`).emit('themes_updated', { questionId, runId, ...themes })
+  } catch (err) {
+    // A socket that is not up must never stop classification; polling still catches up.
+    logger.warn('Could not emit themes_updated', {
+      questionId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
+
+// ─── The debounced worker ─────────────────────────────────────────────────────
+
+interface Pending {
+  timer: NodeJS.Timeout
+  firstQueuedAt: number
+  running: boolean
+  again: boolean
+}
+
+/**
+ * In-memory debounce state, keyed by question and run.
+ *
+ * This assumes a single app instance: two would both classify the same answers. Railway
+ * runs one today. If that changes, claim work with a conditional update on ThemeSet
+ * before doing it — see live_ai_themes_spec.md section 3.1.
+ */
+const pending = new Map<string, Pending>()
+const workKey = (questionId: string, runId: string) => `${questionId}:${runId}`
+
+/**
+ * Ask for theme work after an answer arrives. Returns immediately and never throws:
+ * a student must never wait on, or be failed by, an LLM call.
+ */
+export function scheduleThemeWork(questionId: string, runId: string, sessionId: string): void {
+  try {
+    const k = workKey(questionId, runId)
+    const now = Date.now()
+    const existing = pending.get(k)
+
+    if (existing) {
+      // Mid-drain: note that more arrived rather than starting a second pass.
+      if (existing.running) {
+        existing.again = true
+        return
+      }
+      clearTimeout(existing.timer)
+      // A steady stream would otherwise push the deadline back forever, so the wait is
+      // capped: once MAX_WAIT_MS has passed since the first queued answer, run now.
+      const waited = now - existing.firstQueuedAt
+      const delay = waited >= MAX_WAIT_MS ? 0 : Math.min(DEBOUNCE_MS, MAX_WAIT_MS - waited)
+      existing.timer = setTimeout(() => void fire(k, questionId, runId, sessionId), delay)
+      return
+    }
+
+    pending.set(k, {
+      firstQueuedAt: now,
+      running: false,
+      again: false,
+      timer: setTimeout(() => void fire(k, questionId, runId, sessionId), DEBOUNCE_MS),
+    })
+  } catch (err) {
+    logger.error('Could not schedule theme work', {
+      questionId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
+
+async function fire(k: string, questionId: string, runId: string, sessionId: string): Promise<void> {
+  const entry = pending.get(k)
+  if (!entry || entry.running) return
+  entry.running = true
+  entry.again = false
+
+  let again = false
+  try {
+    again = await drainThemeWork(questionId, runId, sessionId)
+  } catch (err) {
+    logger.error('Theme work failed', {
+      questionId,
+      runId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+
+  const more = again || entry.again
+  if (more) {
+    entry.running = false
+    entry.firstQueuedAt = Date.now()
+    // Work already known to exist runs straight away; a late arrival waits out the usual
+    // quiet period, so a trickle of answers does not become one API call per answer.
+    entry.timer = setTimeout(() => void fire(k, questionId, runId, sessionId), again ? 0 : DEBOUNCE_MS)
+    return
+  }
+  pending.delete(k)
+}
+
+/**
+ * One unit of work. Returns true when there is definitely more to do straight away.
+ *
+ *   no set, too few answers  -> emit progress, wait
+ *   no set, enough answers   -> bootstrap (which also assigns everything it saw)
+ *   active, unassigned left  -> classify one batch
+ *   active, all assigned     -> consider re-clustering
+ *   failed                   -> stop; the projector falls back to counts
+ */
+async function drainThemeWork(questionId: string, runId: string, sessionId: string): Promise<boolean> {
+  const question = await prisma.question.findUnique({
+    where: { id: questionId },
+    select: { text: true },
+  })
+  if (!question) return false
+
+  const set = await prisma.themeSet.findUnique({
+    where: { questionId_runId: { questionId, runId } },
+    select: { id: true, status: true, classifyCalls: true, lastClusteredAt: true },
+  })
+
+  if (!set) {
+    const total = await prisma.response.count({ where: { questionId, runId } })
+    if (total < BOOTSTRAP_N) {
+      await emitThemes(sessionId, questionId, runId)
+      return false
+    }
+    logger.info('Bootstrapping themes', { questionId, runId, answers: total })
+    await bootstrapThemeSet(questionId, runId, question.text)
+    await emitThemes(sessionId, questionId, runId)
+    return false
+  }
+
+  if (set.status === 'FAILED') return false
+
+  const unclassified = await prisma.response.count({
+    where: { questionId, runId, theme: { is: null } },
+  })
+
+  if (unclassified > 0) {
+    if (set.classifyCalls >= MAX_CLASSIFY_CALLS) {
+      logger.warn('Classify ceiling reached for theme set', { questionId, runId, calls: set.classifyCalls })
+      return false
+    }
+    const done = await classifyNextBatch(set.id, questionId, runId, question.text)
+    await emitThemes(sessionId, questionId, runId)
+    return done > 0 && unclassified > done
+  }
+
+  if (await maybeRecluster(set, questionId, runId, question.text)) {
+    await emitThemes(sessionId, questionId, runId)
+  }
+  return false
+}
+
+/**
+ * Re-derive categories when too many answers have collected in Forming — a sign the
+ * original categories missed where the class actually went. Rate-limited hard: labels
+ * changing on a projector reads as instability, so this must be rare and deliberate.
+ */
+async function maybeRecluster(
+  set: { id: string; classifyCalls: number; lastClusteredAt: Date | null },
+  questionId: string,
+  runId: string,
+  questionText: string
+): Promise<boolean> {
+  if (set.classifyCalls >= MAX_CLASSIFY_CALLS) return false
+  if (set.lastClusteredAt && Date.now() - set.lastClusteredAt.getTime() < RECLUSTER_COOLDOWN_MS) return false
+
+  const other = await prisma.themeCategory.findFirst({
+    where: { themeSetId: set.id, isOther: true },
+    select: { id: true },
+  })
+  if (!other) return false
+
+  const [inForming, total] = await Promise.all([
+    prisma.responseTheme.count({ where: { categoryId: other.id } }),
+    prisma.response.count({ where: { questionId, runId } }),
+  ])
+  if (total < RECLUSTER_MIN_TOTAL) return false
+  if (inForming / total <= RECLUSTER_OTHER_RATIO) return false
+
+  logger.info('Re-clustering themes', { questionId, runId, inForming, total })
+  await prisma.themeSet.update({ where: { id: set.id }, data: { status: 'RECLUSTERING' } })
+  await bootstrapThemeSet(questionId, runId, questionText, set.classifyCalls + 1)
+  return true
 }

@@ -4,6 +4,7 @@ import { prisma } from '../db/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { requireStudent, StudentRequest } from '../middleware/auth.middleware.js'
 import { getIo } from '../socket.js'
+import { themesEnabled, scheduleThemeWork } from '../services/themes.service.js'
 
 import { gradeSession } from '../utils/scoring.js'
 import { upsertEnrollment } from '../utils/enrollment.js'
@@ -215,6 +216,9 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
           select: {
             id: true,
             classId: true,
+            // Resolves whether live theming is on for this question — the per-question
+            // flag falls back to this class default.
+            class: { select: { liveThemesDefault: true } },
             runs: { where: { status: 'OPEN' }, select: { id: true, sectionId: true } },
           },
         },
@@ -281,6 +285,13 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
         questionId,
         sessionId: sess.id,
       })
+
+      // Live AI theming, when enabled for this question. Deliberately not awaited and
+      // unable to throw: a student must never wait on an LLM — or be failed by one — to
+      // see their answer accepted. The work is debounced and runs on its own.
+      if (themesEnabled(question, sess.class)) {
+        scheduleThemeWork(questionId, openRun.id, sess.id)
+      }
 
       return res.status(201).json({ success: true, data: { response } })
     }

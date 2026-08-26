@@ -107,17 +107,35 @@ const ANSWERS: Array<{ group: 'entropy' | 'heat' | 'phase' | 'junk'; text: strin
   { group: 'junk', text: 'asdf' },
 ]
 
-async function createFixture() {
+/**
+ * The order answers arrive in for the live test.
+ *
+ * ANSWERS is grouped, so its first eight would be four entropy and four heat with no
+ * phase answers at all — bootstrap would derive categories that miss a third of the
+ * class. Interleaving means the first eight span all three groups, which is what a real
+ * lecture looks like and what makes the later assertions mean anything.
+ */
+const LIVE_ORDER = [0, 4, 8, 1, 5, 9, 2, 6, 10, 3, 7, 11, 12]
+
+interface FixtureOpts {
+  /** Turn on automatic theming for the question. */
+  liveThemes?: boolean
+  /** Write responses straight to the database, bypassing the submit route and its hook. */
+  seedResponses?: boolean
+}
+
+async function createFixture({ liveThemes = false, seedResponses = true }: FixtureOpts = {}) {
   const hash = await bcrypt.hash(`pw-${RUN_ID}`, 4)
+  const suffix = liveThemes ? 'live' : 'batch'
 
   const professor = await prisma.professor.create({
-    data: { email: `${TAG}@example.invalid`, name: `Smoke ${RUN_ID}`, passwordHash: hash },
+    data: { email: `${TAG}-${suffix}@example.invalid`, name: `Smoke ${RUN_ID}`, passwordHash: hash },
   })
   const cls = await prisma.class.create({
     data: {
       professorId: professor.id,
-      name: `Smoke Class ${RUN_ID}`,
-      joinCode: `SMK${RUN_ID.slice(-5).toUpperCase()}`,
+      name: `Smoke Class ${RUN_ID} ${suffix}`,
+      joinCode: `SM${suffix.slice(0, 1).toUpperCase()}${RUN_ID.slice(-5).toUpperCase()}`,
     },
   })
   const session = await prisma.session.create({
@@ -130,6 +148,7 @@ async function createFixture() {
       type: 'FREE_TEXT',
       order: 0,
       accessCode: await freeCode(),
+      liveThemes: liveThemes ? true : null,
     },
   })
   const run = await prisma.sessionRun.create({
@@ -141,30 +160,53 @@ async function createFixture() {
   for (let i = 0; i < ANSWERS.length; i++) {
     const student = await prisma.student.create({
       data: {
-        netId: `${TAG}-${i}`,
-        email: `${TAG}-${i}@example.invalid`,
+        netId: `${TAG}-${suffix}-${i}`,
+        email: `${TAG}-${suffix}-${i}@example.invalid`,
         passwordHash: hash,
       },
     })
     await prisma.enrollment.create({ data: { studentId: student.id, classId: cls.id } })
-    const text = ANSWERS[i]!.text
-    const wordCount = text.trim().split(/\s+/).filter(Boolean).length
-    await prisma.response.create({
-      data: {
-        questionId: question.id,
-        studentId: student.id,
-        runId: run.id,
-        responseText: text,
-        wordCount,
-        isFlagged: wordCount < 10,
-        isDraft: false,
-      },
-    })
+    if (seedResponses) {
+      const text = ANSWERS[i]!.text
+      const wordCount = text.trim().split(/\s+/).filter(Boolean).length
+      await prisma.response.create({
+        data: {
+          questionId: question.id,
+          studentId: student.id,
+          runId: run.id,
+          responseText: text,
+          wordCount,
+          isFlagged: wordCount < 10,
+          isDraft: false,
+        },
+      })
+    }
     students.push(student)
   }
 
   return { professor, cls, session, question, run, students }
 }
+
+/** Poll the themes route until it satisfies `done`, or give up. Returns what it last saw. */
+async function waitForThemes(
+  sessionId: string,
+  questionId: string,
+  token: string,
+  done: (t: any) => boolean,
+  timeoutMs = 90_000
+): Promise<any> {
+  const started = Date.now()
+  let last: any = null
+  while (Date.now() - started < timeoutMs) {
+    const r = await http<any>('GET', `/api/sessions/${sessionId}/questions/${questionId}/themes`, { token })
+    last = r.body?.data?.themes ?? null
+    if (done(last)) return last
+    await new Promise((r) => setTimeout(r, 1000))
+  }
+  return last
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 async function destroyFixture(professorId: string, studentIds: string[]) {
   // Class → session → question → themeSet → categories all cascade from the professor;
@@ -218,6 +260,9 @@ async function main() {
   const pTok = tokenFor(professor.id, 'professor')
   const studentIds = students.map((s) => s.id)
   console.log(`  fixture: question ${question.id}`)
+
+  // Section 6 builds its own fixture; declared here so cleanup can reach it either way.
+  let live: Awaited<ReturnType<typeof createFixture>> | null = null
 
   try {
     // ── 1. Bootstrap ──────────────────────────────────────────────────────────
@@ -317,9 +362,106 @@ async function main() {
     const rowsAfter = await prisma.responseTheme.count({ where: { response: { questionId: question.id } } })
     check('still one assignment per answer after re-running', rowsAfter === ANSWERS.length, `${rowsAfter} rows`)
 
+    // ── 6. The automatic live path (phase 2) ──────────────────────────────────
+    // A separate fixture, because this one must submit through the real student route
+    // so the hook on response creation actually fires.
+    section('6. Automatic theming during a lecture')
+    live = await createFixture({ liveThemes: true, seedResponses: false })
+    const lq = live.question.id
+    const ls = live.session.id
+    const lTok = tokenFor(live.professor.id, 'professor')
+
+    const submit = async (answerIndex: number) => {
+      const student = live!.students[answerIndex]!
+      return http<any>('POST', '/api/responses', {
+        token: tokenFor(student.id, 'student'),
+        body: { questionId: lq, responseText: ANSWERS[answerIndex]!.text },
+      })
+    }
+
+    // Below the threshold, nothing should happen at all — no set, no API call.
+    for (const i of LIVE_ORDER.slice(0, 7)) {
+      const r = await submit(i)
+      if (r.status !== 201) check(`answer ${i} accepted`, false, `status ${r.status}`)
+    }
+    check('7 answers submitted through the student route', true)
+
+    // Comfortably past the 2s debounce and the 6s ceiling.
+    await sleep(9000)
+    const early = await http<any>('GET', `/api/sessions/${ls}/questions/${lq}/themes`, { token: lTok })
+    const earlyThemes = early.body?.data?.themes
+    check(
+      'no categories derived below the bootstrap threshold',
+      !earlyThemes || earlyThemes.status === 'WAITING' || earlyThemes.categories?.length === 0,
+      `status ${earlyThemes?.status}, ${earlyThemes?.categories?.length ?? 0} categories`
+    )
+    const setsBefore = await prisma.themeSet.count({ where: { questionId: lq } })
+    check('no theme set row written before it is needed', setsBefore === 0, `${setsBefore} sets`)
+
+    // The eighth answer should trigger bootstrap on its own, with nothing clicked.
+    await submit(LIVE_ORDER[7]!)
+    const t0boot = Date.now()
+    const booted = await waitForThemes(ls, lq, lTok, (t) => t?.status === 'ACTIVE' && t.categories?.length >= 3)
+    check(
+      'the 8th answer triggers bootstrap automatically',
+      booted?.status === 'ACTIVE',
+      `status ${booted?.status} after ${((Date.now() - t0boot) / 1000).toFixed(1)}s`
+    )
+    if (booted?.status === 'ACTIVE') {
+      console.log(`  (bootstrap landed ${((Date.now() - t0boot) / 1000).toFixed(1)}s after the 8th answer)`)
+      check('bootstrap classified all 8', booted.classified === 8, `classified ${booted.classified}`)
+    }
+
+    // The rest arrive and should be classified incrementally, without another bootstrap.
+    const bootIds = (booted?.categories ?? []).map((c: any) => c.id).join(',')
+    for (const i of LIVE_ORDER.slice(8)) {
+      const r = await submit(i)
+      if (r.status !== 201) check(`answer ${i} accepted`, false, `status ${r.status}`)
+    }
+    const t0cls = Date.now()
+    const settled = await waitForThemes(ls, lq, lTok, (t) => t?.classified >= ANSWERS.length)
+    check(
+      'later answers are classified incrementally',
+      settled?.classified === ANSWERS.length,
+      `classified ${settled?.classified} of ${ANSWERS.length}`
+    )
+    if (settled) {
+      console.log(`  (remaining ${ANSWERS.length - 8} classified in ${((Date.now() - t0cls) / 1000).toFixed(1)}s)`)
+      console.log('  final distribution:')
+      for (const c of settled.categories) console.log(`    ${String(c.count).padStart(3)}  ${c.label}${c.isOther ? '  (forming)' : ''}`)
+    }
+
+    check(
+      'categories did not churn while answers arrived',
+      (settled?.categories ?? []).map((c: any) => c.id).join(',') === bootIds,
+      'the category ids changed mid-run — labels would have visibly reshuffled'
+    )
+
+    const liveSets = await prisma.themeSet.count({ where: { questionId: lq } })
+    check('still exactly one theme set after the whole run', liveSets === 1, `${liveSets} sets`)
+
+    const liveSet = await prisma.themeSet.findFirst({ where: { questionId: lq }, select: { classifyCalls: true, bootstrapN: true } })
+    check('bootstrap used exactly the threshold number of answers', liveSet?.bootstrapN === 8, `got ${liveSet?.bootstrapN}`)
+    check(
+      'the 5 remaining answers cost a single classify call',
+      liveSet?.classifyCalls === 1,
+      `${liveSet?.classifyCalls} calls — batching may not be working`
+    )
+
+    const liveAssignments = await assignmentsByAnswerIndex(lq, live.students.map((s) => s.id))
+    const liveOther = (settled?.categories ?? []).find((c: any) => c.isOther)?.id
+    const liveJunk = ANSWERS.map((a, i) => (a.group === 'junk' ? i : -1)).filter((i) => i >= 0)
+    const liveJunkForming = liveJunk.filter((i) => liveAssignments[i]?.categoryId === liveOther).length
+    check(
+      `junk answers reach Forming on the live path too (${liveJunkForming}/${liveJunk.length})`,
+      liveJunkForming === liveJunk.length,
+      'the classifier placed junk in a real category'
+    )
+
   } finally {
     section('Cleanup')
     await destroyFixture(professor.id, studentIds)
+    if (live) await destroyFixture(live.professor.id, live.students.map((s) => s.id))
     const leftover = await prisma.class.count({ where: { name: { contains: RUN_ID } } })
     check('all fixture data removed', leftover === 0, `${leftover} classes remain`)
   }

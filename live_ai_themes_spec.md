@@ -242,10 +242,14 @@ const parsed = res.parsed_output   // null if parsing failed — guard, don't as
 > from the two entry points cannot be mixed. Keep request validation on `z` and output formats
 > on `z4`.
 
-> **Verify before relying on it.** Structured outputs are documented as available across models, but
-> smoke-test `claude-haiku-4-5` specifically before building on it. If it misbehaves, fall back to
-> `claude-sonnet-5` for classify — roughly 3× the classify cost, which is still under $0.50 per
-> class per semester.
+> **Verified in phase 2.** `claude-haiku-4-5` handles enum-constrained structured outputs correctly
+> and keeps every returned id inside the enum. It also **accepts `temperature`**, unlike Opus 5 —
+> so the classify call sets `temperature: 0` and the bootstrap call must not.
+>
+> One behaviour worth knowing: the model returns `"other"` with *high* confidence when it is sure an
+> answer fits nothing (junk scored 0.95). So `"other"` means Forming regardless of its score, and the
+> `MIN_CONFIDENCE` floor applies only to the real categories. Treating a high-confidence `"other"` as
+> a good match would put junk straight onto the projector.
 
 > **`temperature` is deprecated on Opus 5.** Sending it returns a 400 — an
 > `invalid_request_error` reading *"temperature is deprecated for this model"* — and the whole call
@@ -378,12 +382,24 @@ re-testing.
 
 ## 6. Verification
 
-**`npm run test:smoke:themes`** (added in phase 1) exercises the AI path end to end without needing
-real students: it fabricates 13 answers in three known groups plus two junk ones, runs the real
-summarize route, and checks the clustering is sensible rather than merely well-formed — that each
-group holds together, that junk lands in Forming, that counts derive correctly, that a re-read
-matches, and that re-running replaces rather than blends. 25 assertions. Costs one Opus 5 call.
-Run it after any change to the prompt, the model, or the output schema.
+**`npm run test:smoke:themes`** exercises the AI path end to end without needing real students. It
+fabricates 13 answers in three known groups plus two junk ones and checks the clustering is sensible
+rather than merely well-formed — each group holding together, junk landing in Forming, counts
+deriving correctly, a re-read matching, and a re-run replacing rather than blending.
+
+Phase 2 added a second fixture that submits through the **real student route**, so the hook on
+response creation actually fires. It asserts the parts that only exist in motion: nothing happens
+below the threshold (no set row, no API call), the 8th answer triggers bootstrap with nothing
+clicked, later answers are classified incrementally, the remaining five cost a *single* batched
+call, and the category ids do not change mid-run — labels churning on a projector is the failure
+this design exists to avoid.
+
+The interleaving matters. `ANSWERS` is grouped, so its first eight would be four entropy and four
+heat with no phase answers at all, and bootstrap would derive categories that miss a third of the
+class. `LIVE_ORDER` interleaves them so the first eight span all three groups.
+
+36 assertions. Costs about three Opus 5 calls and one Haiku call. Run it after any change to a
+prompt, a model, the output schema, or the worker's timing constants.
 
 `npm run test:e2e:qr` is at **50 assertions** and must stay green. Add:
 

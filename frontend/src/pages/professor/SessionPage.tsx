@@ -32,6 +32,10 @@ export default function SessionPage() {
   // Dismiss now only collapses the panel — the themes stay on the server. Without this,
   // the effect that seeds `summary` from the server would immediately restore them.
   const [dismissedThemesFor, setDismissedThemesFor] = useState<string | null>(null)
+  // The socket effect is set up once, so it cannot read `summaryQuestionId` directly
+  // without capturing a stale value.
+  const summaryQuestionIdRef = useRef<string | null>(null)
+  useEffect(() => { summaryQuestionIdRef.current = summaryQuestionId }, [summaryQuestionId])
 
   const [copiedQrId, setCopiedQrId] = useState<string | null>(null)
   const [rubricDraft, setRubricDraft] = useState<Record<string, string>>({})
@@ -366,6 +370,16 @@ export default function SessionPage() {
     socket.on('grade_complete', ({ questionId, failedCount }: { questionId: string; failedCount: number }) => {
       setGradingState((prev) => { const next = { ...prev }; delete next[questionId]; return next })
       setGradeResult((prev) => ({ ...prev, [questionId]: { failedCount } }))
+    })
+
+    // Live themes: the worker pushes a fresh aggregate as each batch is classified.
+    // Writing straight into the query cache keeps this the same shape a reload produces.
+    socket.on('themes_updated', (payload: ThemeSet & { questionId: string; runId: string }) => {
+      const { questionId, runId, ...themes } = payload
+      void runId
+      qc.setQueryData<ThemeSet | null>(['themes', sessionId, questionId], themes)
+      // Only follow along if this question's panel is the one on screen and open.
+      setSummary((prev) => (summaryQuestionIdRef.current === questionId ? themes.categories : prev))
     })
 
     socket.on('run_status', ({ runId, status, sectionId }: { runId: string; status: SessionStatus; sectionId: string | null }) => {

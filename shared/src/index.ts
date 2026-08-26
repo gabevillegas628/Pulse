@@ -304,6 +304,8 @@ export interface ThemeSet {
   classified: number
   total: number
   model: string | null
+  /** WAITING only: answers needed before categories appear at all. */
+  need?: number
 }
 
 /** Aggregate stats shown on a student's class activity tab */
