@@ -451,7 +451,8 @@ non-free-text questions.
 minutes. Run it after any change to a prompt, a model, the output schema, or the worker's
 timing constants.
 
-**`npm run rehearse -- --code <4-digit code>`** is not a test — it is a dress rehearsal. The two
+**`npx tsx scripts/rehearse.ts --code <4-digit code>`** (from `backend/`) is not a test — it is a
+dress rehearsal. The two
 suites above prove correctness with nobody watching; this drives a real question at a realistic
 pace and leaves the data standing so a human can watch the projector.
 
@@ -462,12 +463,18 @@ rehearsal where every answer is thoughtful says nothing about how the Forming bu
 
 Arrivals are modelled, not simultaneous: a few seconds of silence while the room reads the slide,
 then a burst, then a widening tail. Submitting all at once would classify in a single batch and
-prove nothing about how the bars actually move. `--speed N` compresses it; `--dry-run` prints the
+prove nothing about how the bars actually move. `--speed N` compresses it; `--preview` prints the
 generated answers without submitting.
 
-It refuses to touch a question that already holds answers from real accounts unless `--force` is
-passed, and `--cleanup` removes the fake accounts, their responses and the theme set, leaving the
-question exactly as it was found.
+It refuses to touch a question that already holds answers from real accounts unless `--allow-real`
+is passed, and `--cleanup` removes the fake accounts, their responses and the theme set, leaving
+the question exactly as it was found.
+
+> **Run it directly, not through `npm run`.** PowerShell drops the bare `--` separator, so npm
+> reads the script's flags as its own config and swallows them — `--dry-run` and `--force` are
+> genuinely npm flags, and unknown ones are eaten too. Hence `--preview` and `--allow-real` for
+> the two that collided, and the code being accepted as a bare positional so the mangled form
+> still resolves. The same trap will catch any future script that takes flags.
 
 `npm run test:e2e:qr` is at **58 assertions** (was 50 before phase 3) and must stay green. It is
 deliberately LLM-free: the theming assertions stay below the bootstrap threshold so the suite

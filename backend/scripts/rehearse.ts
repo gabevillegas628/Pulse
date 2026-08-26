@@ -13,17 +13,22 @@
  * Answers are generated for whatever question the code resolves to, so this works on
  * your real slide rather than only on a question someone wrote fixtures for.
  *
- * Usage:
- *   npm run rehearse -- --code 4821                   # 30 students, realistic pace
- *   npm run rehearse -- --code 4821 --students 60
- *   npm run rehearse -- --code 4821 --speed 4         # 4x faster, for a quick check
- *   npm run rehearse -- --code 4821 --dry-run         # generate answers, submit nothing
- *   npm run rehearse -- --code 4821 --cleanup         # remove the fake class afterwards
+ * Usage (run it directly — see the note below):
+ *   npx tsx scripts/rehearse.ts --code 4821                 # 30 students, realistic pace
+ *   npx tsx scripts/rehearse.ts --code 4821 --students 60
+ *   npx tsx scripts/rehearse.ts --code 4821 --speed 4       # 4x faster, for a quick check
+ *   npx tsx scripts/rehearse.ts --code 4821 --preview       # generate answers, submit nothing
+ *   npx tsx scripts/rehearse.ts --code 4821 --cleanup       # remove the fake class afterwards
+ *
+ * Prefer the direct form over `npm run`. PowerShell drops the `--` separator, so npm
+ * reads the flags as its own config and swallows them — `--dry-run` and `--force` are
+ * genuinely npm flags, and unknown ones get eaten too. The code is also accepted as a
+ * bare positional (`npm run rehearse -- 4821`) so the mangled form still works.
  *
  * Before running: open the session so a run is live, and have /present up.
  *
  * This writes to whatever DATABASE_URL points at. It refuses to touch a question that
- * already has real answers unless you pass --force.
+ * already has real answers unless you pass --allow-real.
  */
 
 import 'dotenv/config'
@@ -48,14 +53,25 @@ function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`)
   return i >= 0 ? process.argv[i + 1] : undefined
 }
-const flag = (name: string) => process.argv.includes(`--${name}`)
+const flag = (...names: string[]) => names.some((n) => process.argv.includes(`--${n}`))
 
-const CODE = arg('code')
+/**
+ * The code may be given as `--code 8039` or bare. Bare matters: PowerShell drops the
+ * `--` separator in `npm run rehearse -- --code 8039`, so npm treats what follows as its
+ * own config and swallows it, forwarding only the loose number. Accepting a positional
+ * means the mangled form still works.
+ */
+const positional = process.argv.slice(2).find((a) => /^\d{3,6}$/.test(a))
+const CODE = arg('code') ?? positional
+
 const STUDENTS = Number(arg('students') ?? 30)
 const SPEED = Number(arg('speed') ?? 1)
 const CLEANUP = flag('cleanup')
-const DRY_RUN = flag('dry-run')
-const FORCE = flag('force')
+// `--dry-run` and `--force` are npm's own flags and never survive `npm run`. The real
+// names are ones npm has no opinion about; the originals stay as aliases for anyone
+// invoking the script directly.
+const DRY_RUN = flag('preview', 'dry-run')
+const FORCE = flag('allow-real', 'force')
 const ENABLE_THEMES = flag('enable-themes')
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -201,7 +217,10 @@ async function cleanup(questionId: string | null) {
 
 async function main() {
   if (!CODE) {
-    console.error('Usage: npm run rehearse -- --code <4-digit question code> [--students 30] [--speed 1] [--cleanup] [--dry-run]')
+    console.error('Usage: npx tsx scripts/rehearse.ts --code <4-digit code> [--students 30] [--speed 1] [--preview] [--cleanup]')
+    console.error('')
+    console.error('Run it directly rather than through `npm run`: PowerShell drops the `--`')
+    console.error('separator, so npm reads the flags as its own config and swallows them.')
     process.exit(1)
   }
 
@@ -245,7 +264,7 @@ async function main() {
   const real = existing.filter((r) => !r.student.netId.startsWith(PREFIX)).length
   if (real > 0 && !FORCE) {
     throw new Error(
-      `That question already has ${real} answer(s) from real accounts. Refusing to add fake ones. Pass --force if you are sure.`
+      `That question already has ${real} answer(s) from real accounts. Refusing to add fake ones. Pass --allow-real if you are sure.`
     )
   }
   if (existing.length > real) {
@@ -370,7 +389,7 @@ async function main() {
   }
 
   console.log(`\nThe fake class is still in place so you can look at it.`)
-  console.log(`Remove it with:  npm run rehearse -- --code ${CODE} --cleanup`)
+  console.log(`Remove it with:  npx tsx scripts/rehearse.ts --code ${CODE} --cleanup`)
 
   await prisma.$disconnect()
 }
