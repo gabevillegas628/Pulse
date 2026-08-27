@@ -49,12 +49,17 @@ export default function ThemeBars({
   if (status === 'WAITING' || categories.length === 0) {
     const have = total
     const target = need ?? 0
+    // `need` stays at the threshold while `total` keeps climbing past it, so counting up
+    // to it only makes sense while it is still ahead. Otherwise the line reads 12 of 8.
+    const counting = target > 0 && have < target
     return (
       <div className="text-center py-4">
         <p className="text-muted" style={{ fontSize: t.desc }}>
-          {target > 0 ? `Finding themes… ${have} of ${target} answers` : 'Finding themes…'}
+          {counting
+            ? `Finding themes… ${have} of ${target} answers`
+            : `Finding themes in ${have} answer${have === 1 ? '' : 's'}…`}
         </p>
-        {target > 0 && (
+        {counting && (
           <div
             className="mx-auto mt-2 rounded-full bg-surface-2 overflow-hidden"
             style={{ height: 4, maxWidth: variant === 'stage' ? '40%' : '60%' }}

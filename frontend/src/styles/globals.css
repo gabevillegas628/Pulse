@@ -85,6 +85,11 @@
   100% { transform: scale(1); opacity: 1; }
 }
 
+@keyframes answer-wave {
+  0%, 100% { opacity: .4; }
+  50%      { opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   /* Delay as well as duration: a staggered entrance zeroes its animation but keeps its
      offset otherwise, so the later rows still sit invisible waiting for a turn that now
@@ -102,6 +107,9 @@
 .count-pop { animation: count-pop .5s cubic-bezier(.2,.7,.2,1) both; }
 .bar-grow  { animation: bar-grow .7s cubic-bezier(.2,.7,.2,1) both; transform-origin: left center; }
 .pip-in    { animation: pip-in .42s cubic-bezier(.2,.7,.2,1) both; }
+/* No fill mode, so a reduced-motion viewer lands back on the base style rather than being
+   left dimmed at the keyframe the animation happened to stop on. Same shape as live-dot. */
+.answer-wave { animation: answer-wave 1.6s ease-in-out infinite; }
 
 .pulse-scroll::-webkit-scrollbar        { width: 8px; height: 8px; }
 .pulse-scroll::-webkit-scrollbar-thumb  { background: var(--hairline-strong); border-radius: 99px; }

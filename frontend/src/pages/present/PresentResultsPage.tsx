@@ -6,6 +6,7 @@ import { apiError } from '@/lib/errors'
 import ResultsSummary from '@/components/ResultsSummary'
 import ThemeBars from '@/components/ThemeBars'
 import PresenceGrid from '@/components/PresenceGrid'
+import AnswersArriving from '@/components/AnswersArriving'
 import PulseMark from '@/components/ui/PulseMark'
 import LiveDot from '@/components/ui/LiveDot'
 import type { QuestionWithResponses, ThemeSet } from 'shared'
@@ -262,6 +263,13 @@ export default function PresentResultsPage() {
   // Themes take over the free-text panel once they exist. A failed set falls back to the
   // plain counts, which are still correct — never a blank projector.
   const showThemes = !!question?.themes && question.themes.status !== 'FAILED'
+  const themes = question?.themes
+  // Before any category exists there is nothing for ThemeBars to draw, and the wait splits
+  // in two: the room is still answering, or the model is reading what it already has.
+  // `need` rides along only while the server is counting toward the threshold, so its
+  // absence is itself the signal that counting is over — no need to restate the number here.
+  const pendingThemes = showThemes && themes!.categories.length === 0
+  const sorting = pendingThemes && (themes!.need == null || themes!.total >= themes!.need)
 
   return (
     <div
@@ -357,6 +365,11 @@ export default function PresentResultsPage() {
               <p className="text-muted text-center py-6" style={{ fontSize: 'clamp(12px, 2vw, 30px)' }}>
                 Waiting for the room…
               </p>
+            ) : pendingThemes ? (
+              <AnswersArriving
+                wordCounts={question.responses.map((r) => r.wordCount)}
+                sorting={sorting}
+              />
             ) : showThemes ? (
               <ThemeBars
                 variant="stage"
