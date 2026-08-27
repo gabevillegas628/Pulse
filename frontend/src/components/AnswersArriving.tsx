@@ -74,9 +74,11 @@ export default function AnswersArriving({ wordCounts, sorting }: Props) {
                 height: '0.55em',
                 background: 'var(--signal)',
                 // Staggered, so the wave travels along the answers rather than blinking
-                // them all at once. Reads as something moving through them in order.
-                animationDelay: `${i * 60}ms`,
-              }}
+                // them all at once. A custom property rather than animationDelay because
+                // the tile runs two animations and they need different delays; the CSS
+                // derives the second from this one, keeping the ramp length in one place.
+                ['--d']: `${i * 60}ms`,
+              } as React.CSSProperties}
             />
           </span>
         ))}

@@ -85,7 +85,27 @@
   100% { transform: scale(1); opacity: 1; }
 }
 
-@keyframes answer-wave {
+/*
+ * Anticipation, built out of the one thing CSS will not let you change: animation-duration
+ * is not animatable, and no animation can retime another, so a looping pulse can never
+ * speed up. The way round it is to stop looping — one finite timeline whose pulse peaks sit
+ * progressively closer together, so the acceleration lives in the keyframe spacing.
+ *
+ * Generated: period ramps 1.9s -> 0.4s across ten pulses, geometric at ratio 0.84, total
+ * 9.8s. Regenerate from those four numbers rather than hand-editing the stops.
+ */
+@keyframes answer-ramp {
+  0% { opacity: 0.4; } 9.7% { opacity: 1; } 19.39% { opacity: 0.4; } 27.54% { opacity: 1; }
+  35.68% { opacity: 0.4; } 42.52% { opacity: 1; } 49.36% { opacity: 0.4; } 55.11% { opacity: 1; }
+  60.86% { opacity: 0.4; } 65.68% { opacity: 1; } 70.51% { opacity: 0.4; } 74.57% { opacity: 1; }
+  78.62% { opacity: 0.4; } 82.03% { opacity: 1; } 85.43% { opacity: 0.4; } 88.29% { opacity: 1; }
+  91.16% { opacity: 0.4; } 93.56% { opacity: 1; } 95.96% { opacity: 0.4; } 97.98% { opacity: 1; }
+  100% { opacity: 0.4; }
+}
+
+/* Holds the ramp final rate if the model outlasts the build, rather than the tiles going
+   still at the one moment they should not. */
+@keyframes answer-flutter {
   0%, 100% { opacity: .4; }
   50%      { opacity: 1; }
 }
@@ -95,6 +115,9 @@
      offset otherwise, so the later rows still sit invisible waiting for a turn that now
      takes no time. */
   * { animation-duration: .001ms !important; animation-delay: 0s !important; }
+  /* Zeroing the duration of an infinite pulse leaves it cycling instantly rather than
+     stopping, so this one is switched off outright and left at its lit end. */
+  .answer-wave { animation: none !important; opacity: 1; }
 }
 
 .rise-in  { animation: rise-in 0.42s cubic-bezier(.2,.7,.2,1) both; }
@@ -107,9 +130,18 @@
 .count-pop { animation: count-pop .5s cubic-bezier(.2,.7,.2,1) both; }
 .bar-grow  { animation: bar-grow .7s cubic-bezier(.2,.7,.2,1) both; transform-origin: left center; }
 .pip-in    { animation: pip-in .42s cubic-bezier(.2,.7,.2,1) both; }
-/* No fill mode, so a reduced-motion viewer lands back on the base style rather than being
-   left dimmed at the keyframe the animation happened to stop on. Same shape as live-dot. */
-.answer-wave { animation: answer-wave 1.6s ease-in-out infinite; }
+/*
+ * Two animations, one property. Where several animations touch the same property the last
+ * in the list wins while it is running, and flutter does not begin until its delay expires
+ * — so the ramp owns the first 9.8s and the flutter every second after, with no JavaScript
+ * deciding when to hand over. --d is the per-tile stagger, so the wave still travels along
+ * the answers; it is added to the flutter delay so the handover stays in step per tile.
+ */
+.answer-wave {
+  animation:
+    answer-ramp 9.8s ease-in-out var(--d, 0ms) forwards,
+    answer-flutter 0.4s ease-in-out calc(9.8s + var(--d, 0ms)) infinite;
+}
 
 .pulse-scroll::-webkit-scrollbar        { width: 8px; height: 8px; }
 .pulse-scroll::-webkit-scrollbar-thumb  { background: var(--hairline-strong); border-radius: 99px; }
