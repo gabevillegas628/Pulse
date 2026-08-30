@@ -83,6 +83,9 @@ export default function SessionPage() {
       })
       setActiveTab((t) => Math.max(0, t - 1))
     },
+    onError: (e: unknown) => {
+      alert(apiError(e, 'Failed to delete question'))
+    },
   })
 
   const addQuestionMutation = useMutation({
@@ -592,10 +595,11 @@ export default function SessionPage() {
                         )}
                       </button>
 
-                      {!hasBeenRun && data.status !== SessionStatus.ARCHIVED && (
+                      {!isLive && data.status !== SessionStatus.ARCHIVED && (
                         <button
                           onClick={() => {
-                            if (!confirm(`Delete Q${i + 1} — "${questionLabel(q)}"? This cannot be undone.`)) return
+                            const toll = n > 0 ? `\n\nIts ${n} response${n !== 1 ? 's' : ''} will be deleted too.` : ''
+                            if (!confirm(`Delete Q${i + 1} — "${questionLabel(q)}"?${toll}\n\nThis cannot be undone.`)) return
                             deleteQuestionMutation.mutate(q.id)
                           }}
                           disabled={deleteQuestionMutation.isPending}
