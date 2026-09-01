@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Close Countdown — Pulse</title>
+<!--
+  Reference page for the per-question auto-close countdown.
+
+  Standalone and self-contained: open it directly in a browser. It is deliberately built
+  on the same design tokens and typefaces as the app itself (see
+  frontend/src/styles/globals.css) — --canvas / --surface / --ink / --signal / --warn,
+  Hanken Grotesk and JetBrains Mono — so folding it into Pulse later is mostly a matter of
+  dropping the :root block and letting the app's own tokens supply the values.
+
+  Behaviour it documents lives in backend/src/services/clock.service.ts; the design note
+  behind it is pedagogy_handoff.md in the repo root. If the constants there change, the
+  numbers in the tables and the worked example here go stale — they are written out
+  literally rather than generated.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+
+<style>
+  :root {
+    --font-ui: 'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+    --canvas: #faf8f4;
+    --surface: #ffffff;
+    --surface-2: #f3f0ea;
+    --ink: #1b1814;
+    --ink-2: #4a453d;
+    --muted: #847d72;
+    --hairline: #e8e3da;
+    --hairline-strong: #d8d2c6;
+    --signal: #ee4d2e;
+    --signal-soft: #fdece7;
+    --warn: #a96c14;
+    --warn-soft: #f8f0df;
+    --good: #1f8a5b;
+    --radius: 14px;
+    --radius-sm: 9px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --canvas: #15120f;
+      --surface: #1f1b16;
+      --surface-2: #272019;
+      --ink: #f5f1ea;
+      --ink-2: #d9d2c6;
+      --muted: #968d7f;
+      --hairline: rgba(255,255,255,.10);
+      --hairline-strong: rgba(255,255,255,.18);
+      --signal: #ff5a36;
+      --signal-soft: rgba(255,90,54,.14);
+      --warn: #d99a3c;
+      --warn-soft: rgba(185,121,27,.18);
+      --good: #45b183;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --canvas: #15120f;
+    --surface: #1f1b16;
+    --surface-2: #272019;
+    --ink: #f5f1ea;
+    --ink-2: #d9d2c6;
+    --muted: #968d7f;
+    --hairline: rgba(255,255,255,.10);
+    --hairline-strong: rgba(255,255,255,.18);
+    --signal: #ff5a36;
+    --signal-soft: rgba(255,90,54,.14);
+    --warn: #d99a3c;
+    --warn-soft: rgba(185,121,27,.18);
+    --good: #45b183;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-ui);
+    font-size: 17px;
+    line-height: 1.62;
+    margin: 0;
+    padding: clamp(28px, 5vw, 76px) clamp(18px, 5vw, 40px) 96px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 860px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 46px;
+  }
+
+  .measure { max-width: 68ch; }
+
+  /* ── Masthead ─────────────────────────────────────────── */
+  header { display: flex; flex-direction: column; gap: 14px; }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--signal);
+  }
+
+  h1 {
+    font-size: clamp(34px, 6vw, 52px);
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    line-height: 1.06;
+    text-wrap: balance;
+    margin: 0;
+  }
+
+  .standfirst {
+    font-size: clamp(17px, 2.1vw, 20px);
+    color: var(--ink-2);
+    max-width: 60ch;
+    margin: 0;
+  }
+
+  /* ── Sections ─────────────────────────────────────────── */
+  section { display: flex; flex-direction: column; gap: 18px; }
+
+  h2 {
+    font-size: 13px;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  h3 {
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+
+  p { margin: 0; }
+  p + p { margin-top: 0.85em; }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+    background: var(--surface-2);
+    border-radius: 5px;
+    padding: 0.12em 0.36em;
+  }
+
+  strong { font-weight: 600; }
+
+  /* ── Lifecycle steps ──────────────────────────────────── */
+  ol.steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    counter-reset: step;
+  }
+
+  ol.steps > li {
+    counter-increment: step;
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    gap: 18px;
+    padding: 18px 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+  ol.steps > li:last-child { border-bottom: none; }
+
+  ol.steps > li::before {
+    content: counter(step);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--signal);
+    padding-top: 3px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .step-body { display: flex; flex-direction: column; gap: 5px; max-width: 62ch; }
+  .step-body p { font-size: 16px; color: var(--ink-2); }
+
+  /* ── Figure ───────────────────────────────────────────── */
+  figure {
+    margin: 0;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    padding: 26px 24px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .fig-scroll { overflow-x: auto; }
+  figure svg { display: block; width: 100%; min-width: 620px; height: auto; }
+  figcaption {
+    font-size: 14.5px;
+    color: var(--muted);
+    max-width: 66ch;
+    border-top: 1px solid var(--hairline);
+    padding-top: 14px;
+  }
+
+  /* ── Tables ───────────────────────────────────────────── */
+  .table-scroll {
+    overflow-x: auto;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+
+  table { border-collapse: collapse; width: 100%; font-size: 15px; }
+
+  th {
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--hairline-strong);
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 15px 18px;
+    border-bottom: 1px solid var(--hairline);
+    vertical-align: top;
+    color: var(--ink-2);
+  }
+  tr:last-child td { border-bottom: none; }
+
+  td.k { white-space: nowrap; }
+  td.k code { background: none; padding: 0; color: var(--ink); font-weight: 500; }
+
+  td.v {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    color: var(--ink);
+    font-weight: 500;
+  }
+
+  .trace td { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 14px; }
+  .trace td:last-child { font-family: var(--font-ui); color: var(--muted); font-size: 14px; }
+  .moved { color: var(--signal); font-weight: 700; }
+  .held { color: var(--muted); }
+
+  /* ── Callout ──────────────────────────────────────────── */
+  .note {
+    background: var(--surface-2);
+    border-left: 3px solid var(--signal);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    padding: 18px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .note .label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--signal);
+  }
+  .note p { font-size: 16px; color: var(--ink-2); max-width: 64ch; }
+
+  /* ── Guarantee cards ──────────────────────────────────── */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(248px, 1fr)); gap: 14px; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-sm);
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .card h4 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .card p { font-size: 14.5px; color: var(--muted); }
+
+  footer {
+    border-top: 1px solid var(--hairline);
+    padding-top: 20px;
+    font-size: 14px;
+    color: var(--muted);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  footer code { font-size: 12.5px; }
+
+  @media (max-width: 560px) {
+    body { font-size: 16px; }
+    ol.steps > li { grid-template-columns: 26px 1fr; gap: 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <span class="eyebrow">Pulse · in-class questions</span>
+    <h1>The close countdown</h1>
+    <p class="standfirst">
+      A question that shuts itself once the room stops answering — and restarts its clock
+      every time someone does. Here is exactly when it closes, and the five numbers that
+      decide.
+    </p>
+  </header>
+
+  <section>
+    <h2>The rule in one line</h2>
+    <div class="measure">
+      <p>
+        A timed question closes when it has been quiet for about <strong>three typical
+        gaps</strong> — where "typical" is measured from how fast that particular question is
+        actually drawing answers — but never sooner than <strong>20 seconds</strong> after its
+        first answer.
+      </p>
+      <p>
+        Everything else below is that sentence's consequences.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>The flow</h2>
+    <ol class="steps">
+      <li>
+        <div class="step-body">
+          <h3>Nothing runs until the first answer</h3>
+          <p>
+            A timed question with no answers has no clock and no deadline. It cannot close, the
+            projector shows no bar, and <em>the first answer is never refused</em>. Opening a
+            question does not start anything — the room does.
+          </p>
+        </div>
+      </li>
+      <li>
+        <div class="step-body">
+          <h3>The first answer starts a 20-second window</h3>
+          <p>
+            One arrival says nothing about pace, so the grace falls back to its minimum and the
+            floor is what actually holds the question open. The bar appears, full, at 20 seconds.
+          </p>
+        </div>
+      </li>
+      <li>
+        <div class="step-body">
+          <h3>Every answer after that re-measures the room</h3>
+          <p>
+            The gap since the previous answer joins a rolling history of the last 64. The grace
+            becomes the <em>median</em> of those gaps times three, clamped to between 8 and 45
+            seconds. A question drawing answers every second gets a short leash; one drawing them
+            every fifteen gets a long one.
+          </p>
+        </div>
+      </li>
+      <li>
+        <div class="step-body">
+          <h3>The deadline moves out, or holds — never in</h3>
+          <p>
+            The close is the latest of three things: where it already was, the last answer plus
+            the grace, and the first answer plus the floor. Because the first of those is in the
+            list, an answer can only ever buy time. It can never cost any.
+          </p>
+        </div>
+      </li>
+      <li>
+        <div class="step-body">
+          <h3>At zero, the server stops accepting</h3>
+          <p>
+            The check runs at submission, so a stale browser tab, a replayed request and a
+            written-down access code all hit the same wall. Only now does the projector reveal
+            which answer was correct — while the question is open, the answer key is not in the
+            payload at all.
+          </p>
+        </div>
+      </li>
+      <li>
+        <div class="step-body">
+          <h3>You can always give them more time</h3>
+          <p>
+            The button in the session sidebar restarts the clock from now, whether or not it has
+            already run out. It is the reason an automatic close is safe to make binding: the rule
+            holds unless you deliberately lift it.
+          </p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Why the bar sits still, then starts jumping</h2>
+    <div class="measure">
+      <p>
+        This is the one behaviour worth understanding before you teach with it. Early answers do
+        not extend the deadline — not because they are ignored, but because the floor already
+        reaches further than the grace does. The reset only bites once the grace overtakes it.
+      </p>
+    </div>
+
+    <figure>
+      <div class="fig-scroll">
+        <svg viewBox="0 0 800 372" role="img" aria-label="Timeline showing that grace windows from early answers end inside the 20-second floor and therefore change nothing, while answers from 15 seconds onward reach past the floor and step the close outward.">
+          <defs>
+            <marker id="tick" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+              <circle cx="3" cy="3" r="2.5" fill="currentColor"/>
+            </marker>
+          </defs>
+
+          <!-- floor boundary -->
+          <line x1="340" y1="34" x2="340" y2="300" stroke="currentColor" stroke-width="1"
+                stroke-dasharray="3 4" opacity="0.35"/>
+
+          <!-- FLOOR bar -->
+          <rect x="60" y="46" width="280" height="22" rx="5" fill="currentColor" opacity="0.14"/>
+          <rect x="60" y="46" width="280" height="22" rx="5" fill="none" stroke="currentColor"
+                stroke-width="1.5" opacity="0.5"/>
+          <text x="70" y="61" font-family="ui-monospace, monospace" font-size="12"
+                font-weight="700" fill="currentColor" opacity="0.85">FLOOR — 20s from the first answer</text>
+
+          <!-- answer @2s : grace 2 -> 10 -->
+          <circle cx="88" cy="107" r="4" fill="currentColor" opacity="0.5"/>
+          <rect x="88" y="97" width="112" height="20" rx="5" fill="currentColor" opacity="0.10"/>
+          <rect x="88" y="97" width="112" height="20" rx="5" fill="none" stroke="currentColor"
+                stroke-width="1.2" stroke-dasharray="3 3" opacity="0.45"/>
+          <text x="352" y="112" font-family="ui-monospace, monospace" font-size="12"
+                fill="currentColor" opacity="0.6">answer at 2s → reaches 10s · ends inside the floor</text>
+
+          <!-- answer @10.8s : grace 10.8 -> 18.8 -->
+          <circle cx="211" cy="152" r="4" fill="currentColor" opacity="0.5"/>
+          <rect x="211" y="142" width="112" height="20" rx="5" fill="currentColor" opacity="0.10"/>
+          <rect x="211" y="142" width="112" height="20" rx="5" fill="none" stroke="currentColor"
+                stroke-width="1.2" stroke-dasharray="3 3" opacity="0.45"/>
+          <text x="352" y="157" font-family="ui-monospace, monospace" font-size="12"
+                fill="currentColor" opacity="0.6">answer at 10.8s → reaches 18.8s · still inside</text>
+
+          <!-- answer @15s : grace 15 -> 23  (FIRST TO EXTEND) -->
+          <circle cx="270" cy="197" r="4.5" fill="#ee4d2e"/>
+          <rect x="270" y="187" width="112" height="20" rx="5" fill="#ee4d2e" opacity="0.18"/>
+          <rect x="270" y="187" width="112" height="20" rx="5" fill="none" stroke="#ee4d2e"
+                stroke-width="1.8"/>
+          <text x="396" y="202" font-family="ui-monospace, monospace" font-size="12"
+                font-weight="700" fill="#ee4d2e">answer at 15s → 23s · first to pass the floor</text>
+
+          <!-- answer @21s : grace 21 -> 29 -->
+          <circle cx="354" cy="242" r="4.5" fill="#ee4d2e"/>
+          <rect x="354" y="232" width="112" height="20" rx="5" fill="#ee4d2e" opacity="0.18"/>
+          <rect x="354" y="232" width="112" height="20" rx="5" fill="none" stroke="#ee4d2e"
+                stroke-width="1.8"/>
+          <text x="480" y="247" font-family="ui-monospace, monospace" font-size="12"
+                fill="#ee4d2e">→ 29s</text>
+
+          <!-- answer @29s : grace 29 -> 37 -->
+          <circle cx="466" cy="287" r="4.5" fill="#ee4d2e"/>
+          <rect x="466" y="277" width="112" height="20" rx="5" fill="#ee4d2e" opacity="0.18"/>
+          <rect x="466" y="277" width="112" height="20" rx="5" fill="none" stroke="#ee4d2e"
+                stroke-width="1.8"/>
+          <text x="592" y="292" font-family="ui-monospace, monospace" font-size="12"
+                fill="#ee4d2e">→ 37s</text>
+
+          <!-- axis -->
+          <line x1="60" y1="322" x2="760" y2="322" stroke="currentColor" stroke-width="1.5" opacity="0.5"/>
+          <line x1="60" y1="322" x2="60" y2="328" stroke="currentColor" stroke-width="1.5" opacity="0.5"/>
+          <line x1="200" y1="322" x2="200" y2="328" stroke="currentColor" stroke-width="1.5" opacity="0.5"/>
+          <line x1="340" y1="322" x2="340" y2="328" stroke="currentColor" stroke-width="1.5" opacity="0.5"/>
+          <line x1="480" y1="322" x2="480" y2="328" stroke="currentColor" stroke-width="1.5" opacity="0.5"/>
+          <line x1="620" y1="322" x2="620" y2="328" stroke="currentColor" stroke-width="1.5" opacity="0.5"/>
+          <line x1="760" y1="322" x2="760" y2="328" stroke="currentColor" stroke-width="1.5" opacity="0.5"/>
+          <text x="60"  y="345" font-family="ui-monospace, monospace" font-size="11" text-anchor="middle" fill="currentColor" opacity="0.6">0s</text>
+          <text x="200" y="345" font-family="ui-monospace, monospace" font-size="11" text-anchor="middle" fill="currentColor" opacity="0.6">10</text>
+          <text x="340" y="345" font-family="ui-monospace, monospace" font-size="11" text-anchor="middle" fill="currentColor" opacity="0.6">20</text>
+          <text x="480" y="345" font-family="ui-monospace, monospace" font-size="11" text-anchor="middle" fill="currentColor" opacity="0.6">30</text>
+          <text x="620" y="345" font-family="ui-monospace, monospace" font-size="11" text-anchor="middle" fill="currentColor" opacity="0.6">40</text>
+          <text x="760" y="345" font-family="ui-monospace, monospace" font-size="11" text-anchor="middle" fill="currentColor" opacity="0.6">50</text>
+          <text x="60" y="366" font-family="ui-monospace, monospace" font-size="11" fill="currentColor" opacity="0.45">seconds since the first answer</text>
+        </svg>
+      </div>
+      <figcaption>
+        Each bar is the window one answer would set on its own — the answer, plus the grace. While
+        that window ends inside the floor it changes nothing, so the deadline holds at 20s and the
+        bar on the wall simply drains. The answer at 15s is the first whose window reaches past
+        the floor, and from then on every answer steps the close outward. Timings are from a
+        realistic arrival pattern with gaps widening from about 900&thinsp;ms.
+      </figcaption>
+    </figure>
+
+    <div class="note">
+      <span class="label">What this means for the room</span>
+      <p>
+        The reset is only visible while the grace is binding. Every second of floor is a second
+        where answering demonstrably does nothing — so the floor should be as short as your room
+        tolerates, not as long as feels safe. If the opening stretch feels dead on the wall,
+        <code>FLOOR_MS</code> is the number to cut.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>A question from first answer to close</h2>
+    <div class="table-scroll">
+      <table class="trace">
+        <thead>
+          <tr>
+            <th>Answer at</th>
+            <th>Closes at</th>
+            <th>Window</th>
+            <th>What the wall does</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>0.0s</td><td>20.0s</td><td>20.0s</td><td>bar appears, full</td></tr>
+          <tr><td>0.9s</td><td class="held">20.0s</td><td>20.0s</td><td>keeps draining</td></tr>
+          <tr><td>3.4s</td><td class="held">20.0s</td><td>20.0s</td><td>keeps draining</td></tr>
+          <tr><td>7.6s</td><td class="held">20.0s</td><td>20.0s</td><td>keeps draining</td></tr>
+          <tr><td>10.8s</td><td class="held">20.0s</td><td>20.0s</td><td>keeps draining</td></tr>
+          <tr><td>15.0s</td><td class="moved">23.0s</td><td>8.0s</td><td>snaps back to full</td></tr>
+          <tr><td>21.0s</td><td class="moved">29.0s</td><td>8.0s</td><td>snaps back to full</td></tr>
+          <tr><td>29.0s</td><td class="moved">37.0s</td><td>8.0s</td><td>snaps back to full</td></tr>
+          <tr><td>39.0s</td><td class="moved">47.4s</td><td>8.4s</td><td>snaps back to full</td></tr>
+          <tr><td>— silence —</td><td>47.4s</td><td>—</td><td>drains, cools amber, closes</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>What you can tune</h2>
+
+    <h3>Behaviour — <code>backend/src/services/clock.service.ts</code></h3>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Constant</th><th>Now</th><th>What moving it does</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="k"><code>FLOOR_MS</code></td>
+            <td class="v">20s</td>
+            <td>Minimum a question stays open, measured from its first answer. The single biggest
+              lever on how the wall feels. Lower it and the reset starts mattering sooner; raise it
+              and the room gets more reading time but a longer dead stretch.</td>
+          </tr>
+          <tr>
+            <td class="k"><code>GRACE_GAPS</code></td>
+            <td class="v">3</td>
+            <td>How many typical gaps of silence end the question. Two closes briskly and risks
+              cutting a lull; four is forgiving and slower.</td>
+          </tr>
+          <tr>
+            <td class="k"><code>MIN_GRACE_MS</code></td>
+            <td class="v">8s</td>
+            <td>Shortest possible grace — and also the fallback before any pace is known, which is
+              why it sets that opening window with the floor.</td>
+          </tr>
+          <tr>
+            <td class="k"><code>MAX_GRACE_MS</code></td>
+            <td class="v">45s</td>
+            <td>Longest possible grace, so a slow trickle cannot hold the room indefinitely.</td>
+          </tr>
+          <tr>
+            <td class="k"><code>MAX_GAPS</code></td>
+            <td class="v">64</td>
+            <td>How many recent gaps the median is taken over. Lower makes the clock react faster
+              to the pace changing; rarely worth touching.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Feel on the projector — <code>frontend/src/components/CloseCountdown.tsx</code></h3>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Constant</th><th>Now</th><th>What moving it does</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="k"><code>URGENT_FRACTION</code></td>
+            <td class="v">0.34</td>
+            <td>How much of the window has to remain before the bar cools from signal to amber and
+              the seconds change colour.</td>
+          </tr>
+          <tr>
+            <td class="k"><code>seconds &lt;= 5</code></td>
+            <td class="v">5s</td>
+            <td>When the number starts pulsing on each tick.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Per class and per question — no code</h3>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Control</th><th>Where</th><th>Effect</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="k">Close questions automatically</td>
+            <td class="v">Class page</td>
+            <td>The default for every question in the class. Off unless you turn it on.</td>
+          </tr>
+          <tr>
+            <td class="k">Close automatically</td>
+            <td class="v">Session sidebar</td>
+            <td>Per question: class default, on, or off. Changeable mid-lecture on purpose — a
+              question turning out harder than expected is exactly when you need to switch it off.</td>
+          </tr>
+          <tr>
+            <td class="k">Give them more time</td>
+            <td class="v">Session sidebar</td>
+            <td>Restarts the clock from now. Works whether or not it has already run out, so it is
+              both an extend and a reopen.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note">
+      <span class="label">If you change a constant</span>
+      <p>
+        <code>smoke-autoclose.ts</code> asserts against these values deliberately, so a change
+        fails the suite loudly rather than drifting unnoticed. Update the mirrored constants at
+        the top of that file in the same edit, then run
+        <code>npm run test:smoke:autoclose</code>.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What holds no matter what</h2>
+    <div class="cards">
+      <div class="card">
+        <h4>An answer never costs time</h4>
+        <p>The deadline is clamped monotonic. It moves out or holds; it cannot move in. Without
+          this the second answer of a question pulled the close 25 seconds earlier.</p>
+      </div>
+      <div class="card">
+        <h4>The first answer is never refused</h4>
+        <p>No clock exists until one lands, and a question with no clock is open.</p>
+      </div>
+      <div class="card">
+        <h4>A restart does not un-time anything</h4>
+        <p>Clocks rebuild at boot from the answers already recorded. A server down past a deadline
+          finds that question correctly closed.</p>
+      </div>
+      <div class="card">
+        <h4>New run, new clocks</h4>
+        <p>Closing the run drops every clock in it. Nothing carries into next term.</p>
+      </div>
+      <div class="card">
+        <h4>Untimed questions are untouched</h4>
+        <p>With the toggle off, behaviour is exactly what it was — including the answer key showing
+          live on the wall.</p>
+      </div>
+      <div class="card">
+        <h4>The answer key waits for the close</h4>
+        <p>While a timed question is open, <code>correctAnswer</code> is absent from the projector
+          payload entirely — not merely hidden in the UI.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>Two limits worth remembering: the clocks live in one server process, so this breaks if Pulse
+      is ever run on more than one instance; and nothing is recorded afterwards, so you cannot later
+      prove a question was closed.</p>
+    <p><code>backend/src/services/clock.service.ts</code> · <code>frontend/src/components/CloseCountdown.tsx</code> · design note in <code>pedagogy_handoff.md</code></p>
+  </footer>
+
+</div>
+</body>
+</html>
