@@ -92,6 +92,20 @@ async function freeCode(): Promise<string> {
 const FLOOR_MS = 20_000
 const MIN_GRACE_MS = 8_000
 const MAX_GRACE_MS = 45_000
+const ARM_MIN = 2
+const ARM_RATIO = 0.1
+/** Roster big enough that the threshold is well clear of ARM_MIN. */
+const BIG_ROSTER = 140
+const BIG_THRESHOLD = Math.ceil(BIG_ROSTER * ARM_RATIO) // 14
+
+/**
+ * Arm a clock the cheap way, for the sections that are testing something else.
+ * Returns the timestamp the clock armed at, which is what the floor runs from.
+ */
+function armAt(run: string, q: string, at: number): number {
+  for (let i = 0; i < ARM_MIN; i++) touch('sess', run, q, at)
+  return at
+}
 
 // ─── Part 1: the clock, on injected time ──────────────────────────────────────
 
@@ -117,15 +131,54 @@ function clockTests() {
   check('a question with no clock has no deadline',
     closesAt(RUN, 'q-untouched') === null)
 
-  // One answer and then silence. Pace is unknown, so the grace falls back to its
-  // minimum and the floor is what actually holds the question open.
+  // One answer and then silence. The clock is dormant, not running: a single student
+  // must not be able to start a countdown against the room.
   touch('sess', RUN, 'q-lonely', t0)
+  check('a single answer starts no countdown', closesAt(RUN, 'q-lonely') === null)
+  check('and the question stays open indefinitely',
+    isOpen(RUN, 'q-lonely', t0 + 3_600_000) === true)
+
+  // The threshold answer arms it, and the floor runs from there.
+  touch('sess', RUN, 'q-lonely', t0 + 1_000)
   const lonely = closesAt(RUN, 'q-lonely')!
-  check('a single answer is held open by the floor',
-    lonely === t0 + FLOOR_MS, `closesAt was t0+${lonely - t0}ms`)
+  check('the threshold answer arms the clock, and the floor runs from that answer',
+    lonely === t0 + 1_000 + FLOOR_MS, `closesAt was t0+${lonely - t0}ms`)
   check('the question is open before its deadline', isOpen(RUN, 'q-lonely', lonely - 1) === true)
   check('the question is closed at its deadline', isOpen(RUN, 'q-lonely', lonely) === false)
   check('the question stays closed after its deadline', isOpen(RUN, 'q-lonely', lonely + 60_000) === false)
+
+  section('Arming')
+
+  // The failure this section exists for. The QR code goes up, the professor says "don't
+  // answer yet", and two eager students answer anyway. Before the threshold those two
+  // started a countdown that ran out and locked a 140-seat hall out of a question that
+  // had not actually been asked.
+  for (let i = 0; i < 2; i++) touch('sess', RUN, 'q-eager', t0 + i * 4_000, BIG_ROSTER)
+  check('two early birds cannot arm a question in a full hall',
+    closesAt(RUN, 'q-eager') === null)
+  check('and the room is still not locked out five minutes later',
+    isOpen(RUN, 'q-eager', t0 + 300_000) === true)
+
+  // The rest of the threshold arrives once the room is actually asked.
+  const ARM_T = t0 + 90_000
+  for (let i = 2; i < BIG_THRESHOLD; i++) touch('sess', RUN, 'q-eager', ARM_T + i * 400, BIG_ROSTER)
+  const eager = closesAt(RUN, 'q-eager')
+  check(`the clock arms on answer ${BIG_THRESHOLD} of a ${BIG_ROSTER}-seat roster`, eager !== null)
+  check('and the floor is measured from the arming answer, not the early birds',
+    eager !== null && eager >= ARM_T + FLOOR_MS,
+    eager === null ? 'never armed' : `deadline was arm+${eager - ARM_T}ms`)
+
+  // One answer short must still be dormant — an off-by-one here re-opens the whole bug.
+  for (let i = 0; i < BIG_THRESHOLD - 1; i++) touch('sess', RUN, 'q-short', t0 + i * 500, BIG_ROSTER)
+  check(`${BIG_THRESHOLD - 1} answers is one short and stays dormant`,
+    closesAt(RUN, 'q-short') === null)
+  touch('sess', RUN, 'q-short', t0 + BIG_THRESHOLD * 500, BIG_ROSTER)
+  check('and the next answer arms it', closesAt(RUN, 'q-short') !== null)
+
+  // A small section must not have to wait for a quorum it will never reach.
+  for (let i = 0; i < ARM_MIN; i++) touch('sess', RUN, 'q-tiny', t0 + i * 2_000, 19)
+  check('a 19-seat section arms at the minimum, so the feature still works there',
+    closesAt(RUN, 'q-tiny') !== null)
 
   section('Monotonicity')
 
@@ -134,9 +187,9 @@ function clockTests() {
   // monotonic, that second answer pulled the close twenty-five seconds *earlier* — the
   // room would have watched the bar shrink at the moment an answer landed and learned
   // the exact opposite of the rule the countdown is there to teach.
-  touch('sess', RUN, 'q-mono', t0)
+  const monoArm = armAt(RUN, 'q-mono', t0)
   const monoFirst = closesAt(RUN, 'q-mono')!
-  touch('sess', RUN, 'q-mono', t0 + 150)
+  touch('sess', RUN, 'q-mono', monoArm + 150)
   const monoSecond = closesAt(RUN, 'q-mono')!
   check('a fast second answer never pulls the deadline in',
     monoSecond >= monoFirst, `${monoFirst - t0} -> ${monoSecond - t0}`)
@@ -147,7 +200,8 @@ function clockTests() {
   let extended = 0
   for (const dt of [0, 900, 2000, 3400, 5200, 7600, 10800, 15000, 21000, 29000, 39000]) {
     touch('sess', RUN, 'q-arc', t0 + dt)
-    const now = closesAt(RUN, 'q-arc')!
+    const now = closesAt(RUN, 'q-arc')
+    if (now === null) continue // still dormant; there is no deadline to compare yet
     if (prev !== 0) {
       if (now < prev) shrank++
       if (now > prev) extended++
@@ -165,12 +219,13 @@ function clockTests() {
   // A burst of fast answers then silence. The gap-scaled grace would close this in
   // MIN_GRACE_MS, but the floor must hold the question open longer than that.
   for (let i = 0; i < 6; i++) touch('sess', RUN, 'q-burst', t0 + i * 200)
+  const burstArm = t0 + 200 // the ARM_MIN-th answer, which is what the floor dates from
   const burstLast = t0 + 5 * 200
   const burst = closesAt(RUN, 'q-burst')!
   check('a fast burst is held open by the floor, not by its grace',
-    burst === t0 + FLOOR_MS, `closesAt was t0+${burst - t0}ms`)
+    burst === burstArm + FLOOR_MS, `closesAt was arm+${burst - burstArm}ms`)
   check('the floor beats the scaled grace here',
-    t0 + FLOOR_MS > burstLast + MIN_GRACE_MS)
+    burstArm + FLOOR_MS > burstLast + MIN_GRACE_MS)
 
   section('The reset')
 
@@ -201,9 +256,9 @@ function clockTests() {
   // The bar is keyed on the deadline and seeks in by `closesAt - windowMs`. If an answer
   // that leaves the deadline alone still rewrote the window, the projector would re-time
   // a running animation once per answer and the bar would stutter.
-  touch('sess', RUN, 'q-window', t0)
+  const winArm = armAt(RUN, 'q-window', t0)
   const w1 = clockState(RUN, 'q-window')!
-  touch('sess', RUN, 'q-window', t0 + 200)
+  touch('sess', RUN, 'q-window', winArm + 200)
   const w2 = clockState(RUN, 'q-window')!
   check('an answer that does not move the deadline leaves the window alone',
     w2.closesAt === w1.closesAt && w2.windowMs === w1.windowMs,
@@ -223,7 +278,7 @@ function clockTests() {
 
   section('Out-of-order arrivals')
 
-  touch('sess', RUN, 'q-order', t0 + 10_000)
+  armAt(RUN, 'q-order', t0 + 10_000)
   const ordered = closesAt(RUN, 'q-order')!
   touch('sess', RUN, 'q-order', t0)  // earlier than what we already have
   check('an out-of-order arrival never pulls the deadline backwards',
@@ -232,12 +287,21 @@ function clockTests() {
   section('Professor override and run cleanup')
 
   const past = t0 - MAX_GRACE_MS - 1
-  touch('sess', RUN, 'q-reopen', past)
+  armAt(RUN, 'q-reopen', past)
   check('the question is closed before the override', isOpen(RUN, 'q-reopen', t0) === false)
   reopen('sess', RUN, 'q-reopen')
   check('reopen restarts the clock from now', isOpen(RUN, 'q-reopen') === true)
 
-  touch('sess', 'run-other', 'q-other', t0)
+  // The override is an explicit declaration that the question is live, so it arms at
+  // once. A reopened question that sat dormant waiting for a quorum would show the room
+  // no clock at all, which is the opposite of what "give them more time" asks for.
+  clearRun('run-reopen-arm')
+  reopen('sess', 'run-reopen-arm', 'q-fresh')
+  check('reopen arms immediately, without waiting for the threshold',
+    closesAt('run-reopen-arm', 'q-fresh') !== null)
+  clearRun('run-reopen-arm')
+
+  armAt('run-other', 'q-other', t0)
   clearRun(RUN)
   check('clearRun drops that run\'s clocks', closesAt(RUN, 'q-steady') === null)
   check('clearRun leaves other runs alone', closesAt('run-other', 'q-other') !== null)

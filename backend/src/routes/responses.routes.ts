@@ -225,8 +225,16 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
             id: true,
             classId: true,
             // Resolves whether live theming is on for this question — the per-question
-            // flag falls back to this class default.
-            class: { select: { liveThemesDefault: true, autoCloseDefault: true } },
+            // flag falls back to this class default. The enrollment count rides along
+            // on the same query to set the close clock's arming threshold, so the
+            // answer-submit path stays at the round-trip count it already had.
+            class: {
+              select: {
+                liveThemesDefault: true,
+                autoCloseDefault: true,
+                _count: { select: { enrollments: true } },
+              },
+            },
             runs: { where: { status: 'OPEN' }, select: { id: true, sectionId: true } },
           },
         },
@@ -295,7 +303,7 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
       // makes a collective stall end the question instead of extending it.
       const timed = autoCloseEnabled(question, sess.class)
       if (timed) {
-        touch(sess.id, openRun.id, questionId, response.submittedAt.getTime())
+        touch(sess.id, openRun.id, questionId, response.submittedAt.getTime(), sess.class._count.enrollments)
       }
       // Carried on the socket rather than left to the projector's next poll. The reset
       // is the whole point of the mechanic — the room has to see the bar jump back when
