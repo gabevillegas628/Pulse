@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url'
 import { createProxyMiddleware } from 'http-proxy-middleware'
 import { config } from './config/index.js'
 import { errorMiddleware } from './middleware/error.middleware.js'
+import { requestLogger } from './middleware/request-logger.middleware.js'
 import rateLimit from 'express-rate-limit'
 import authRoutes from './routes/auth.routes.js'
 import classRoutes from './routes/classes.routes.js'
@@ -81,6 +82,8 @@ app.use((req, res, next) =>
   isAddinSurface(req.path) ? addinHelmet(req, res, next) : appHelmet(req, res, next)
 )
 app.use(compression())
+// Before the proxy and the routes, so the duration it records is the whole request.
+app.use(requestLogger)
 
 const rawIndigoUrl = process.env.INDIGO_SERVICE_URL ?? 'http://indigoservice.railway.internal'
 try {
