@@ -110,6 +110,33 @@
   50%      { opacity: 1; }
 }
 
+/*
+ * The close countdown. Linear on purpose — a clock that eases is a clock that lies about
+ * how much time is left. The bar is seeked into with a negative animation-delay rather
+ * than restarted, so one mounting partway through a window lands at the right place.
+ */
+@keyframes clock-drain {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+
+/*
+ * Urgency without animating a colour. A warn-coloured bar sits underneath and the signal
+ * one on top fades away over the last third, so the change of colour is really a change
+ * of opacity — the only two properties a backgrounded add-in frame animates reliably.
+ */
+@keyframes clock-cool {
+  0%, 66% { opacity: 1; }
+  100%    { opacity: 0; }
+}
+
+/* The reset. Every answer snaps the bar back to full, and this is what makes the room
+   see that happen rather than merely find the bar longer than it was. */
+@keyframes clock-reset {
+  0%   { opacity: .8; }
+  100% { opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   /* Delay as well as duration: a staggered entrance zeroes its animation but keeps its
      offset otherwise, so the later rows still sit invisible waiting for a turn that now
@@ -118,6 +145,12 @@
   /* Zeroing the duration of an infinite pulse leaves it cycling instantly rather than
      stopping, so this one is switched off outright and left at its lit end. */
   .answer-wave { animation: none !important; opacity: 1; }
+  /* Same trap, worse consequence: a zero-duration drain finishes instantly and reads as
+     "no time left" on a question that has plenty. Switched off and left full — the
+     numeric readout beside it carries the count down on its own. */
+  .clock-drain, .clock-drain-cool, .clock-reset { animation: none !important; }
+  .clock-drain, .clock-drain-cool { transform: scaleX(1); opacity: 1; }
+  .clock-reset { opacity: 0; }
 }
 
 .rise-in  { animation: rise-in 0.42s cubic-bezier(.2,.7,.2,1) both; }
@@ -130,6 +163,15 @@
 .count-pop { animation: count-pop .5s cubic-bezier(.2,.7,.2,1) both; }
 .bar-grow  { animation: bar-grow .7s cubic-bezier(.2,.7,.2,1) both; transform-origin: left center; }
 .pip-in    { animation: pip-in .42s cubic-bezier(.2,.7,.2,1) both; }
+/* Duration and delay come from the server's deadline, so they are set inline. */
+.clock-drain { animation: clock-drain linear both; transform-origin: left center; }
+/* Both on one element. Two rules each setting the `animation` shorthand would not stack —
+   the later one replaces the earlier — so the pair is declared together here. */
+.clock-drain-cool {
+  animation: clock-drain linear both, clock-cool linear both;
+  transform-origin: left center;
+}
+.clock-reset { animation: clock-reset .55s ease-out both; }
 /*
  * Two animations, one property. Where several animations touch the same property the last
  * in the list wins while it is running, and flutter does not begin until its delay expires

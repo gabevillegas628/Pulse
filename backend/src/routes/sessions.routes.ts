@@ -10,6 +10,7 @@ import { gradeSession } from '../utils/scoring.js'
 import { generateUniqueCode } from '../utils/codes.js'
 import { attachQuestionQrs } from '../utils/qr.js'
 import { p } from '../utils/params.js'
+import { clearRun } from '../services/clock.service.js'
 
 const nanoidDigits = customAlphabet('0123456789', 4)
 
@@ -360,6 +361,9 @@ router.patch('/sessions/:id/runs/:runId', requireProfessor, async (req: Request,
       data: updateData,
       include: { section: { select: { id: true, name: true } } },
     })
+
+    // Clocks are per-run and meaningless once it ends — new run, new timers.
+    clearRun(existingRun.id)
 
     // If archiving a run, check if all runs are archived — if so, archive the session too
     if (body.status === 'ARCHIVED') {

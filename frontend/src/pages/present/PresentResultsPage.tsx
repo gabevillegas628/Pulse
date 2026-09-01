@@ -7,6 +7,7 @@ import ResultsSummary from '@/components/ResultsSummary'
 import ThemeBars from '@/components/ThemeBars'
 import PresenceGrid from '@/components/PresenceGrid'
 import AnswersArriving from '@/components/AnswersArriving'
+import CloseCountdown from '@/components/CloseCountdown'
 import PulseMark from '@/components/ui/PulseMark'
 import LiveDot from '@/components/ui/LiveDot'
 import type { QuestionWithResponses, ThemeSet } from 'shared'
@@ -50,6 +51,12 @@ interface LiveQuestion {
   responses: LiveResponse[]
   /** null when live theming is off for this question, not merely unstarted. */
   themes: ThemeSet | null
+  /** Whether this question closes itself once answers stop arriving. */
+  autoCloseOn: boolean
+  /** Epoch ms deadline. null when untimed, or timed but not yet answered. */
+  closesAt: number | null
+  /** Length of the window `closesAt` ends, so the bar can seek into its drain. */
+  closeWindowMs: number | null
 }
 
 interface LiveSession {
@@ -186,6 +193,12 @@ export default function PresentResultsPage() {
     // A run opening or closing changes what should be on screen; refetch immediately.
     socket.on('run_status', () => fetchRef.current())
 
+    // A question closing reveals its answer key, which the payload withholds while the
+    // question is open. Refetch rather than derive it: the server decides what may be
+    // shown, and the projector should never be the thing holding it back.
+    socket.on('question_closed', () => fetchRef.current())
+    socket.on('question_reopened', () => fetchRef.current())
+
     // Themes rebuild themselves as answers are classified. Aggregate only — the payload
     // carries counts and labels, never a response or a student.
     socket.on('themes_updated', (payload: ThemeSet & { questionId: string; runId: string }) => {
@@ -206,6 +219,11 @@ export default function PresentResultsPage() {
     socket.on('new_response', (payload: {
       questionId: string
       response: { id: string; responseText: string; wordCount: number; isFlagged: boolean; submittedAt: string; aiScore: number | null }
+      // The reset, carried alongside the answer that caused it. Waiting for the next poll
+      // would put the bar's jump up to six seconds after the answer that bought the time,
+      // which is long enough to break the connection the room is meant to draw.
+      closesAt: number | null
+      closeWindowMs: number | null
     }) => {
       // The socket payload also carries the student; deliberately not destructured or
       // stored, so identity cannot reach the projector even by accident.
@@ -233,7 +251,15 @@ export default function PresentResultsPage() {
                 submittedAt,
                 aiScore,
               }
-              return { ...q, responses: [next, ...q.responses] }
+              return {
+                ...q,
+                responses: [next, ...q.responses],
+                // Only when the server sent one: an untimed question must not acquire a
+                // deadline, and a null here would wipe a good one.
+                ...(payload.closesAt != null
+                  ? { closesAt: payload.closesAt, closeWindowMs: payload.closeWindowMs }
+                  : {}),
+              }
             }),
           }
         })
@@ -306,6 +332,17 @@ export default function PresentResultsPage() {
           >
             {question.text}
           </p>
+
+          {/* The close countdown, once the question has a deadline. It has none until the
+              first answer lands, so the bar appearing is itself the room being told what
+              starts the clock — and every answer after that snaps it back to full. */}
+          {question.autoCloseOn && question.closesAt != null && question.closeWindowMs != null && (
+            <CloseCountdown
+              closesAt={question.closesAt}
+              windowMs={question.closeWindowMs}
+              onExpire={() => fetchRef.current()}
+            />
+          )}
 
           {/* Counter + participation */}
           <div className="flex items-end justify-between gap-4 mt-4 shrink-0">

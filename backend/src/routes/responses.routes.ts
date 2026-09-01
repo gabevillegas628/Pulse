@@ -10,6 +10,7 @@ import { gradeSession } from '../utils/scoring.js'
 import { upsertEnrollment } from '../utils/enrollment.js'
 import { p } from '../utils/params.js'
 import { toInchi } from '../utils/indigo.js'
+import { autoCloseEnabled, isOpen, touch, clockState } from '../services/clock.service.js'
 
 const router = Router()
 
@@ -28,6 +29,7 @@ router.get('/questions/by-code/:code', requireStudent, async (req: Request, res:
             id: true,
             status: true,
             classId: true,
+            class: { select: { autoCloseDefault: true } },
             runs: { where: { status: 'OPEN' }, select: { id: true, sectionId: true } },
           },
         },
@@ -47,6 +49,9 @@ router.get('/questions/by-code/:code', requireStudent, async (req: Request, res:
         (r) => r.sectionId === null || r.sectionId === studentSectionId
       )
       if (!openRun) throw new AppError('This session is not open', 409)
+      if (autoCloseEnabled(question, question.session.class) && !isOpen(openRun.id, question.id)) {
+        throw new AppError('This question has closed', 409)
+      }
       return res.json({ success: true, data: { questionId: question.id } })
     }
 
@@ -76,7 +81,7 @@ router.get('/student/questions/:id', requireStudent, async (req: Request, res: R
             status: true,
             classId: true,
             runs: { where: { status: 'OPEN' }, select: { id: true, sectionId: true } },
-            class: { select: { name: true } },
+            class: { select: { name: true, autoCloseDefault: true } },
           },
         },
         assignment: {
@@ -111,6 +116,9 @@ router.get('/student/questions/:id', requireStudent, async (req: Request, res: R
         (r) => r.sectionId === null || r.sectionId === studentSectionId
       )
       if (!openRun) throw new AppError('Question not found', 404)
+      if (autoCloseEnabled(question, sess.class) && !isOpen(openRun.id, question.id)) {
+        throw new AppError('This question has closed', 409)
+      }
 
       // Auto-enroll
       await upsertEnrollment(student.id, sess.classId, null)
@@ -218,7 +226,7 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
             classId: true,
             // Resolves whether live theming is on for this question — the per-question
             // flag falls back to this class default.
-            class: { select: { liveThemesDefault: true } },
+            class: { select: { liveThemesDefault: true, autoCloseDefault: true } },
             runs: { where: { status: 'OPEN' }, select: { id: true, sectionId: true } },
           },
         },
@@ -258,6 +266,13 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
       )
       if (!openRun) throw new AppError('Session is not open', 409)
 
+      // The countdown ran out on this question. Checked here rather than only in the
+      // UI: refusing late answers is the entire point, so a stale client tab, a
+      // replayed request or a harvested access code must all hit the same wall.
+      if (autoCloseEnabled(question, sess.class) && !isOpen(openRun.id, questionId)) {
+        throw new AppError('This question has closed', 409)
+      }
+
       // IN_CLASS: reject if already answered (clicker answers are final)
       const existing = await prisma.response.findUnique({
         where: { questionId_studentId: { questionId, studentId: student.id } },
@@ -276,6 +291,17 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
         },
       })
 
+      // Reset the countdown: every answer buys the room more time, which is what
+      // makes a collective stall end the question instead of extending it.
+      const timed = autoCloseEnabled(question, sess.class)
+      if (timed) {
+        touch(sess.id, openRun.id, questionId, response.submittedAt.getTime())
+      }
+      // Carried on the socket rather than left to the projector's next poll. The reset
+      // is the whole point of the mechanic — the room has to see the bar jump back when
+      // an answer lands, not up to six seconds later.
+      const clock = timed ? clockState(openRun.id, questionId) : null
+
       // Auto-enroll
       await upsertEnrollment(student.id, sess.classId, null)
 
@@ -284,6 +310,8 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
         response,
         questionId,
         sessionId: sess.id,
+        closesAt: clock?.closesAt ?? null,
+        closeWindowMs: clock?.windowMs ?? null,
       })
 
       // Live AI theming, when enabled for this question. Deliberately not awaited and

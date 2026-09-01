@@ -12,7 +12,7 @@ import Tabs from '@/components/ui/Tabs'
 import Pill from '@/components/ui/Pill'
 import CodeChip from '@/components/ui/CodeChip'
 import Empty from '@/components/ui/Empty'
-import { Plus, Trash2, X, ChevronLeft, ChevronDown, ChevronUp, ArrowUpDown, Download, KeyRound, Copy, Users, BookOpen, Settings, RefreshCw, Sparkles } from 'lucide-react'
+import { Plus, Trash2, X, ChevronLeft, ChevronDown, ChevronUp, ArrowUpDown, Download, KeyRound, Copy, Users, BookOpen, Settings, RefreshCw, Sparkles, TimerReset } from 'lucide-react'
 import type { StudentStats, ActivitySession, GradebookSession, GradebookStudentRow } from 'shared'
 import TextbookPage from '@/pages/shared/TextbookPage'
 import GradebookTable from '@/components/GradebookTable'
@@ -114,6 +114,12 @@ export default function ClassPage() {
   const liveThemesDefaultMutation = useMutation({
     mutationFn: (liveThemesDefault: boolean) =>
       api.patch(`/classes/${classId}`, { liveThemesDefault }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['class', classId] }),
+  })
+
+  const autoCloseDefaultMutation = useMutation({
+    mutationFn: (autoCloseDefault: boolean) =>
+      api.patch(`/classes/${classId}`, { autoCloseDefault }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['class', classId] }),
   })
 
@@ -431,6 +437,38 @@ export default function ClassPage() {
             <span
               className={`block w-3.5 h-3.5 rounded-full bg-white transition-transform ${
                 data.liveThemesDefault ? 'translate-x-[18px]' : 'translate-x-[3px]'
+              }`}
+            />
+          </button>
+        </div>
+      )}
+
+      {/* Class-wide default for the reset countdown. Individual questions override it. */}
+      {tab === 'sessions' && data && (
+        <div className="flex items-start justify-between gap-4 border border-hairline rounded-[14px] px-4 py-3 mb-4">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-ink flex items-center gap-1.5">
+              <TimerReset size={13} className="text-signal" />
+              Close questions automatically
+            </p>
+            <p className="text-xs text-muted mt-0.5 leading-snug">
+              Default for questions in this class — a countdown that restarts with every answer
+              and stops accepting them when it runs out. Any question can override it.
+            </p>
+          </div>
+          <button
+            onClick={() => autoCloseDefaultMutation.mutate(!data.autoCloseDefault)}
+            disabled={autoCloseDefaultMutation.isPending}
+            role="switch"
+            aria-checked={!!data.autoCloseDefault}
+            aria-label="Close questions automatically by default"
+            className={`shrink-0 mt-0.5 w-9 h-5 rounded-full transition-colors disabled:opacity-50 ${
+              data.autoCloseDefault ? 'bg-signal' : 'bg-surface-2 border border-hairline'
+            }`}
+          >
+            <span
+              className={`block w-3.5 h-3.5 rounded-full bg-white transition-transform ${
+                data.autoCloseDefault ? 'translate-x-[18px]' : 'translate-x-[3px]'
               }`}
             />
           </button>

@@ -56,6 +56,7 @@ export default function QuestionPage() {
   const [loadError, setLoadError] = useState('')
   const [submitError, setSubmitError] = useState('')
   const [sessionClosed, setSessionClosed] = useState(false)
+  const [questionClosed, setQuestionClosed] = useState(false)
   const [orderedItems, setOrderedItems] = useState<string[]>([])
   const [selectedOptions, setSelectedOptions] = useState<string[]>([])
   const ketcherRef = useRef<Ketcher | null>(null)
@@ -97,6 +98,14 @@ export default function QuestionPage() {
     socket.on('run_status', ({ status }: { runId: string; status: string; sectionId: string | null }) => {
       if (status === 'CLOSED' || status === 'ARCHIVED') setSessionClosed(true)
     })
+    // The countdown ran out. The server refuses the answer either way — this just
+    // means the student sees it happen rather than losing a typed answer on submit.
+    socket.on('question_closed', ({ questionId: closedId }: { questionId: string }) => {
+      if (closedId === question.id) setQuestionClosed(true)
+    })
+    socket.on('question_reopened', ({ questionId: reopenedId }: { questionId: string }) => {
+      if (reopenedId === question.id) setQuestionClosed(false)
+    })
     return () => { socket.disconnect() }
   }, [question])
 
@@ -134,6 +143,17 @@ export default function QuestionPage() {
       <StudentLayout>
         <div className="bg-surface rounded-[14px] border border-hairline p-8 text-center">
           <p className="text-muted">{loadError}</p>
+        </div>
+      </StudentLayout>
+    )
+  }
+
+  if (questionClosed && !question!.alreadyAnswered) {
+    return (
+      <StudentLayout>
+        <div className="bg-surface rounded-[14px] border border-hairline p-8 text-center">
+          <p className="text-xl font-semibold text-ink mb-2">Time's up</p>
+          <p className="text-muted text-sm">This question has stopped accepting answers.</p>
         </div>
       </StudentLayout>
     )

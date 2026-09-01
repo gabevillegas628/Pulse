@@ -1,6 +1,7 @@
 import { prisma } from './db/index.js'
 import { getIo } from './socket.js'
 import { logger } from './utils/logger.js'
+import { clearRun } from './services/clock.service.js'
 
 const SESSION_TIMEOUT_MS = 100 * 60 * 1000 // 100 minutes
 
@@ -18,6 +19,7 @@ export function startScheduler() {
           where: { id: run.id },
           data: { status: 'CLOSED', closedAt: new Date() },
         })
+        clearRun(run.id)
         getIo().to(run.sessionId).emit('run_status', {
           runId: run.id,
           status: 'CLOSED',

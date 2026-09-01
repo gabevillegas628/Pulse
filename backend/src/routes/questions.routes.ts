@@ -8,6 +8,8 @@ import { generateUniqueCode } from '../utils/codes.js'
 import { generateQuestionQr } from '../utils/qr.js'
 import { p } from '../utils/params.js'
 import { toInchi } from '../utils/indigo.js'
+import { reopen } from '../services/clock.service.js'
+import { getIo } from '../socket.js'
 
 const nanoidDigits = customAlphabet('0123456789', 4)
 
@@ -50,7 +52,7 @@ async function getAssignment(assignmentId: string, professorId: string) {
 router.post('/sessions/:id/questions', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
-    const { title, text, type, options, groupId, correctAnswer, tolerance, unit, liveThemes } = z.object({
+    const { title, text, type, options, groupId, correctAnswer, tolerance, unit, liveThemes, autoClose } = z.object({
       title: z.string().max(120).optional(),
       text: z.string().min(1),
       type: z.enum(['FREE_TEXT', 'MULTIPLE_CHOICE', 'RATING', 'YES_NO', 'NUMERIC', 'MULTI_SELECT', 'ORDERING', 'STRUCTURE']),
@@ -61,6 +63,8 @@ router.post('/sessions/:id/questions', requireProfessor, async (req: Request, re
       unit: z.string().optional(),
       // null (or absent) inherits the class default. FREE_TEXT only.
       liveThemes: z.boolean().nullable().optional(),
+      // null (or absent) inherits the class default. Applies to every question type.
+      autoClose: z.boolean().nullable().optional(),
     }).parse(req.body)
 
     const session = await getSession(p(req.params.id), professor.id)
@@ -96,11 +100,55 @@ router.post('/sessions/:id/questions', requireProfessor, async (req: Request, re
         // Meaningless on other types — themesEnabled() ignores them regardless, but
         // storing it only where it applies keeps the column honest.
         liveThemes: type === 'FREE_TEXT' ? (liveThemes ?? null) : null,
+        // No type restriction, unlike liveThemes: the answer key is most worth
+        // protecting on exactly the objective types.
+        autoClose: autoClose ?? null,
       },
     })
 
     const qrDataUrl = await generateQuestionQr(question.accessCode)
     res.status(201).json({ success: true, data: { question: { ...question, qrDataUrl } } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * Restart a question's close countdown — "give them more time".
+ *
+ * The professor's override on the clock, for the question that turned out harder
+ * than it looked. Works whether or not the countdown has already run out, so it
+ * doubles as an extend and as a reopen, and it is the reason an automatic close is
+ * safe to make binding: the rule holds unless the professor deliberately lifts it.
+ */
+router.post('/sessions/:sessionId/questions/:questionId/reopen', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+
+    const question = await prisma.question.findFirst({
+      where: {
+        id: p(req.params.questionId),
+        sessionId: p(req.params.sessionId),
+        session: { class: { professorId: professor.id } },
+      },
+      select: {
+        id: true,
+        sessionId: true,
+        session: { select: { runs: { where: { status: 'OPEN' }, select: { id: true } } } },
+      },
+    })
+    if (!question) throw new AppError('Question not found', 404)
+
+    const openRun = question.session?.runs[0]
+    if (!openRun) throw new AppError('No open run for this session', 409)
+
+    reopen(question.sessionId!, openRun.id, question.id)
+    getIo().to(question.sessionId!).emit('question_reopened', {
+      questionId: question.id,
+      runId: openRun.id,
+    })
+
+    res.json({ success: true, data: { questionId: question.id } })
   } catch (err) {
     next(err)
   }
@@ -189,6 +237,8 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
       options: z.array(z.string().min(1)).optional(),
       // null inherits the class default; true/false override it. FREE_TEXT only.
       liveThemes: z.boolean().nullable().optional(),
+      // null inherits the class default; true/false override it. Any question type.
+      autoClose: z.boolean().nullable().optional(),
     }).parse(req.body)
 
     const question = await prisma.question.findFirst({
@@ -300,6 +350,13 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
       // to switch it on stuck for the whole session — and turning it on late is safe:
       // the worker bootstraps from a sample and catches up on everything already in.
       updateData.liveThemes = body.liveThemes
+    }
+
+    if (body.autoClose !== undefined) {
+      // Deliberately allowed while a run is open, and more important here than for
+      // liveThemes: a question turning out harder than expected is exactly when a
+      // professor needs to switch the countdown off without ending the run.
+      updateData.autoClose = body.autoClose
     }
 
     const updated = await prisma.question.update({ where: { id: question.id }, data: updateData })

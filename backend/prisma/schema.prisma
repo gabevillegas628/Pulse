@@ -42,6 +42,9 @@ model Class {
   // Default for live AI theming of FREE_TEXT answers. Per-question `liveThemes`
   // overrides it; off by default so no lecture starts calling an LLM unasked.
   liveThemesDefault Boolean        @default(false)
+  // Default for auto-closing questions once answers stop arriving. Per-question
+  // `autoClose` overrides it; off by default so no lecture starts refusing answers unasked.
+  autoCloseDefault  Boolean        @default(false)
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
   sessions          Session[]
@@ -202,6 +205,9 @@ model Question {
   unit          String?
   // null = inherit Class.liveThemesDefault. FREE_TEXT only; ignored for other types.
   liveThemes    Boolean?
+  // null = inherit Class.autoCloseDefault. Unlike liveThemes this applies to every
+  // question type — the answer key is most worth protecting on the objective ones.
+  autoClose     Boolean?
   responses     Response[]
   themeSets     ThemeSet[]
 

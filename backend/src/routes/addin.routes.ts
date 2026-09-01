@@ -8,6 +8,7 @@ import { generateQuestionQr } from '../utils/qr.js'
 import { p } from '../utils/params.js'
 import { customAlphabet } from 'nanoid'
 import { readThemeSetsForRun } from '../services/themes.service.js'
+import { autoCloseEnabled, clockState } from '../services/clock.service.js'
 
 const nanoidDigits = customAlphabet('0123456789', 4)
 
@@ -350,7 +351,7 @@ router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
         id: true,
         title: true,
         class: {
-          select: { name: true, liveThemesDefault: true, _count: { select: { enrollments: true } } },
+          select: { name: true, liveThemesDefault: true, autoCloseDefault: true, _count: { select: { enrollments: true } } },
         },
         questions: {
           orderBy: { order: 'asc' },
@@ -363,6 +364,7 @@ router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
             order: true,
             correctAnswer: true,
             liveThemes: true,
+            autoClose: true,
             responses: {
               orderBy: { submittedAt: 'desc' },
               // No student relation: identity must not reach the projector.
@@ -393,10 +395,32 @@ router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
 
     const themesByQuestion = await readThemeSetsForRun(run.id, session.questions, session.class)
 
+    const now = Date.now()
+
     const questions = session.questions.map((q) => {
       const isFreeText = q.type === 'FREE_TEXT'
+      const timed = autoCloseEnabled(q, session.class)
+      const clock = timed ? clockState(run.id, q.id) : null
+      const deadline = clock?.closesAt ?? null
+      // A timed question with no clock yet has not been answered, so it is open.
+      const stillOpen = timed && (deadline === null || deadline > now)
+      const { correctAnswer, ...questionRest } = q
       return {
-        ...q,
+        ...questionRest,
+        // Withheld while the question can still be answered. A student who has not
+        // answered must not be able to read the answer key off the projector — that is
+        // a copy channel entirely separate from waiting for the explanation. Stripped
+        // here rather than gated in the UI so a rendering bug cannot leak it, which is
+        // how student identity is already handled on this route. ResultsSummary simply
+        // renders no correct option until it arrives; the bars and counts are unchanged.
+        correctAnswer: stillOpen ? null : correctAnswer,
+        // Absolute epoch ms, so the projector animates against a fixed point instead of
+        // resetting off its own poll interval. null means untimed or not yet started.
+        closesAt: deadline,
+        // The span the deadline belongs to, so a bar mounting mid-drain can seek into
+        // its animation rather than restarting from full.
+        closeWindowMs: clock?.windowMs ?? null,
+        autoCloseOn: timed,
         // Free text answers are quasi-identifying — "as I said in office hours" names a
         // student as surely as a netID does. The projector only ever needs counts and
         // categories for them, so the words do not travel at all. Every other type needs

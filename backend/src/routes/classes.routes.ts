@@ -25,6 +25,9 @@ const createClassSchema = z.object({
   // Default for live AI theming of free-text answers in this class. Individual
   // questions can override it; off unless the professor turns it on.
   liveThemesDefault: z.boolean().optional(),
+  // Default for auto-closing questions in this class once answers stop arriving.
+  // Individual questions can override it; off unless the professor turns it on.
+  autoCloseDefault: z.boolean().optional(),
 })
 
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {

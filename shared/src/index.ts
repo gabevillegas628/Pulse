@@ -51,6 +51,8 @@ export interface Class {
   textbookBranch: string | null
   /** Default for live AI theming of free-text answers; questions may override it. */
   liveThemesDefault: boolean
+  /** Default for auto-closing questions once answers stop arriving; questions may override it. */
+  autoCloseDefault: boolean
   createdAt: string
   updatedAt: string
 }
@@ -91,6 +93,11 @@ export interface Question {
    * null inherits the class default; true/false override it. FREE_TEXT only.
    */
   liveThemes: boolean | null
+  /**
+   * Auto-close this question once answers stop arriving.
+   * null inherits the class default; true/false override it. Applies to every type.
+   */
+  autoClose: boolean | null
 }
 
 /** One class meeting — the event entity for IN_CLASS sessions */
@@ -255,7 +262,7 @@ export interface QuestionWithResponses extends Question {
 export interface SessionDetail extends Session {
   questions: QuestionWithResponses[]
   groups: QuestionGroup[]
-  class: Pick<Class, 'id' | 'name' | 'liveThemesDefault'>
+  class: Pick<Class, 'id' | 'name' | 'liveThemesDefault' | 'autoCloseDefault'>
   runs: SessionRun[]
   enrolledCount: number
 }
