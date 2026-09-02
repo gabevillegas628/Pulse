@@ -78,6 +78,16 @@ const NO_SESSION_POLL = 5000
 const LIVE_POLL = 6000
 // With the socket down the poll is the only source of updates, so it tightens.
 const DEGRADED_POLL = 2500
+// A question stops being the one the room is looking at long before the session closes:
+// the professor moves on, and the object would otherwise hold a result from twenty minutes
+// ago on the wall as though answers were still coming in. Seven minutes is longer than any
+// gap between answers to a question that is genuinely open, and shorter than the stretch of
+// lecture that follows one. Nothing has to be dismissed — the next answer undoes it.
+const IDLE_MS = 7 * 60 * 1000
+// Everything else here moves when data arrives. Going idle is defined by data *not*
+// arriving, so it needs a clock of its own — an interval rather than one long timer, for
+// the reason the heartbeat gives above. Coarse, because all it decides is one boolean.
+const IDLE_TICK = 5000
 // Lectures here run to roughly 800, and at 60 dots per row that is a block a room can
 // read rather than a wall. The bar is now a guard against a roster far outside anything
 // a hall holds, not a limit real classes cross.
@@ -89,12 +99,36 @@ export default function PresentResultsPage() {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [connected, setConnected] = useState(false)
   const [message, setMessage] = useState('')
+  const [idle, setIdle] = useState(false)
 
   const socketRef = useRef<Socket | null>(null)
   const joinedRef = useRef<string | null>(null)
   const connectedRef = useRef(false)
   const sessionIdRef = useRef<string | null>(null)
   const fetchRef = useRef<() => void>(() => {})
+
+  // The last moment the room did anything. Taken across the whole session rather than off
+  // the question on screen, though the two agree — the server picks the active question by
+  // exactly this measure. A number, so the clock below re-arms when an answer lands and not
+  // every time a poll hands back an equal-but-new session object.
+  const lastAnswerAt = session
+    ? Math.max(0, ...session.questions.map((q) =>
+        q.responses[0] ? new Date(q.responses[0].submittedAt).getTime() : 0))
+    : 0
+
+  // ── Deciding the room has moved on ───────────────────────────────────────────
+  useEffect(() => {
+    // Setting the same boolean is dropped before a render is scheduled, so this ticks for
+    // free until the moment it flips. flushSync then, for the reason it is used everywhere
+    // else on this page: an unfocused add-in frame does not reliably paint a state update,
+    // and this is the one transition with neither a user action nor inbound data to force
+    // one — the whole point is that nothing is happening.
+    const check = () =>
+      flushSync(() => setIdle(lastAnswerAt > 0 && Date.now() - lastAnswerAt > IDLE_MS))
+    check()
+    const id = window.setInterval(check, IDLE_TICK)
+    return () => window.clearInterval(id)
+  }, [lastAnswerAt])
 
   // ── Load whatever is currently open ──────────────────────────────────────────
   useEffect(() => {
@@ -323,7 +357,7 @@ export default function PresentResultsPage() {
         )}
       </div>
 
-      {phase === 'live' && question ? (
+      {phase === 'live' && question && !idle ? (
         <>
           {/* Question */}
           <p
@@ -430,9 +464,42 @@ export default function PresentResultsPage() {
             )}
           </div>
         </>
+      ) : phase === 'live' && question && idle ? (
+        <Waiting question={question} answered={answered} />
       ) : (
         <Placeholder phase={phase} message={message} />
       )}
+    </div>
+  )
+}
+
+/**
+ * The room has moved on.
+ *
+ * Shown once answers stopped arriving long enough ago that leaving the results up would
+ * claim something untrue. A count and a participation figure on a wall say *now*; a
+ * question the class finished two slides back is the one thing this object exists to never
+ * be wrong about, since nobody in the room can tell a live result from a stale one.
+ *
+ * The last question is demoted rather than thrown away. The professor may well still be
+ * discussing it, and naming it is the difference between a screen that has lost the thread
+ * and one holding a place. It comes back whole the moment somebody answers.
+ */
+function Waiting({ question, answered }: { question: LiveQuestion; answered: number }) {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center text-center gap-2">
+      <p className="font-semibold" style={{ fontSize: 'clamp(16px, 3vw, 56px)' }}>
+        Waiting for responses…
+      </p>
+      <p className="text-muted" style={{ fontSize: 'clamp(11px, 1.8vw, 34px)' }}>
+        Answers appear here as they arrive
+      </p>
+      <p
+        className="text-muted truncate w-full"
+        style={{ fontSize: 'clamp(9px, 1.3vw, 22px)', opacity: 0.55, marginTop: 'clamp(6px, 1vw, 18px)' }}
+      >
+        Last: {question.title || question.text} · {answered} {answered === 1 ? 'response' : 'responses'}
+      </p>
     </div>
   )
 }
