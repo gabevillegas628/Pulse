@@ -10,3 +10,5 @@ Redesign/
 01-thermodynamics.md
 13-pentose-phosphate-pathway.md
 docs/
+.vscode/settings.json
+migrate_structures_q.sql
