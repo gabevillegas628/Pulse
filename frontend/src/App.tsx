@@ -1,8 +1,8 @@
 import { useEffect } from 'react'
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { useProfessorAuth } from '@/context/ProfessorAuthContext'
 import { useStudentAuth } from '@/context/StudentAuthContext'
-import { setAuthExpiredHandler } from '@/api/client'
+import { setAuthExpiredHandler, setAuthRecoveredHandler } from '@/api/client'
 import SessionExpiredModal from '@/components/SessionExpiredModal'
 
 import LoginPage from '@/pages/LoginPage'
@@ -52,10 +52,23 @@ export default function App() {
         studentAuth.triggerSessionExpired()
       }
     })
+    setAuthRecoveredHandler(() => {
+      professorAuth.resolveSessionExpired()
+      studentAuth.resolveSessionExpired()
+    })
   }, [professorAuth, studentAuth])
 
-  const expiredProfessor = professorAuth.sessionExpired ? professorAuth.professor : null
-  const expiredStudent = studentAuth.sessionExpired ? studentAuth.student : null
+  /**
+   * /present is a projector, and this modal is the wrong shape for one twice over: it is a
+   * light-themed dialog over a page built for a dark hall, and it prints the professor's
+   * email address on the wall in front of the room — on the one surface whose whole rule is
+   * that no identity reaches it. The page has its own dark, in-place sign-in for exactly
+   * this case, so the modal stays out of its way.
+   */
+  const onProjector = useLocation().pathname === '/present'
+
+  const expiredProfessor = professorAuth.sessionExpired && !onProjector ? professorAuth.professor : null
+  const expiredStudent = studentAuth.sessionExpired && !onProjector ? studentAuth.student : null
 
   function handleDismiss() {
     professorAuth.clearSessionExpired()

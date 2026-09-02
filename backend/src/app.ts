@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url'
 import { createProxyMiddleware } from 'http-proxy-middleware'
 import { config } from './config/index.js'
 import { errorMiddleware } from './middleware/error.middleware.js'
+import { RENEWED_TOKEN_HEADER } from './middleware/auth.middleware.js'
 import { requestLogger } from './middleware/request-logger.middleware.js'
 import rateLimit from 'express-rate-limit'
 import authRoutes from './routes/auth.routes.js'
@@ -113,7 +114,14 @@ app.use(createProxyMiddleware({
 app.use(express.json())
 
 if (config.isDev) {
-  app.use(cors({ origin: config.frontendUrl, credentials: true }))
+  // exposedHeaders, or the browser hides the renewed token from the client that needs to
+  // store it. Only matters for a dev setup talking cross-origin; in production the app and
+  // the API are one origin and there is no CORS layer to hide anything.
+  app.use(cors({
+    origin: config.frontendUrl,
+    credentials: true,
+    exposedHeaders: [RENEWED_TOKEN_HEADER],
+  }))
 } else {
   app.set('trust proxy', 1)
 }

@@ -12,6 +12,7 @@ interface StudentAuthState {
   logout: () => void
   triggerSessionExpired: () => void
   clearSessionExpired: () => void
+  resolveSessionExpired: () => void
 }
 
 const StudentAuthContext = createContext<StudentAuthState | null>(null)
@@ -26,7 +27,9 @@ export function StudentAuthProvider({ children }: { children: ReactNode }) {
     if (!token) { setIsLoading(false); return }
     api.get('/auth/student/me')
       .then((r) => setStudent(r.data.data.student))
-      .catch(() => setStudentToken(null))
+      // Only on a real rejection, so a network blip at startup does not discard a sign-in
+      // that is still good.
+      .catch((err) => { if (err?.response?.status === 401) setStudentToken(null) })
       .finally(() => setIsLoading(false))
   }, [])
 
@@ -59,8 +62,13 @@ export function StudentAuthProvider({ children }: { children: ReactNode }) {
     setSessionExpired(false)
   }
 
+  /** Auth is working again on its own; take the prompt down and leave the sign-in alone. */
+  function resolveSessionExpired() {
+    setSessionExpired(false)
+  }
+
   return (
-    <StudentAuthContext.Provider value={{ student, isAuthenticated: !!student, isLoading, sessionExpired, login, register, logout, triggerSessionExpired, clearSessionExpired }}>
+    <StudentAuthContext.Provider value={{ student, isAuthenticated: !!student, isLoading, sessionExpired, login, register, logout, triggerSessionExpired, clearSessionExpired, resolveSessionExpired }}>
       {children}
     </StudentAuthContext.Provider>
   )

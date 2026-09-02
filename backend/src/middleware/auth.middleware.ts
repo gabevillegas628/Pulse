@@ -8,6 +8,42 @@ import type { Professor, Student } from '@prisma/client'
 interface JwtPayload {
   sub: string
   role: 'professor' | 'student'
+  /** Set by jwt.sign, in seconds. Absent only on a token minted without expiry. */
+  iat?: number
+  exp?: number
+}
+
+/**
+ * Carries a renewed professor token back to the client, which stores it and uses it from
+ * the next request on. Lowercased by the time axios reads it.
+ */
+export const RENEWED_TOKEN_HEADER = 'X-Pulse-Token'
+
+/**
+ * Replace a professor token that is past halfway through its life.
+ *
+ * Without this a token is a cliff: minted at sign-in, dead exactly `jwtExpiresIn` later
+ * whatever is happening at the time. A PowerPoint deck left open across a day hits that
+ * cliff mid-lecture, and the surface that discovers it is the projector — which is polling
+ * every few seconds and so could not be more obviously in use.
+ *
+ * Renewing on activity rather than on a schedule keeps the point of a short window: a deck
+ * nobody has opened for longer than the window still expires, because nothing was there to
+ * renew it. Only the professor role is renewed; a student answers a question in minutes and
+ * never sees the edge of a window.
+ *
+ * Silent by design. It is a header on a response the client already wanted, so there is no
+ * refresh call to schedule, nothing to fail on its own, and no moment where the projector
+ * is between tokens.
+ */
+function renewIfHalfSpent(res: Response, payload: JwtPayload): void {
+  if (payload.iat == null || payload.exp == null) return
+  const halfway = payload.iat + (payload.exp - payload.iat) / 2
+  if (Date.now() / 1000 < halfway) return
+  const fresh = jwt.sign({ sub: payload.sub, role: 'professor' }, config.jwtSecret, {
+    expiresIn: config.jwtExpiresIn as unknown as number, // StringValue cast, as at sign-in
+  })
+  res.setHeader(RENEWED_TOKEN_HEADER, fresh)
 }
 
 export interface ProfessorRequest extends Request {
@@ -26,7 +62,7 @@ function extractToken(req: Request): string {
 
 export async function requireProfessor(
   req: Request,
-  _res: Response,
+  res: Response,
   next: NextFunction
 ): Promise<void> {
   try {
@@ -36,6 +72,9 @@ export async function requireProfessor(
 
     const professor = await prisma.professor.findUnique({ where: { id: payload.sub } })
     if (!professor) throw new AppError('Unauthorized', 401)
+
+    // After the lookup, so a token whose professor no longer exists is not handed a new one.
+    renewIfHalfSpent(res, payload)
 
     ;(req as ProfessorRequest).professor = professor
     next()

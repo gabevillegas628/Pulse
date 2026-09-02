@@ -78,6 +78,9 @@ const NO_SESSION_POLL = 5000
 const LIVE_POLL = 6000
 // With the socket down the poll is the only source of updates, so it tightens.
 const DEGRADED_POLL = 2500
+// How long to wait before re-opening a socket the server closed on us. See the disconnect
+// handler: socket.io will not do it, and nothing else brings live updates back.
+const SOCKET_REARM = 3000
 // A question stops being the one the room is looking at long before the session closes:
 // the professor moves on, and the object would otherwise hold a result from twenty minutes
 // ago on the wall as though answers were still coming in. Seven minutes is longer than any
@@ -202,7 +205,11 @@ export default function PresentResultsPage() {
   // nothing open there was no connection at all, leaving a throttled timer as the only way
   // to notice a session starting — which is why the object needed poking to wake up.
   useEffect(() => {
-    const socket = io({ path: '/socket.io', auth: { token: getProfessorToken() } })
+    // auth as a function, not a value: socket.io re-invokes it before every connection
+    // attempt, so a reconnect after a renewed token or a fresh sign-in carries the new one.
+    // Passing the object froze whatever was in storage at mount, which is what left live
+    // updates dead after signing back in — the poll recovered and the socket never did.
+    const socket = io({ path: '/socket.io', auth: (cb) => cb({ token: getProfessorToken() }) })
     socketRef.current = socket
 
     socket.on('connect', () => {
@@ -212,9 +219,22 @@ export default function PresentResultsPage() {
       if (joinedRef.current) socket.emit('join_session', joinedRef.current)
       fetchRef.current()
     })
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
       connectedRef.current = false
       flushSync(() => { setConnected(false); setMessage('Reconnecting…') })
+      // The server rejects a bad token by calling disconnect() on the socket, and socket.io
+      // treats that reason as final: ondisconnect() destroys the subscription first, so the
+      // client never retries. An expired token therefore left this object sitting on the
+      // word "Reconnecting…" for the rest of the lecture with nothing behind it.
+      //
+      // Re-arm it here. `auth` is a callback, so each attempt carries whatever token is in
+      // storage by then, which means a renewal — or a sign-in on any surface sharing this
+      // storage — revives the socket without anyone touching this object.
+      if (reason === 'io server disconnect') {
+        window.setTimeout(() => {
+          if (socketRef.current === socket) socket.connect()
+        }, SOCKET_REARM)
+      }
     })
     socket.on('connect_error', (err) => {
       connectedRef.current = false

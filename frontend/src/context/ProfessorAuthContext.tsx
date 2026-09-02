@@ -12,6 +12,7 @@ interface ProfessorAuthState {
   logout: () => void
   triggerSessionExpired: () => void
   clearSessionExpired: () => void
+  resolveSessionExpired: () => void
 }
 
 const ProfessorAuthContext = createContext<ProfessorAuthState | null>(null)
@@ -26,7 +27,9 @@ export function ProfessorAuthProvider({ children }: { children: ReactNode }) {
     if (!token) { setIsLoading(false); return }
     api.get('/auth/professor/me')
       .then((r) => setProfessor(r.data.data.professor))
-      .catch(() => setProfessorToken(null))
+      // Only on a real rejection. This runs at every mount, the projector's included, and
+      // a network blip at startup must not throw away a sign-in that is still good.
+      .catch((err) => { if (err?.response?.status === 401) setProfessorToken(null) })
       .finally(() => setIsLoading(false))
   }, [])
 
@@ -59,8 +62,18 @@ export function ProfessorAuthProvider({ children }: { children: ReactNode }) {
     setSessionExpired(false)
   }
 
+  /**
+   * Auth started working again on its own — a renewed token landed, or another surface
+   * sharing this storage signed back in. Distinct from clearSessionExpired, which is the
+   * user giving up and being sent to the login page: here they are still signed in, so the
+   * prompt comes down and nothing else changes.
+   */
+  function resolveSessionExpired() {
+    setSessionExpired(false)
+  }
+
   return (
-    <ProfessorAuthContext.Provider value={{ professor, isAuthenticated: !!professor, isLoading, sessionExpired, login, register, logout, triggerSessionExpired, clearSessionExpired }}>
+    <ProfessorAuthContext.Provider value={{ professor, isAuthenticated: !!professor, isLoading, sessionExpired, login, register, logout, triggerSessionExpired, clearSessionExpired, resolveSessionExpired }}>
       {children}
     </ProfessorAuthContext.Provider>
   )
