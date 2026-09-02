@@ -3,8 +3,8 @@
 Written September 2026, ahead of the November talk, so there is a real answer
 when somebody says they'd like to use it.
 
-A rendered version of this document lives at:
-https://claude.ai/code/artifact/69bba114-6a8e-4beb-8cd9-dd7ea19b0b78
+A formatted version of this document is in `PRODUCT_READINESS.html`,
+self-contained — open it in any browser.
 
 Status at time of writing: first full rollout, one course, ~140 seats, single
 instance, 180 test assertions that nothing runs automatically, ~$17/semester in

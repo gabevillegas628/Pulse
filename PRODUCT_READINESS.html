@@ -1,0 +1,807 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Pulse: engineering and commercial readiness — three adoption thresholds, a blocker register, unit economics, and pricing options.">
+<title>Pulse Beyond One Classroom</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+
+<style>
+  :root {
+    --ground:      #F1F3F5;
+    --surface:     #FFFFFF;
+    --surface-alt: #F7F8FA;
+    --ink:         #16202C;
+    --ink-soft:    #33414F;
+    --steel:       #5A6875;
+    --steel-faint: #8593A0;
+    --rule:        #DBE0E6;
+    --rule-strong: #C3CBD3;
+    --accent:      #1D6E68;
+    --accent-soft: #E4F0EE;
+    --sev-now:     #B0261D;
+    --sev-now-bg:  #FBE9E7;
+    --sev-soon:    #8A5A0B;
+    --sev-soon-bg: #FBF0DC;
+    --sev-later:   #465A6E;
+    --sev-later-bg:#E7EDF3;
+
+    --f-display: "Newsreader", "Iowan Old Style", Georgia, serif;
+    --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+    --col: 68ch;
+    --wide: 1120px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:      #10151B;
+      --surface:     #171E26;
+      --surface-alt: #1C242D;
+      --ink:         #E8EDF2;
+      --ink-soft:    #C7D1DA;
+      --steel:       #97A5B2;
+      --steel-faint: #6F7E8C;
+      --rule:        #2A343E;
+      --rule-strong: #3B4854;
+      --accent:      #6FC4BC;
+      --accent-soft: #17322F;
+      --sev-now:     #F0938A;
+      --sev-now-bg:  #35201E;
+      --sev-soon:    #E0B266;
+      --sev-soon-bg: #322818;
+      --sev-later:   #A9BDD0;
+      --sev-later-bg:#1E2833;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:      #10151B;
+    --surface:     #171E26;
+    --surface-alt: #1C242D;
+    --ink:         #E8EDF2;
+    --ink-soft:    #C7D1DA;
+    --steel:       #97A5B2;
+    --steel-faint: #6F7E8C;
+    --rule:        #2A343E;
+    --rule-strong: #3B4854;
+    --accent:      #6FC4BC;
+    --accent-soft: #17322F;
+    --sev-now:     #F0938A;
+    --sev-now-bg:  #35201E;
+    --sev-soon:    #E0B266;
+    --sev-soon-bg: #322818;
+    --sev-later:   #A9BDD0;
+    --sev-later-bg:#1E2833;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 16.5px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page { max-width: var(--wide); margin: 0 auto; padding: 0 28px 96px; }
+  .col  { max-width: var(--col); }
+
+  /* ── Masthead ───────────────────────────────────────────── */
+  .masthead {
+    padding: 72px 0 34px;
+    border-bottom: 2px solid var(--ink);
+  }
+  .eyebrow {
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 18px;
+  }
+  h1 {
+    font-family: var(--f-display);
+    font-weight: 500;
+    font-size: clamp(2.5rem, 6vw, 4rem);
+    line-height: 1.02;
+    letter-spacing: -.02em;
+    text-wrap: balance;
+    margin: 0 0 20px;
+  }
+  h1 em { font-style: italic; color: var(--accent); }
+  .standfirst {
+    font-family: var(--f-display);
+    font-size: clamp(1.1rem, 2.2vw, 1.35rem);
+    line-height: 1.5;
+    color: var(--ink-soft);
+    max-width: 60ch;
+    margin: 0;
+  }
+
+  .status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
+    margin-top: 38px;
+    border-top: 1px solid var(--rule);
+  }
+  .status div {
+    flex: 1 1 150px;
+    padding: 16px 20px 16px 0;
+    border-right: 1px solid var(--rule);
+  }
+  .status div:last-child { border-right: 0; }
+  .status dt {
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+    color: var(--steel-faint);
+    margin-bottom: 5px;
+  }
+  .status dd {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Sections ───────────────────────────────────────────── */
+  section { padding-top: 60px; }
+
+  h2 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: clamp(1.65rem, 3.4vw, 2.15rem);
+    line-height: 1.14;
+    letter-spacing: -.015em;
+    text-wrap: balance;
+    margin: 0 0 8px;
+  }
+  h3 {
+    font-family: var(--f-body);
+    font-weight: 600;
+    font-size: 1.02rem;
+    letter-spacing: -.005em;
+    margin: 34px 0 10px;
+  }
+  .kicker {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--steel-faint);
+    margin: 0 0 14px;
+  }
+  p { margin: 0 0 17px; }
+  .col p, .col li { color: var(--ink-soft); }
+  strong { color: var(--ink); font-weight: 600; }
+  code {
+    font-family: var(--f-mono);
+    font-size: .855em;
+    background: var(--surface-alt);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: .08em .34em;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  a { color: var(--accent); }
+  ul { margin: 0 0 17px; padding-left: 1.15em; }
+  li { margin-bottom: 8px; }
+  li::marker { color: var(--steel-faint); }
+
+  /* ── Gates ──────────────────────────────────────────────── */
+  .gates {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(255px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    margin-top: 26px;
+  }
+  .gate { background: var(--surface); padding: 24px 22px 26px; }
+  .gate .tag {
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--surface);
+    background: var(--ink);
+    padding: 3px 7px;
+    border-radius: 2px;
+  }
+  .gate h4 {
+    font-family: var(--f-display);
+    font-size: 1.28rem;
+    font-weight: 600;
+    line-height: 1.2;
+    margin: 14px 0 9px;
+    letter-spacing: -.01em;
+  }
+  .gate p { font-size: 14.5px; color: var(--steel); margin: 0 0 14px; line-height: 1.55; }
+  .gate .verdict {
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    line-height: 1.45;
+    padding-top: 13px;
+    border-top: 1px solid var(--rule);
+    color: var(--ink-soft);
+  }
+
+  /* ── Tables ─────────────────────────────────────────────── */
+  .scroller {
+    overflow-x: auto;
+    margin: 26px 0 8px;
+    border: 1px solid var(--rule);
+    background: var(--surface);
+  }
+  table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 14.5px; }
+  caption {
+    caption-side: bottom;
+    text-align: left;
+    font-size: 12.5px;
+    color: var(--steel-faint);
+    padding: 12px 2px 0;
+    line-height: 1.5;
+  }
+  thead th {
+    text-align: left;
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+    color: var(--steel);
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--rule-strong);
+    background: var(--surface-alt);
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+    color: var(--ink-soft);
+    line-height: 1.5;
+  }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody th {
+    text-align: left;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+    font-weight: 600;
+    color: var(--ink);
+    line-height: 1.45;
+  }
+  tbody tr:last-child th { border-bottom: 0; }
+  .num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .path { font-family: var(--f-mono); font-size: 12.5px; color: var(--steel); display: block; margin-top: 4px; white-space: nowrap; }
+
+  .chip {
+    display: inline-block;
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+  .now   { color: var(--sev-now);   background: var(--sev-now-bg); }
+  .soon  { color: var(--sev-soon);  background: var(--sev-soon-bg); }
+  .later { color: var(--sev-later); background: var(--sev-later-bg); }
+
+  /* ── Callout ────────────────────────────────────────────── */
+  .callout {
+    background: var(--accent-soft);
+    border-left: 3px solid var(--accent);
+    padding: 20px 24px;
+    margin: 28px 0;
+  }
+  .callout p { margin: 0; color: var(--ink-soft); }
+  .callout p + p { margin-top: 12px; }
+
+  /* ── Roadmap (a real sequence, so it is numbered) ───────── */
+  .roadmap { list-style: none; margin: 26px 0 0; padding: 0; border-top: 1px solid var(--rule); }
+  .roadmap li {
+    display: grid;
+    grid-template-columns: 46px 1fr;
+    gap: 18px;
+    padding: 18px 0;
+    margin: 0;
+    border-bottom: 1px solid var(--rule);
+    align-items: baseline;
+  }
+  .roadmap .n {
+    font-family: var(--f-mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+  .roadmap .what { color: var(--ink); font-weight: 600; font-size: 15.5px; }
+  .roadmap .why { display: block; color: var(--steel); font-weight: 400; font-size: 14.5px; margin-top: 3px; line-height: 1.5; }
+
+  /* ── Scripts ────────────────────────────────────────────── */
+  .script {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    padding: 26px 28px;
+    margin-bottom: 18px;
+  }
+  .script .q {
+    font-family: var(--f-display);
+    font-style: italic;
+    font-size: 1.22rem;
+    line-height: 1.35;
+    color: var(--ink);
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+  .script p { font-size: 15px; margin-bottom: 13px; }
+  .script p:last-child { margin-bottom: 0; }
+
+  footer {
+    margin-top: 72px;
+    padding-top: 22px;
+    border-top: 1px solid var(--rule);
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    line-height: 1.7;
+    color: var(--steel-faint);
+  }
+
+  a:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+
+  @media (max-width: 640px) {
+    .page { padding: 0 18px 64px; }
+    .masthead { padding-top: 48px; }
+    .status div { border-right: 0; border-bottom: 1px solid var(--rule); flex-basis: 100%; }
+    .status div:last-child { border-bottom: 0; }
+    .script { padding: 22px 20px; }
+  }
+</style>
+
+<style>
+  html { color-scheme: light dark; }
+  body { margin: 0; }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead">
+    <p class="eyebrow">Pulse · Engineering &amp; commercial readiness</p>
+    <h1>What it would take to run <em>Pulse</em> for someone else</h1>
+    <p class="standfirst">Written ahead of the November talk, so there is a real answer when somebody says they'd like to use it. Three thresholds, what stands between here and each one, and what it actually costs to run.</p>
+
+    <dl class="status">
+      <div><dt>Status</dt><dd>First full rollout</dd></div>
+      <div><dt>Scope</dt><dd>1 course · ~140 seats</dd></div>
+      <div><dt>Topology</dt><dd>Single instance</dd></div>
+      <div><dt>Token spend</dt><dd>~$17 / semester</dd></div>
+      <div><dt>Assertions</dt><dd>180, nothing runs them</dd></div>
+    </dl>
+  </header>
+
+  <section>
+    <div class="col">
+      <p class="kicker">Where it stands</p>
+      <h2>A well-built single-tenant app wearing a multi-tenant shape</h2>
+      <p>The code is in better condition than most things at this stage. The hard parts — the arming threshold on the close countdown, monotonic deadlines, token renewal on activity, warming clocks from <code>Response.submittedAt</code> after a restart — are not just implemented but reasoned about in the comments. That is the part that is genuinely difficult to buy.</p>
+      <p>What is missing is everything that assumes there is exactly one professor, one machine, and one person who cares when it breaks. None of it is deep, but it is broad, and it does not surface until a second person shows up. The list below is that list.</p>
+      <p>Testing is further along than it looks from the outside: there are 180 assertions in <code>backend/scripts/</code>, including a real unit suite for the clock driven on injected timestamps. They just aren't wired to anything that runs them.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <p class="kicker">The framing</p>
+      <h2>Three thresholds, not one</h2>
+      <p>"Could I use it?" means three very different things depending on who is asking, and they need almost disjoint work. Getting this distinction straight is most of the value of having thought about it in advance — it converts a vague, alarming question into a specific, answerable one.</p>
+    </div>
+
+    <div class="gates">
+      <article class="gate">
+        <span class="tag">Gate A</span>
+        <h4>Survive this semester</h4>
+        <p>One course, you operating it, you on the hook. The bar is that a lecture never fails in a way you can't recover from in the room.</p>
+        <p class="verdict">Mostly there. Four real bugs and one silent data-loss path stand in the way.</p>
+      </article>
+      <article class="gate">
+        <span class="tag">Gate B</span>
+        <h4>A second instructor at Rutgers</h4>
+        <p>Someone you know, same institution, no contract. The bar shifts from "it works" to "it is isolated, recoverable, and doesn't need you in the room."</p>
+        <p class="verdict">Weeks of work. Tenant isolation and account self-service are the gap.</p>
+      </article>
+      <article class="gate">
+        <span class="tag">Gate C</span>
+        <h4>Another institution</h4>
+        <p>People you've never met, whose IT department has opinions. The bar is procurement, not engineering.</p>
+        <p class="verdict">Months, and mostly not code. SSO, LTI, accessibility, a security questionnaire, an entity.</p>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <p class="kicker">The register</p>
+      <h2>What actually stands in the way</h2>
+      <p>Ordered by when it bites, not by size. The gate column is the earliest threshold at which the item stops being optional.</p>
+    </div>
+
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Item</th>
+            <th scope="col">Gate</th>
+            <th scope="col">What happens if it's skipped</th>
+            <th scope="col">Size</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Uploads live on ephemeral disk<span class="path">config/index.ts:17 · app.ts:144</span></th>
+            <td><span class="chip now">A</span></td>
+            <td>Every professor-uploaded image is deleted on the next deploy. Silent, already happening, and unrecoverable after the fact. Needs S3/R2 or a mounted volume.</td>
+            <td class="num">1 day</td>
+          </tr>
+          <tr>
+            <th scope="row">Duplicate submit returns HTTP 500<span class="path">responses.routes.ts:285</span></th>
+            <td><span class="chip now">A</span></td>
+            <td>Check-then-create race. A double tap on a flaky phone hits the unique constraint; no <code>P2002</code> branch exists, so the student sees "Internal server error" instead of the intended "Already answered".</td>
+            <td class="num">2 hrs</td>
+          </tr>
+          <tr>
+            <th scope="row">Tests exist; nothing runs them<span class="path">backend/scripts/ · 180 assertions</span></th>
+            <td><span class="chip now">A</span></td>
+            <td>Not a coverage gap — a wiring gap. <code>smoke-autoclose.ts</code> already unit-tests the clock on injected time (arming, monotonicity, floor, reset, clamps, out-of-order) and needs nothing running; all three scripts exit non-zero on failure. What's missing is a workflow invoking them, and a typecheck on push.</td>
+            <td class="num">2 hrs</td>
+          </tr>
+          <tr>
+            <th scope="row">No error tracking</th>
+            <td><span class="chip now">A</span></td>
+            <td>Winston to stdout. A 500 during a lecture is a log line nobody reads at the moment it matters.</td>
+            <td class="num">2 hrs</td>
+          </tr>
+          <tr>
+            <th scope="row"><code>/health</code> doesn't touch the database<span class="path">app.ts:131</span></th>
+            <td><span class="chip now">A</span></td>
+            <td>Returns <code>ok</code> unconditionally, so the platform routes traffic to an instance that can't reach Postgres.</td>
+            <td class="num">1 hr</td>
+          </tr>
+          <tr>
+            <th scope="row">Any professor can watch any lecture<span class="path">socket.ts:27</span></th>
+            <td><span class="chip soon">B</span></td>
+            <td>Joining <code>{sessionId}:professor</code> checks the JWT role but never ownership. That room carries student netIDs and answer text. Harmless with one account; a live cross-tenant feed with two.</td>
+            <td class="num">1 day</td>
+          </tr>
+          <tr>
+            <th scope="row">Response uniqueness ignores the run<span class="path">schema.prisma:235</span></th>
+            <td><span class="chip soon">B</span></td>
+            <td><code>@@unique([questionId, studentId])</code>. <code>ThemeSet</code> was deliberately keyed by run so re-teaching starts clean; responses were not. A repeating student can't answer, or overwrites last term's data. Cheapest to migrate while the table is small.</td>
+            <td class="num">1 day</td>
+          </tr>
+          <tr>
+            <th scope="row">No self-service password reset</th>
+            <td><span class="chip soon">B</span></td>
+            <td>A professor can reset a student, which works when it's your class and fails at five. Needs email — there is no mail provider wired in at all.</td>
+            <td class="num">3 days</td>
+          </tr>
+          <tr>
+            <th scope="row">No admin role</th>
+            <td><span class="chip soon">B</span></td>
+            <td>Professors are a flat list behind one shared invite code. No way to transfer a class, deactivate an account, or see the whole system.</td>
+            <td class="num">3 days</td>
+          </tr>
+          <tr>
+            <th scope="row">Unbounded AI spend per account</th>
+            <td><span class="chip soon">B</span></td>
+            <td><code>MAX_CLASSIFY_CALLS</code> bounds a runaway loop within one theme set; nothing bounds a term, a class, or a person. Before anyone else's lecture can spend your key, you need a cap and a kill switch.</td>
+            <td class="num">2 days</td>
+          </tr>
+          <tr>
+            <th scope="row">Untested backups; no retention policy</th>
+            <td><span class="chip soon">B</span></td>
+            <td>Managed Postgres has backups. A backup you have never restored is not a backup. Student responses are education records and currently have no stated retention or deletion path.</td>
+            <td class="num">2 days</td>
+          </tr>
+          <tr>
+            <th scope="row">Multi-instance coordination</th>
+            <td><span class="chip soon">B</span></td>
+            <td>Detailed in the next section. Needed for zero-downtime deploys and surviving a dead instance mid-lecture — not for capacity.</td>
+            <td class="num">1 week</td>
+          </tr>
+          <tr>
+            <th scope="row">SSO (Shibboleth / InCommon)</th>
+            <td><span class="chip later">C</span></td>
+            <td>No university wants a separate password for your tool. Also happens to dissolve the password-reset and verification problems entirely.</td>
+            <td class="num">2 weeks</td>
+          </tr>
+          <tr>
+            <th scope="row">LTI 1.3 / Canvas grade passback</th>
+            <td><span class="chip later">C</span></td>
+            <td>The single largest adoption lever after "does it work". Rutgers is a Canvas school. Expect this to be the first question a department chair asks.</td>
+            <td class="num">3 weeks</td>
+          </tr>
+          <tr>
+            <th scope="row">Accessibility (WCAG 2.1 AA, VPAT)</th>
+            <td><span class="chip later">C</span></td>
+            <td>The blocker nobody anticipates. Public universities are legally required to ask. Screen-reader support, contrast, and keyboard operation on the student answer page are the minimum; a VPAT is the document they want.</td>
+            <td class="num">3 weeks</td>
+          </tr>
+          <tr>
+            <th scope="row">HECVAT + a data processing agreement</th>
+            <td><span class="chip later">C</span></td>
+            <td>HECVAT is the standard higher-ed vendor security questionnaire; you will be handed one. Holding another institution's student records also means a DPA and a FERPA position in writing.</td>
+            <td class="num">2 weeks</td>
+          </tr>
+          <tr>
+            <th scope="row">A legal entity</th>
+            <td><span class="chip later">C</span></td>
+            <td>The boundary between "my side project" and your personal assets. Required before anyone can pay you anyway.</td>
+            <td class="num">1 week</td>
+          </tr>
+        </tbody>
+      </table>
+      <caption>Sizes are unhurried solo estimates including testing, not sprint points. Line references are to <code>backend/src/</code> at the time of writing.</caption>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <p class="kicker">Multi-instance</p>
+      <h2>Redis, but for four things — and not for the reason you'd think</h2>
+      <p>The Socket.io room adapter is the part everyone thinks of and the easiest to fix: <code>@socket.io/redis-adapter</code>, roughly ten lines. The harder truth is that there are four pieces of process-local state, and two of them are correctness-critical rather than cosmetic.</p>
+    </div>
+
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">State</th>
+            <th scope="col">Where</th>
+            <th scope="col">What a second instance does to it</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Question clocks</th>
+            <td><code>clock.service.ts</code><span class="path">the clocks Map</span></td>
+            <td><strong>The real problem.</strong> Instance A arms a clock; instance B has no record of it, so <code>isOpen()</code> returns true and B keeps accepting answers after the countdown ended. The countdown silently becomes advisory — which is the one thing the whole mechanic cannot be.</td>
+          </tr>
+          <tr>
+            <th scope="row">Theme debounce timers</th>
+            <td><code>themes.service.ts:529</code><span class="path">the pending Map</span></td>
+            <td>Both instances bootstrap the same theme set concurrently: duplicate category sets on the projector, and double the model spend.</td>
+          </tr>
+          <tr>
+            <th scope="row">Socket.io rooms</th>
+            <td><code>socket.ts</code></td>
+            <td>Half the room misses <code>question_closed</code> and <code>new_response</code>. Visible, but recoverable on the next poll.</td>
+          </tr>
+          <tr>
+            <th scope="row">Rate limiter</th>
+            <td><code>auth.routes.ts:30</code><span class="path">default MemoryStore</span></td>
+            <td>The login attempt limit silently multiplies by the instance count.</td>
+          </tr>
+          <tr>
+            <th scope="row">Scheduler &amp; clock sweep</th>
+            <td><code>scheduler.ts</code> · <code>startClockSweep()</code></td>
+            <td>Every instance runs both. Duplicate close emits and redundant writes; needs a leader lease, not a shared store.</td>
+          </tr>
+        </tbody>
+      </table>
+      <caption>The header comment in <code>clock.service.ts</code> already flags this: "Single-process only … if that ever changes this has to move to the database or a shared store."</caption>
+    </div>
+
+    <div class="col">
+      <div class="callout">
+        <p><strong>The design is already shaped for it.</strong> Everything is keyed <code>runId:questionId</code>, so it maps onto Redis hashes with a TTL almost mechanically. The scheduler needs a <code>SET NX</code> lease so only one instance sweeps. Treat it as one project, not five tickets — a half-migrated clock is worse than an un-migrated one.</p>
+      </div>
+      <p>But be clear-eyed about <em>why</em> you'd do it. A 140-seat lecture is roughly three writes per second; capacity is not remotely the constraint and won't be for a long time. What multi-instance actually buys is <strong>deploying without dropping a live lecture</strong>, and <strong>surviving a crashed container mid-question</strong>. Those are real and worth having — they're just a different justification, and framing it as scale will send you optimizing the wrong things.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <p class="kicker">Unit economics</p>
+      <h2>What a class actually costs to run</h2>
+      <p>Worth computing precisely, because the answer is counterintuitive and it determines the entire pricing conversation. Modelled on one 140-seat course: five free-text questions per lecture, ~120 answers each, live themes and AI grading both on, 28 lectures a semester.</p>
+    </div>
+
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Call</th>
+            <th scope="col">Model</th>
+            <th scope="col">Rate in / out per MTok</th>
+            <th scope="col">Per question</th>
+            <th scope="col">Per lecture</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Theme bootstrap<span class="path">1 call, ≤40 answers sampled</span></th>
+            <td class="num">Opus 5</td>
+            <td class="num">$5 / $25</td>
+            <td class="num">$0.032</td>
+            <td class="num">$0.16</td>
+          </tr>
+          <tr>
+            <th scope="row">Theme classify<span class="path">~10 calls, batches of 8</span></th>
+            <td class="num">Haiku 4.5</td>
+            <td class="num">$1 / $5</td>
+            <td class="num">$0.013</td>
+            <td class="num">$0.07</td>
+          </tr>
+          <tr>
+            <th scope="row">AI grading<span class="path">~5 calls, batches of 25</span></th>
+            <td class="num">Sonnet 4.6</td>
+            <td class="num">$3 / $15</td>
+            <td class="num">$0.076</td>
+            <td class="num">$0.38</td>
+          </tr>
+          <tr>
+            <th scope="row">Total, everything enabled</th>
+            <td class="num">—</td>
+            <td class="num">—</td>
+            <td class="num">$0.12</td>
+            <td class="num">$0.61</td>
+          </tr>
+        </tbody>
+      </table>
+      <caption>Estimated from the call shapes in the code (answer ≈ 45 tokens) at list rates, not measured. Log <code>response.usage</code> for a fortnight to replace these with real figures.</caption>
+    </div>
+
+    <div class="col">
+      <div class="callout">
+        <p><strong>~$17 per class per semester in tokens. About twelve cents per student, for the whole term.</strong></p>
+        <p>Hosting is several times that — call it $150–250 a year for the instance and Postgres — and both are rounding errors beside your time. Ten classes would cost roughly $170 a semester in model spend. A hundred classes is still under $2,000 a year.</p>
+      </div>
+      <p>This has one large consequence: <strong>do not build usage-based pricing.</strong> Metering tokens would cost more to build, explain, and support than the tokens themselves. The expensive resource here is you — the evening a lecture breaks, the onboarding call, the "can you export this for me" email. Price the support, not the inference.</p>
+      <h3>One free improvement while you're in there</h3>
+      <p>Grading still calls <code>claude-sonnet-4-6</code> at $3/$15. Sonnet 5 is $2/$10 — newer <em>and</em> about a third cheaper on both sides. It's only about $7 a semester, so do it for the quality, not the savings. Prompt caching is <em>not</em> a lever at this size, incidentally: the shared prefix in the classify calls is a few hundred tokens, below the minimum cacheable prefix, so it would never hit.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <p class="kicker">Pricing</p>
+      <h2>How this could be paid for</h2>
+      <p>Given that marginal cost is near zero, the question isn't "what does it cost" but "what shape of money doesn't ruin the thing." Five options, roughly in order of how much of your life they consume.</p>
+    </div>
+
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Model</th>
+            <th scope="col">Shape</th>
+            <th scope="col">Why it works</th>
+            <th scope="col">What it costs you</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Open source, self-hosted</th>
+            <td class="num">Free</td>
+            <td>Zero liability, zero procurement, no entity needed. People who can run it are people who won't email you at 9pm.</td>
+            <td>No revenue, and in practice you still get the emails. Needs real deployment docs and the shared-invite-code assumption removed.</td>
+          </tr>
+          <tr>
+            <th scope="row">You eat it, departmentally</th>
+            <td class="num">Free</td>
+            <td>Frictionless for the first two or three colleagues. Buys goodwill and a lot of real feedback.</td>
+            <td>Fine at three classes, untenable at twenty, and there's no natural moment to start charging.</td>
+          </tr>
+          <tr>
+            <th scope="row">Per instructor, per semester</th>
+            <td class="num">~$300–500</td>
+            <td>Simple to explain, scales with your actual support burden, no student-facing payment at all.</td>
+            <td>Instructors rarely hold discretionary budget. Often needs a department to pay anyway — so sell it there directly.</td>
+          </tr>
+          <tr>
+            <th scope="row">Per student, per term</th>
+            <td class="num">~$25–45</td>
+            <td>The incumbent model. By far the most lucrative, and the one publishers have trained the market to accept.</td>
+            <td><strong>Don't.</strong> It drags in the bookstore, inclusive-access negotiations, and refund handling — and student-pay is precisely what faculty resent about the incumbents. It undercuts your whole reason for existing.</td>
+          </tr>
+          <tr>
+            <th scope="row">Department or site licence</th>
+            <td class="num">~$3–6k / yr</td>
+            <td>Matches how universities genuinely buy. One invoice, one relationship, one security review, covers everyone under it.</td>
+            <td>Long sales cycles, and it is the option that forces Gate C in full: HECVAT, VPAT, DPA, entity, insurance.</td>
+          </tr>
+        </tbody>
+      </table>
+      <caption>Ranges are directional market anchors, not quotes — confirm current incumbent pricing before repeating any figure publicly.</caption>
+    </div>
+
+    <div class="col">
+      <div class="callout">
+        <p><strong>The recommendation: free and open for self-hosters, plus a hosted departmental licence.</strong> Keep the core clicker free forever — that is the moral position that makes the project worth talking about, and it costs you nothing real. Charge a department for the hosted instance, where the money maps honestly onto the thing that is actually scarce: your attention.</p>
+        <p>Explicitly decline per-student pricing when it comes up. Being the tool that doesn't charge students is a stronger long-term position than the extra revenue, and it's the sentence people will repeat for you.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <p class="kicker">Sequence</p>
+      <h2>The order I'd actually do it in</h2>
+      <p>The first four are worth doing before November regardless of whether anyone ever asks, because they're all things that hurt you this semester.</p>
+    </div>
+
+    <ol class="roadmap">
+      <li><span class="n">01</span><span class="what">Uploads off local disk<span class="why">Actively destructive today. Everything else on this list can wait a week; this one is deleting data now.</span></span></li>
+      <li><span class="n">02</span><span class="what">The 500 on duplicate submit, and socket room ownership<span class="why">Hours each. One is a student-visible bug mid-lecture, the other stops being theoretical the moment a second professor registers.</span></span></li>
+      <li><span class="n">03</span><span class="what">CI around the tests you already wrote<span class="why">Typecheck and build on push, then run <code>clockTests()</code> — it needs no server and already exits non-zero. The two integration scripts want a Postgres service and a booted backend; do those second.</span></span></li>
+      <li><span class="n">04</span><span class="what">Error tracking and a real health check<span class="why">So the next bad lecture produces a stack trace and an alert instead of a story.</span></span></li>
+      <li><span class="n">05</span><span class="what">Run ID in the response uniqueness constraint<span class="why">A five-minute migration now, a data-archaeology project in two years.</span></span></li>
+      <li><span class="n">06</span><span class="what">Restore a backup, once, to a scratch database<span class="why">Half a day, and it converts an assumption into a fact.</span></span></li>
+      <li><span class="n">07</span><span class="what">Spend caps and a kill switch<span class="why">The gate on ever letting a second person's lecture touch your API key.</span></span></li>
+      <li><span class="n">08</span><span class="what">Redis: adapter, clocks, theme locks, rate limits, leader election<span class="why">One project. Do it when you want deploys that don't interrupt a lecture — not before.</span></span></li>
+      <li><span class="n">09</span><span class="what">Email, then SSO<span class="why">Email unblocks reset and verification; SSO makes both obsolete and is what institutions will ask for anyway. If Gate C looks likely, skip ahead.</span></span></li>
+      <li><span class="n">10</span><span class="what">LTI, accessibility, HECVAT, entity<span class="why">Only once someone has actually said yes. Doing this speculatively is how side projects die.</span></span></li>
+    </ol>
+  </section>
+
+  <section>
+    <div class="col">
+      <p class="kicker">November</p>
+      <h2>What to say when somebody asks</h2>
+      <p>Three versions, for the three people who will ask. The goal in each case is to be accurate and generous without accidentally promising to support them.</p>
+    </div>
+
+    <div class="script">
+      <p class="q">"Could I use this in my course next semester?"</p>
+      <p>Yes, with a caveat I'd rather say up front: right now it's built for one instructor and it hasn't been tested with two. Give me a semester of hardening and I'd genuinely like you to be the second. In the meantime I'm happy to show you the whole thing and let you watch a lecture run on it.</p>
+      <p><em>Why this works:</em> it's a yes, it's honest about Gate B, and it converts an awkward ask into a specific future commitment you control the timing of.</p>
+    </div>
+
+    <div class="script">
+      <p class="q">"Could our department adopt it?"</p>
+      <p>That's a bigger conversation than the code. Departmental adoption means SSO, Canvas grade passback, an accessibility review, and a security questionnaire — none of that is exotic, but it's a few months and it doesn't make sense to build speculatively. If there's real appetite, I'd want to talk about what would fund that time.</p>
+      <p><em>Why this works:</em> it names the real constraints, signals you understand institutional buying, and opens the funding conversation without naming a price on the spot.</p>
+    </div>
+
+    <div class="script">
+      <p class="q">"What does it cost to run?"</p>
+      <p>Almost nothing, and that's the interesting part. About twelve cents of model usage per student for a whole semester — an entire course runs on roughly seventeen dollars of tokens. The expensive part was never the AI, it's someone being responsible for it at 8am on a lecture day.</p>
+      <p><em>Why this works:</em> it's a genuinely surprising number, it's defensible because you computed it, and it lands the point that the scarce resource is human — which is the foundation of every pricing conversation that follows.</p>
+    </div>
+  </section>
+
+  <footer>
+    Pulse · readiness assessment · September 2026<br>
+    Source references are to <code>backend/src/</code> and <code>backend/prisma/schema.prisma</code> at time of writing.<br>
+    Cost figures are estimates from call shapes at list rates — instrument <code>response.usage</code> to replace them with measurements.
+  </footer>
+
+</div>
+</body>
+</html>
