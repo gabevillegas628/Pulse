@@ -7,7 +7,8 @@ A rendered version of this document lives at:
 https://claude.ai/code/artifact/69bba114-6a8e-4beb-8cd9-dd7ea19b0b78
 
 Status at time of writing: first full rollout, one course, ~140 seats, single
-instance, no automated tests, ~$17/semester in model spend.
+instance, 180 test assertions that nothing runs automatically, ~$17/semester in
+model spend.
 
 ---
 
@@ -21,6 +22,10 @@ renewal on activity, warming clocks from `Response.submittedAt` after a restart
 What is missing is everything that assumes there is exactly one professor, one
 machine, and one person who cares when it breaks. None of it is deep, but it is
 broad, and it does not surface until a second person shows up.
+
+Testing is further along than it looks from the outside: 180 assertions in
+`backend/scripts/`, including a real unit suite for the clock driven on injected
+timestamps. They just aren't wired to anything that runs them.
 
 ## Three thresholds, not one
 
@@ -49,7 +54,7 @@ optional.
 |---|---|---|---|
 | Uploads on ephemeral disk (`config/index.ts:17`, `app.ts:144`) | A | Every uploaded image deleted on next deploy. Silent, already happening. Needs S3/R2 or a volume. | 1 day |
 | Duplicate submit returns 500 (`responses.routes.ts:285`) | A | Check-then-create race; no `P2002` branch, so student sees "Internal server error" not "Already answered". | 2 hrs |
-| No tests, no CI | A | Nothing typechecks on push. The four `backend/scripts/` smoke tests run manually only. Clock service is pure logic and testable today. | 2 days |
+| Tests exist; nothing runs them (`backend/scripts/`, 180 assertions) | A | A wiring gap, not a coverage gap. `smoke-autoclose.ts` already unit-tests the clock on injected time (arming, monotonicity, floor, reset, clamps, out-of-order) and needs nothing running; all three scripts exit non-zero on failure. Missing: a workflow invoking them, and typecheck on push. | 2 hrs |
 | No error tracking | A | Winston to stdout. A 500 mid-lecture is a log line nobody reads. | 2 hrs |
 | `/health` doesn't touch the DB (`app.ts:131`) | A | Platform routes traffic to an instance that can't reach Postgres. | 1 hr |
 | Any professor can watch any lecture (`socket.ts:27`) | B | `{sessionId}:professor` checks role, never ownership. That room carries netIDs and answer text. | 1 day |
@@ -147,7 +152,7 @@ attention. Decline per-student pricing explicitly when it comes up.
 
 1. **Uploads off local disk** — actively destructive today.
 2. **The 500 on duplicate submit, and socket room ownership** — hours each.
-3. **CI, plus unit tests on the clock service** — typecheck and build on push, then wire up the smoke scripts.
+3. **CI around the tests you already wrote** — typecheck and build on push, then run `clockTests()`; it needs no server and already exits non-zero. The two integration scripts want a Postgres service and a booted backend; do those second.
 4. **Error tracking and a real health check.**
 5. **Run ID in the response uniqueness constraint** — five minutes now, archaeology in two years.
 6. **Restore a backup, once, to a scratch database.**
