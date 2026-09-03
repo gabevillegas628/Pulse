@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../db/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
+import { ownedAssignment } from '../utils/ownership.js'
 import { p } from '../utils/params.js'
 
 const router = Router()
@@ -12,7 +13,7 @@ router.get('/assignments/:id/extensions', requireProfessor, async (req: Request,
   try {
     const professor = (req as ProfessorRequest).professor
     const assignment = await prisma.assignment.findFirst({
-      where: { id: p(req.params.id), class: { professorId: professor.id } },
+      where: { id: p(req.params.id), ...ownedAssignment(professor) },
     })
     if (!assignment) throw new AppError('Assignment not found', 404)
 
@@ -37,7 +38,7 @@ router.post('/assignments/:id/extensions', requireProfessor, async (req: Request
     }).parse(req.body)
 
     const assignment = await prisma.assignment.findFirst({
-      where: { id: p(req.params.id), class: { professorId: professor.id } },
+      where: { id: p(req.params.id), ...ownedAssignment(professor) },
     })
     if (!assignment) throw new AppError('Assignment not found', 404)
 
@@ -63,7 +64,7 @@ router.delete('/assignments/:id/extensions/:studentId', requireProfessor, async 
   try {
     const professor = (req as ProfessorRequest).professor
     const assignment = await prisma.assignment.findFirst({
-      where: { id: p(req.params.id), class: { professorId: professor.id } },
+      where: { id: p(req.params.id), ...ownedAssignment(professor) },
     })
     if (!assignment) throw new AppError('Assignment not found', 404)
 

@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../db/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
+import { ownedAssignment, ownedClass } from '../utils/ownership.js'
 import { gradeSession } from '../utils/scoring.js'
 import { p } from '../utils/params.js'
 
@@ -21,7 +22,7 @@ router.post('/classes/:classId/assignments', requireProfessor, async (req: Reque
     }).parse(req.body)
 
     const cls = await prisma.class.findFirst({
-      where: { id: p(req.params.classId), professorId: professor.id },
+      where: { id: p(req.params.classId), ...ownedClass(professor) },
     })
     if (!cls) throw new AppError('Class not found', 404)
 
@@ -46,7 +47,7 @@ router.get('/classes/:classId/assignments', requireProfessor, async (req: Reques
   try {
     const professor = (req as ProfessorRequest).professor
     const cls = await prisma.class.findFirst({
-      where: { id: p(req.params.classId), professorId: professor.id },
+      where: { id: p(req.params.classId), ...ownedClass(professor) },
       include: { _count: { select: { enrollments: true } } },
     })
     if (!cls) throw new AppError('Class not found', 404)
@@ -94,7 +95,7 @@ router.get('/assignments/:id', requireProfessor, async (req: Request, res: Respo
   try {
     const professor = (req as ProfessorRequest).professor
     const assignment = await prisma.assignment.findFirst({
-      where: { id: p(req.params.id), class: { professorId: professor.id } },
+      where: { id: p(req.params.id), ...ownedAssignment(professor) },
       include: {
         class: { select: { id: true, name: true, _count: { select: { enrollments: true } } } },
         groups: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] },
@@ -129,7 +130,7 @@ router.patch('/assignments/:id', requireProfessor, async (req: Request, res: Res
     }).parse(req.body)
 
     const existing = await prisma.assignment.findFirst({
-      where: { id: p(req.params.id), class: { professorId: professor.id } },
+      where: { id: p(req.params.id), ...ownedAssignment(professor) },
     })
     if (!existing) throw new AppError('Assignment not found', 404)
 
@@ -153,7 +154,7 @@ router.delete('/assignments/:id', requireProfessor, async (req: Request, res: Re
   try {
     const professor = (req as ProfessorRequest).professor
     const existing = await prisma.assignment.findFirst({
-      where: { id: p(req.params.id), class: { professorId: professor.id } },
+      where: { id: p(req.params.id), ...ownedAssignment(professor) },
     })
     if (!existing) throw new AppError('Assignment not found', 404)
     await prisma.assignment.delete({ where: { id: p(req.params.id) } })
@@ -168,7 +169,7 @@ router.get('/assignments/:id/export', requireProfessor, async (req: Request, res
   try {
     const professor = (req as ProfessorRequest).professor
     const assignment = await prisma.assignment.findFirst({
-      where: { id: p(req.params.id), class: { professorId: professor.id } },
+      where: { id: p(req.params.id), ...ownedAssignment(professor) },
       include: {
         class: { include: { enrollments: { include: { student: { select: { id: true, netId: true } } } } } },
         questions: {
@@ -227,7 +228,7 @@ router.get('/assignments/:id/submission-status', requireProfessor, async (req: R
   try {
     const professor = (req as ProfessorRequest).professor
     const assignment = await prisma.assignment.findFirst({
-      where: { id: p(req.params.id), class: { professorId: professor.id } },
+      where: { id: p(req.params.id), ...ownedAssignment(professor) },
       include: { questions: { select: { id: true } } },
     })
     if (!assignment) throw new AppError('Assignment not found', 404)

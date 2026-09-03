@@ -5,6 +5,7 @@ import { prisma } from '../db/index.js'
 import { config } from '../config/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
+import { Viewer, ownedAssignmentQuestion, ownedSessionQuestion } from '../utils/ownership.js'
 import { getIo } from '../socket.js'
 import { logger } from '../utils/logger.js'
 import { p } from '../utils/params.js'
@@ -183,7 +184,7 @@ router.post('/sessions/:sessionId/questions/:questionId/grade', requireProfessor
       where: {
         id: p(req.params.questionId),
         sessionId: p(req.params.sessionId),
-        session: { class: { professorId: professor.id } },
+        ...ownedSessionQuestion(professor),
       },
       include: {
         session: { include: { runs: { where: { status: { in: ['CLOSED', 'ARCHIVED'] } } } } },
@@ -223,7 +224,7 @@ router.patch('/sessions/:sessionId/questions/:questionId/responses/:responseId',
       where: {
         id: p(req.params.questionId),
         sessionId: p(req.params.sessionId),
-        session: { class: { professorId: professor.id } },
+        ...ownedSessionQuestion(professor),
       },
     })
     if (!question) throw new AppError('Question not found', 404)
@@ -241,12 +242,12 @@ router.patch('/sessions/:sessionId/questions/:questionId/responses/:responseId',
 // ─── Session themes (live AI categorisation) ──────────────────────────────────
 
 /** Load a session question the professor owns, for the theme routes. */
-async function findOwnedSessionQuestion(sessionId: string, questionId: string, professorId: string) {
+async function findOwnedSessionQuestion(sessionId: string, questionId: string, viewer: Viewer) {
   const question = await prisma.question.findFirst({
     where: {
       id: p(questionId),
       sessionId: p(sessionId),
-      session: { class: { professorId } },
+      ...ownedSessionQuestion(viewer),
     },
     select: { id: true, text: true, type: true, sessionId: true },
   })
@@ -266,7 +267,7 @@ async function findOwnedSessionQuestion(sessionId: string, questionId: string, p
 router.post('/sessions/:sessionId/questions/:questionId/summarize', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
-    const question = await findOwnedSessionQuestion(p(req.params.sessionId), p(req.params.questionId), professor.id)
+    const question = await findOwnedSessionQuestion(p(req.params.sessionId), p(req.params.questionId), professor)
 
     const runId = await latestRunId(question.sessionId!)
     if (!runId) throw new AppError('Session has not been run yet', 400)
@@ -292,7 +293,7 @@ router.post('/sessions/:sessionId/questions/:questionId/summarize', requireProfe
 router.get('/sessions/:sessionId/questions/:questionId/themes', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
-    const question = await findOwnedSessionQuestion(p(req.params.sessionId), p(req.params.questionId), professor.id)
+    const question = await findOwnedSessionQuestion(p(req.params.sessionId), p(req.params.questionId), professor)
 
     const runId = await latestRunId(question.sessionId!)
     if (!runId) return res.json({ success: true, data: { themes: null } })
@@ -315,7 +316,7 @@ router.post('/assignments/:assignmentId/questions/:questionId/grade', requirePro
       where: {
         id: p(req.params.questionId),
         assignmentId: p(req.params.assignmentId),
-        assignment: { class: { professorId: professor.id } },
+        ...ownedAssignmentQuestion(professor),
       },
       include: {
         assignment: true,
@@ -345,7 +346,7 @@ router.patch('/assignments/:assignmentId/questions/:questionId/responses/:respon
       where: {
         id: p(req.params.questionId),
         assignmentId: p(req.params.assignmentId),
-        assignment: { class: { professorId: professor.id } },
+        ...ownedAssignmentQuestion(professor),
       },
     })
     if (!question) throw new AppError('Question not found', 404)
@@ -370,7 +371,7 @@ router.post('/assignments/:assignmentId/questions/:questionId/summarize', requir
       where: {
         id: p(questionId),
         assignmentId: p(assignmentId),
-        assignment: { class: { professorId: professor.id } },
+        ...ownedAssignmentQuestion(professor),
       },
       include: { responses: true },
     })

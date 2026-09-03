@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../db/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
+import { Viewer, ownedClass, ownedQuestion, ownedSessionRun, owns } from '../utils/ownership.js'
 import { generateUniqueCode } from '../utils/codes.js'
 import { generateQuestionQr } from '../utils/qr.js'
 import { p } from '../utils/params.js'
@@ -77,7 +78,7 @@ router.post('/verify', async (req: Request, res: Response, next: NextFunction) =
       const owner = q.session?.class ?? q.assignment?.class ?? null
       // Codes are globally unique, so a lookup can land on another professor's question.
       // Report it as unknown rather than leaking their class or question text.
-      if (!owner || owner.professorId !== professor.id) {
+      if (!owns(professor, owner)) {
         return { code, status: 'not_found' as const }
       }
 
@@ -115,15 +116,9 @@ const adoptSchema = z.object({
 })
 
 /** Load a question the professor owns, via either its session's or assignment's class. */
-async function findOwnedQuestion(questionId: string, professorId: string) {
+async function findOwnedQuestion(questionId: string, viewer: Viewer) {
   return prisma.question.findFirst({
-    where: {
-      id: questionId,
-      OR: [
-        { session: { class: { professorId } } },
-        { assignment: { class: { professorId } } },
-      ],
-    },
+    where: { id: questionId, ...ownedQuestion(viewer) },
     select: { id: true, accessCode: true, title: true, text: true },
   })
 }
@@ -133,7 +128,7 @@ router.post('/adopt-code', async (req: Request, res: Response, next: NextFunctio
     const professor = (req as ProfessorRequest).professor
     const { questionId, code } = adoptSchema.parse(req.body)
 
-    const target = await findOwnedQuestion(questionId, professor.id)
+    const target = await findOwnedQuestion(questionId, professor)
     if (!target) throw new AppError('Question not found', 404)
 
     if (target.accessCode === code) {
@@ -156,7 +151,7 @@ router.post('/adopt-code', async (req: Request, res: Response, next: NextFunctio
     }
 
     // Held by someone else's question: refuse rather than steal it.
-    const ownedHolder = await findOwnedQuestion(holder.id, professor.id)
+    const ownedHolder = await findOwnedQuestion(holder.id, professor)
     if (!ownedHolder) {
       throw new AppError('That code belongs to another professor’s question', 409)
     }
@@ -191,7 +186,7 @@ router.post('/adopt-code', async (req: Request, res: Response, next: NextFunctio
 router.get('/questions/:id/qr', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
-    const question = await findOwnedQuestion(p(req.params.id), professor.id)
+    const question = await findOwnedQuestion(p(req.params.id), professor)
     if (!question) throw new AppError('Question not found', 404)
 
     const qrDataUrl = await generateQuestionQr(question.accessCode)
@@ -219,9 +214,9 @@ const rebindSchema = z.object({
 })
 
 /** Sessions with their questions, for one class the professor owns. */
-async function loadClassForRebind(classId: string, professorId: string) {
+async function loadClassForRebind(classId: string, viewer: Viewer) {
   const cls = await prisma.class.findFirst({
-    where: { id: classId, professorId },
+    where: { id: classId, ...ownedClass(viewer) },
     select: {
       id: true,
       name: true,
@@ -257,8 +252,8 @@ router.post('/rebind', async (req: Request, res: Response, next: NextFunction) =
     if (fromClassId === toClassId) throw new AppError('Classes must differ', 400)
 
     const [from, to] = await Promise.all([
-      loadClassForRebind(fromClassId, professor.id),
-      loadClassForRebind(toClassId, professor.id),
+      loadClassForRebind(fromClassId, professor),
+      loadClassForRebind(toClassId, professor),
     ])
 
     // Session titles are not unique in principle; pair same-titled sessions in order
@@ -339,7 +334,7 @@ router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
     const professor = (req as ProfessorRequest).professor
 
     const run = await prisma.sessionRun.findFirst({
-      where: { status: 'OPEN', session: { class: { professorId: professor.id } } },
+      where: { status: 'OPEN', ...ownedSessionRun(professor) },
       orderBy: { openedAt: 'desc' },
       select: { id: true, sessionId: true, openedAt: true },
     })

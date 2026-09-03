@@ -4,6 +4,7 @@ import { customAlphabet } from 'nanoid'
 import { prisma } from '../db/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
+import { Viewer, ownedAssignment, ownedAssignmentQuestion, ownedAssignmentQuestionGroup, ownedSession, ownedSessionQuestion, ownedSessionQuestionGroup } from '../utils/ownership.js'
 import { generateUniqueCode } from '../utils/codes.js'
 import { generateQuestionQr } from '../utils/qr.js'
 import { p } from '../utils/params.js'
@@ -27,9 +28,9 @@ const router = Router()
 type ParentType = 'session' | 'assignment'
 
 /** Find a session owned by this professor, checking it exists. */
-async function getSession(sessionId: string, professorId: string) {
+async function getSession(sessionId: string, viewer: Viewer) {
   const session = await prisma.session.findFirst({
-    where: { id: sessionId, class: { professorId } },
+    where: { id: sessionId, ...ownedSession(viewer) },
     include: { questions: { orderBy: { order: 'desc' }, take: 1 } },
   })
   if (!session) throw new AppError('Session not found', 404)
@@ -37,9 +38,9 @@ async function getSession(sessionId: string, professorId: string) {
 }
 
 /** Find an assignment owned by this professor, checking it exists. */
-async function getAssignment(assignmentId: string, professorId: string) {
+async function getAssignment(assignmentId: string, viewer: Viewer) {
   const assignment = await prisma.assignment.findFirst({
-    where: { id: assignmentId, class: { professorId } },
+    where: { id: assignmentId, ...ownedAssignment(viewer) },
     include: { questions: { orderBy: { order: 'desc' }, take: 1 } },
   })
   if (!assignment) throw new AppError('Assignment not found', 404)
@@ -67,7 +68,7 @@ router.post('/sessions/:id/questions', requireProfessor, async (req: Request, re
       autoClose: z.boolean().nullable().optional(),
     }).parse(req.body)
 
-    const session = await getSession(p(req.params.id), professor.id)
+    const session = await getSession(p(req.params.id), professor)
 
     // For session questions, check no OPEN run exists when editing (sessions allow edits while DRAFT or when not actively running)
     const openRun = await prisma.sessionRun.findFirst({ where: { sessionId: session.id, status: 'OPEN' } })
@@ -129,7 +130,7 @@ router.post('/sessions/:sessionId/questions/:questionId/reopen', requireProfesso
       where: {
         id: p(req.params.questionId),
         sessionId: p(req.params.sessionId),
-        session: { class: { professorId: professor.id } },
+        ...ownedSessionQuestion(professor),
       },
       select: {
         id: true,
@@ -164,7 +165,7 @@ router.post('/sessions/:id/groups', requireProfessor, async (req: Request, res: 
     }).parse(req.body)
 
     const session = await prisma.session.findFirst({
-      where: { id: p(req.params.id), class: { professorId: professor.id } },
+      where: { id: p(req.params.id), ...ownedSession(professor) },
       include: { groups: { orderBy: { order: 'desc' }, take: 1 } },
     })
     if (!session) throw new AppError('Session not found', 404)
@@ -189,7 +190,7 @@ router.patch('/sessions/:id/groups/:groupId', requireProfessor, async (req: Requ
     }).parse(req.body)
 
     const group = await prisma.questionGroup.findFirst({
-      where: { id: p(req.params.groupId), sessionId: p(req.params.id), session: { class: { professorId: professor.id } } },
+      where: { id: p(req.params.groupId), sessionId: p(req.params.id), ...ownedSessionQuestionGroup(professor) },
     })
     if (!group) throw new AppError('Group not found', 404)
 
@@ -211,7 +212,7 @@ router.delete('/sessions/:id/groups/:groupId', requireProfessor, async (req: Req
   try {
     const professor = (req as ProfessorRequest).professor
     const group = await prisma.questionGroup.findFirst({
-      where: { id: p(req.params.groupId), sessionId: p(req.params.id), session: { class: { professorId: professor.id } } },
+      where: { id: p(req.params.groupId), sessionId: p(req.params.id), ...ownedSessionQuestionGroup(professor) },
     })
     if (!group) throw new AppError('Group not found', 404)
 
@@ -245,7 +246,7 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
       where: {
         id: p(req.params.questionId),
         sessionId: p(req.params.sessionId),
-        session: { class: { professorId: professor.id } },
+        ...ownedSessionQuestion(professor),
       },
       include: { session: { include: { runs: { where: { status: 'OPEN' } } } } },
     })
@@ -374,7 +375,7 @@ router.delete('/sessions/:sessionId/questions/:questionId', requireProfessor, as
       where: {
         id: p(req.params.questionId),
         sessionId: p(req.params.sessionId),
-        session: { class: { professorId: professor.id } },
+        ...ownedSessionQuestion(professor),
       },
       include: { session: { include: { runs: { where: { status: 'OPEN' } } } } },
     })
@@ -394,7 +395,7 @@ router.put('/sessions/:id/questions/reorder', requireProfessor, async (req: Requ
     const items = z.array(z.object({ id: z.string(), order: z.number().int() })).parse(req.body)
 
     const session = await prisma.session.findFirst({
-      where: { id: p(req.params.id), class: { professorId: professor.id } },
+      where: { id: p(req.params.id), ...ownedSession(professor) },
     })
     if (!session) throw new AppError('Session not found', 404)
 
@@ -416,7 +417,7 @@ router.put('/sessions/:id/groups/reorder', requireProfessor, async (req: Request
     const items = z.array(z.object({ id: z.string(), order: z.number().int() })).parse(req.body)
 
     const session = await prisma.session.findFirst({
-      where: { id: p(req.params.id), class: { professorId: professor.id } },
+      where: { id: p(req.params.id), ...ownedSession(professor) },
     })
     if (!session) throw new AppError('Session not found', 404)
 
@@ -448,7 +449,7 @@ router.post('/assignments/:id/questions', requireProfessor, async (req: Request,
       unit: z.string().optional(),
     }).parse(req.body)
 
-    const assignment = await getAssignment(p(req.params.id), professor.id)
+    const assignment = await getAssignment(p(req.params.id), professor)
 
     if (assignment.status === 'CLOSED' || assignment.status === 'ARCHIVED')
       throw new AppError('Cannot add questions to a closed or archived assignment', 400)
@@ -497,7 +498,7 @@ router.post('/assignments/:id/groups', requireProfessor, async (req: Request, re
     }).parse(req.body)
 
     const assignment = await prisma.assignment.findFirst({
-      where: { id: p(req.params.id), class: { professorId: professor.id } },
+      where: { id: p(req.params.id), ...ownedAssignment(professor) },
       include: { groups: { orderBy: { order: 'desc' }, take: 1 } },
     })
     if (!assignment) throw new AppError('Assignment not found', 404)
@@ -522,7 +523,7 @@ router.patch('/assignments/:id/groups/:groupId', requireProfessor, async (req: R
     }).parse(req.body)
 
     const group = await prisma.questionGroup.findFirst({
-      where: { id: p(req.params.groupId), assignmentId: p(req.params.id), assignment: { class: { professorId: professor.id } } },
+      where: { id: p(req.params.groupId), assignmentId: p(req.params.id), ...ownedAssignmentQuestionGroup(professor) },
     })
     if (!group) throw new AppError('Group not found', 404)
 
@@ -544,7 +545,7 @@ router.delete('/assignments/:id/groups/:groupId', requireProfessor, async (req: 
   try {
     const professor = (req as ProfessorRequest).professor
     const group = await prisma.questionGroup.findFirst({
-      where: { id: p(req.params.groupId), assignmentId: p(req.params.id), assignment: { class: { professorId: professor.id } } },
+      where: { id: p(req.params.groupId), assignmentId: p(req.params.id), ...ownedAssignmentQuestionGroup(professor) },
     })
     if (!group) throw new AppError('Group not found', 404)
 
@@ -574,7 +575,7 @@ router.patch('/assignments/:assignmentId/questions/:questionId', requireProfesso
       where: {
         id: p(req.params.questionId),
         assignmentId: p(req.params.assignmentId),
-        assignment: { class: { professorId: professor.id } },
+        ...ownedAssignmentQuestion(professor),
       },
       include: { assignment: true },
     })
@@ -688,7 +689,7 @@ router.delete('/assignments/:assignmentId/questions/:questionId', requireProfess
       where: {
         id: p(req.params.questionId),
         assignmentId: p(req.params.assignmentId),
-        assignment: { class: { professorId: professor.id } },
+        ...ownedAssignmentQuestion(professor),
       },
       include: { assignment: { select: { status: true } } },
     })
@@ -708,7 +709,7 @@ router.put('/assignments/:id/questions/reorder', requireProfessor, async (req: R
     const items = z.array(z.object({ id: z.string(), order: z.number().int() })).parse(req.body)
 
     const assignment = await prisma.assignment.findFirst({
-      where: { id: p(req.params.id), class: { professorId: professor.id } },
+      where: { id: p(req.params.id), ...ownedAssignment(professor) },
     })
     if (!assignment) throw new AppError('Assignment not found', 404)
 
@@ -730,7 +731,7 @@ router.put('/assignments/:id/groups/reorder', requireProfessor, async (req: Requ
     const items = z.array(z.object({ id: z.string(), order: z.number().int() })).parse(req.body)
 
     const assignment = await prisma.assignment.findFirst({
-      where: { id: p(req.params.id), class: { professorId: professor.id } },
+      where: { id: p(req.params.id), ...ownedAssignment(professor) },
     })
     if (!assignment) throw new AppError('Assignment not found', 404)
 

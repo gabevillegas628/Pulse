@@ -6,6 +6,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../db/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
+import { ownedClass } from '../utils/ownership.js'
 import { gradeSession } from '../utils/scoring.js'
 import { generateUniqueCode } from '../utils/codes.js'
 import { p } from '../utils/params.js'
@@ -60,7 +61,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
     const classes = await prisma.class.findMany({
-      where: { professorId: professor.id },
+      where: ownedClass(professor),
       orderBy: { createdAt: 'desc' },
       include: {
         _count: { select: { sessions: true, enrollments: true } },
@@ -116,7 +117,7 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
     const cls = await prisma.class.findFirst({
-      where: { id: p(req.params.id), professorId: professor.id },
+      where: { id: p(req.params.id), ...ownedClass(professor) },
       include: {
         _count: { select: { sessions: true, enrollments: true } },
         sections: { orderBy: { createdAt: 'asc' } },
@@ -151,7 +152,7 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
     const professor = (req as ProfessorRequest).professor
     const body = createClassSchema.partial().parse(req.body)
     const existing = await prisma.class.findFirst({
-      where: { id: p(req.params.id), professorId: professor.id },
+      where: { id: p(req.params.id), ...ownedClass(professor) },
     })
     if (!existing) throw new AppError('Class not found', 404)
 
@@ -178,7 +179,7 @@ router.post('/:id/duplicate', async (req: Request, res: Response, next: NextFunc
     const { name, description, transferQrCodes } = duplicateSchema.parse(req.body)
 
     const source = await prisma.class.findFirst({
-      where: { id: sourceId, professorId: professor.id },
+      where: { id: sourceId, ...ownedClass(professor) },
       include: {
         sessions: {
           orderBy: { createdAt: 'asc' },
@@ -375,7 +376,7 @@ router.post('/:id/sections', async (req: Request, res: Response, next: NextFunct
     const classId = p(req.params.id)
     const { name } = z.object({ name: z.string().min(1) }).parse(req.body)
 
-    const cls = await prisma.class.findFirst({ where: { id: classId, professorId: professor.id } })
+    const cls = await prisma.class.findFirst({ where: { id: classId, ...ownedClass(professor) } })
     if (!cls) throw new AppError('Class not found', 404)
 
     const joinCode = await generateUniqueCode(
@@ -394,7 +395,7 @@ router.get('/:id/sections', async (req: Request, res: Response, next: NextFuncti
   try {
     const professor = (req as ProfessorRequest).professor
     const classId = p(req.params.id)
-    const cls = await prisma.class.findFirst({ where: { id: classId, professorId: professor.id } })
+    const cls = await prisma.class.findFirst({ where: { id: classId, ...ownedClass(professor) } })
     if (!cls) throw new AppError('Class not found', 404)
     const sections = await prisma.section.findMany({ where: { classId }, orderBy: { createdAt: 'asc' } })
     res.json({ success: true, data: { sections } })
@@ -410,7 +411,7 @@ router.patch('/:id/enrollments/:studentId/section', async (req: Request, res: Re
     const studentId = p(req.params.studentId)
     const { sectionId } = z.object({ sectionId: z.string().nullable() }).parse(req.body)
 
-    const cls = await prisma.class.findFirst({ where: { id: classId, professorId: professor.id } })
+    const cls = await prisma.class.findFirst({ where: { id: classId, ...ownedClass(professor) } })
     if (!cls) throw new AppError('Class not found', 404)
 
     if (sectionId !== null) {
@@ -432,7 +433,7 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
   try {
     const professor = (req as ProfessorRequest).professor
     const existing = await prisma.class.findFirst({
-      where: { id: p(req.params.id), professorId: professor.id },
+      where: { id: p(req.params.id), ...ownedClass(professor) },
     })
     if (!existing) throw new AppError('Class not found', 404)
     await prisma.class.delete({ where: { id: p(req.params.id) } })
@@ -447,7 +448,7 @@ router.get('/:id/enrollments', async (req: Request, res: Response, next: NextFun
     const professor = (req as ProfessorRequest).professor
     const classId = p(req.params.id)
 
-    const cls = await prisma.class.findFirst({ where: { id: classId, professorId: professor.id } })
+    const cls = await prisma.class.findFirst({ where: { id: classId, ...ownedClass(professor) } })
     if (!cls) throw new AppError('Class not found', 404)
 
     const [enrollments, allSessionResponses, allAssignmentResponses, totalClosedSessionRuns] = await Promise.all([
@@ -526,7 +527,7 @@ router.get('/:id/students/:studentId/activity', async (req: Request, res: Respon
     const classId = p(req.params.id)
     const studentId = p(req.params.studentId)
 
-    const cls = await prisma.class.findFirst({ where: { id: classId, professorId: professor.id } })
+    const cls = await prisma.class.findFirst({ where: { id: classId, ...ownedClass(professor) } })
     if (!cls) throw new AppError('Class not found', 404)
 
     // Get student's section for run filtering
@@ -686,7 +687,7 @@ router.post('/:id/students/:studentId/reset-password', async (req: Request, res:
     const { newPassword } = z.object({ newPassword: z.string().min(8) }).parse(req.body)
 
     const cls = await prisma.class.findFirst({
-      where: { id: p(req.params.id), professorId: professor.id },
+      where: { id: p(req.params.id), ...ownedClass(professor) },
     })
     if (!cls) throw new AppError('Class not found', 404)
 
@@ -739,7 +740,7 @@ router.get('/:id/grades/json', async (req: Request, res: Response, next: NextFun
     const classId = p(req.params.id)
 
     const cls = await prisma.class.findFirst({
-      where: { id: classId, professorId: professor.id },
+      where: { id: classId, ...ownedClass(professor) },
       include: {
         enrollments: {
           include: {
@@ -881,7 +882,7 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
     const classId = p(req.params.id)
 
     const cls = await prisma.class.findFirst({
-      where: { id: classId, professorId: professor.id },
+      where: { id: classId, ...ownedClass(professor) },
       include: {
         enrollments: {
           include: {

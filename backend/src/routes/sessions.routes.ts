@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../db/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
+import { ownedClass, ownedSession } from '../utils/ownership.js'
 import { getIo } from '../socket.js'
 import { gradeSession } from '../utils/scoring.js'
 import { generateUniqueCode } from '../utils/codes.js'
@@ -36,7 +37,7 @@ router.post('/classes/:classId/sessions', requireProfessor, async (req: Request,
     const body = createSessionSchema.parse(req.body)
 
     const cls = await prisma.class.findFirst({
-      where: { id: p(req.params.classId), professorId: professor.id },
+      where: { id: p(req.params.classId), ...ownedClass(professor) },
     })
     if (!cls) throw new AppError('Class not found', 404)
 
@@ -63,7 +64,7 @@ router.get('/classes/:classId/sessions', requireProfessor, async (req: Request, 
   try {
     const professor = (req as ProfessorRequest).professor
     const cls = await prisma.class.findFirst({
-      where: { id: p(req.params.classId), professorId: professor.id },
+      where: { id: p(req.params.classId), ...ownedClass(professor) },
       include: { _count: { select: { enrollments: true } } },
     })
     if (!cls) throw new AppError('Class not found', 404)
@@ -116,7 +117,7 @@ router.get('/sessions/:id', requireProfessor, async (req: Request, res: Response
   try {
     const professor = (req as ProfessorRequest).professor
     const session = await prisma.session.findFirst({
-      where: { id: p(req.params.id), class: { professorId: professor.id } },
+      where: { id: p(req.params.id), ...ownedSession(professor) },
       include: {
         class: { select: { id: true, name: true, liveThemesDefault: true, _count: { select: { enrollments: true } } } },
         groups: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] },
@@ -157,7 +158,7 @@ router.patch('/sessions/:id', requireProfessor, async (req: Request, res: Respon
     }).parse(req.body)
 
     const existing = await prisma.session.findFirst({
-      where: { id: p(req.params.id), class: { professorId: professor.id } },
+      where: { id: p(req.params.id), ...ownedSession(professor) },
     })
     if (!existing) throw new AppError('Session not found', 404)
 
@@ -180,7 +181,7 @@ router.delete('/sessions/:id', requireProfessor, async (req: Request, res: Respo
   try {
     const professor = (req as ProfessorRequest).professor
     const existing = await prisma.session.findFirst({
-      where: { id: p(req.params.id), class: { professorId: professor.id } },
+      where: { id: p(req.params.id), ...ownedSession(professor) },
       include: { _count: { select: { runs: true } } },
     })
     if (!existing) throw new AppError('Session not found', 404)
@@ -198,7 +199,7 @@ router.get('/sessions/:id/export', requireProfessor, async (req: Request, res: R
   try {
     const professor = (req as ProfessorRequest).professor
     const session = await prisma.session.findFirst({
-      where: { id: p(req.params.id), class: { professorId: professor.id } },
+      where: { id: p(req.params.id), ...ownedSession(professor) },
       include: {
         class: {
           include: {
@@ -288,7 +289,7 @@ router.post('/sessions/:id/runs', requireProfessor, async (req: Request, res: Re
     }).parse(req.body)
 
     const session = await prisma.session.findFirst({
-      where: { id: p(req.params.id), class: { professorId: professor.id } },
+      where: { id: p(req.params.id), ...ownedSession(professor) },
       include: { runs: true },
     })
     if (!session) throw new AppError('Session not found', 404)
@@ -343,7 +344,7 @@ router.patch('/sessions/:id/runs/:runId', requireProfessor, async (req: Request,
     }).parse(req.body)
 
     const session = await prisma.session.findFirst({
-      where: { id: p(req.params.id), class: { professorId: professor.id } },
+      where: { id: p(req.params.id), ...ownedSession(professor) },
       include: { runs: true },
     })
     if (!session) throw new AppError('Session not found', 404)
