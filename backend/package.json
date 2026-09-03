@@ -16,6 +16,7 @@
     "test:clock": "tsx scripts/smoke-autoclose.ts --clock-only",
     "test:e2e:qr": "tsx scripts/e2e-qr.ts",
     "test:smoke:themes": "tsx scripts/smoke-themes.ts",
+    "test:smoke:socket": "tsx scripts/smoke-socket-auth.ts",
     "test:smoke:autoclose": "tsx scripts/smoke-autoclose.ts",
     "rehearse": "tsx scripts/rehearse.ts"
   },
@@ -63,6 +64,7 @@
     "@types/jsonwebtoken": "^9.0.8",
     "@types/node": "^22.10.7",
     "@types/qrcode": "^1.5.5",
+    "socket.io-client": "^4.8.1",
     "tsx": "^4.19.2"
   }
 }
