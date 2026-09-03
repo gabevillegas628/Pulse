@@ -10,7 +10,8 @@ Status: first full rollout, one course, ~140 seats, single instance, 192 test
 assertions, ~$17/semester in model spend.
 
 Updated 2 September 2026 — Gate A is closed, and the first Gate B item with it.
-See *Closed since this was written*.
+There is also a scratch database now, cloned from prod, which is what finally
+let the integration suites run. See *Closed since this was written*.
 
 ---
 
@@ -25,11 +26,12 @@ What is missing is everything that assumes there is exactly one professor, one
 machine, and one person who cares when it breaks. None of it is deep, but it is
 broad, and it does not surface until a second person shows up.
 
-Testing is further along than it looks from the outside: 183 assertions in
+Testing is further along than it looks from the outside: 192 assertions in
 `backend/scripts/`, including a real unit suite for the clock driven on injected
-timestamps. The clock half now runs on every push; the three integration
-scripts still want a Postgres service and a booted backend before they can join
-it.
+timestamps. All four suites pass. The clock half runs on every push; the other
+three have been run by hand against a clone of prod and want only a Postgres
+service in CI to join it — plus a decision about an API key, since one of them
+spends real tokens.
 
 ## Three thresholds, not one
 
@@ -58,7 +60,7 @@ has opinions. The bar is procurement, not engineering. *Months, mostly not code.
 | Tests existed; nothing ran them | `.github/workflows/ci.yml` builds all four workspaces on push — which is the typecheck, since every workspace build runs `tsc` — then runs `npm run test:clock`. A new `--clock-only` flag stops `smoke-autoclose.ts` before anything opens a connection, so its 37 clock assertions run on a runner with no Postgres at all. |
 | No error tracking | A seam, not a provider. `utils/reporting.ts` exposes `captureException()`, called from the 500 branch of the error middleware and from process-level handlers for `unhandledRejection` and `uncaughtException`. Adopting a service is now one file and an env var. **Still the weakest of the four** — until something is behind it, a 500 mid-lecture is a log line, exactly as before. One behaviour changed with it: an unhandled rejection now logs and carries on rather than killing the process, which is the right trade during a lecture but means a broken invariant runs on. |
 | `/health` didn't touch the database | Now `SELECT 1`, answering 503 and `db: "down"` when that fails. Railway reads this path for both routing and its restart policy, so an instance that cannot reach Postgres now says so. |
-| Any professor could watch any lecture | Fixed, and the reason it was possible is fixed too. Ownership used to be answered inline at 54 query sites; it now lives in `utils/ownership.ts` as composable Prisma predicates, and `socket.ts` — the one caller that isn't a query — uses the same module to check that the session is actually the professor's before admitting them to `{sessionId}:professor`. `scripts/smoke-socket-auth.ts` covers it with two professors and one session, asserting both the room decision the server reports and what actually arrives on each socket when a student answers. It needs a booted backend and a database that isn't the live one, so it is a dev-machine suite rather than a CI one for now. |
+| Any professor could watch any lecture | Fixed, and the reason it was possible is fixed too. Ownership used to be answered inline at 54 query sites; it now lives in `utils/ownership.ts` as composable Prisma predicates, and `socket.ts` — the one caller that isn't a query — uses the same module to check that the session is actually the professor's before admitting them to `{sessionId}:professor`. `scripts/smoke-socket-auth.ts` covers it with two professors and one session, asserting both the room decision the server reports and what actually arrives on each socket when a student answers. Nine assertions, all passing against a clone of prod. |
 | ~~Uploads on ephemeral disk~~ | **Not a bug.** A Railway volume is mounted and `UPLOAD_DIR` points at it. Worth revisiting if Pulse ever runs more than one instance, since a volume attaches to one — but nothing is being deleted, and this was a misreading of `config/index.ts:17`. |
 
 ---
@@ -72,9 +74,9 @@ optional. Gate A rows have moved to the section above.
 |---|---|---|---|
 | Response uniqueness ignores run (`schema.prisma:235`) | B | `ThemeSet` is keyed by run; responses aren't. Repeating student can't answer, or overwrites last term. | 1 day |
 | No self-service password reset | B | Professor-resets-student works at one class, fails at five. No mail provider wired in. | 3 days |
-| No admin role | B | Flat professor list behind one shared invite code. No transfer, deactivate, or system view. Three features under one row, and only the system view is expensive. | 1–2 days |
+| No admin role | B | Flat professor list behind one shared invite code. No transfer, deactivate, or system view. Three features under one row, and only the system view is expensive. Not hypothetical: a real class with 61 students and 121 answers turned up under a second, forgotten account, and no screen in the app would ever have shown it. | 1–2 days |
 | Unbounded AI spend per account | B | `MAX_CLASSIFY_CALLS` bounds a runaway loop, not a term or a person. | 2 days |
-| Untested backups, no retention policy | B | A backup never restored is not a backup. Responses are education records. | 2 days |
+| Untested backups, no retention policy | B | A backup never restored is not a backup. Responses are education records, and there is at least one class of them with no defined end of life sitting under an account nobody was tracking. | 2 days |
 | Multi-instance coordination | B | See below. For zero-downtime deploys, not capacity. | 1 week |
 | SSO (Shibboleth / InCommon) | C | No university wants a separate password. Also dissolves the reset problem. | 2 weeks |
 | LTI 1.3 / Canvas grade passback | C | Largest adoption lever after "does it work". Rutgers is a Canvas school. | 3 weeks |
@@ -167,8 +169,8 @@ Everything worth doing before November is done. What remains, in order:
 1. **Run ID in the response uniqueness constraint** — five minutes now, archaeology in two years.
 2. **An admin role** — decide which of the three bundled features you actually need before building any of them. "Create an account for someone and hand them a class" is most of a day; a system view that sees every professor's classes is the expensive one, and it is only expensive because it changes what ownership means. That now happens in one file, which is the whole reason this came after the consolidation rather than before it.
 3. **A provider behind `captureException()`** — the seam is in and every call site already routes through it, so this is an account, a DSN, and one file. Deferred deliberately, not forgotten.
-4. **Restore a backup, once, to a scratch database.**
-5. **A scratch database, then the three integration scripts in CI** — they want a Postgres service and a booted backend, and `smoke-themes.ts` spends real tokens, so it needs a decision about a CI key first. The absence of a non-production database is its own small blocker: it is why the socket suite has to be run by hand.
+4. **Restore an actual backup to the scratch database** — a `pg_dump` of a live database restored cleanly, which proves the mechanism but says nothing about whether Railway's backups are any good. That is still the untested half, and now there is somewhere to test it.
+5. **The three integration scripts in CI** — a Postgres service and a booted backend in the workflow. They all pass by hand against the clone; `smoke-themes.ts` spends real tokens, so it needs a decision about a CI key before it can join.
 6. **Spend caps and a kill switch** — the gate on anyone else's lecture touching your key.
 7. **Redis** — adapter, clocks, theme locks, rate limits, leader election. One project.
 8. **Email, then SSO.**
