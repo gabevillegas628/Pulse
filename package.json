@@ -18,6 +18,7 @@
     "db:push": "npm run db:push --workspace=backend",
     "db:studio": "npm run db:studio --workspace=backend",
     "db:seed": "npm run db:seed --workspace=backend",
+    "test:clock": "npm run test:clock --workspace=backend",
     "rehearse": "npm run rehearse --workspace=backend --"
   },
   "devDependencies": {

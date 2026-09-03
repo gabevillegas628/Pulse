@@ -16,10 +16,14 @@
  *
  * Usage:
  *   npx tsx scripts/smoke-autoclose.ts
+ *   npx tsx scripts/smoke-autoclose.ts --clock-only
  *   E2E_BASE=http://localhost:3010 npx tsx scripts/smoke-autoclose.ts
  *
  * Part 1 needs nothing running. Part 2 requires a server pointed at the same
  * database this script connects to, and cleans up everything it creates.
+ *
+ * --clock-only stops after part 1, before anything opens a connection, which is
+ * what makes it runnable in CI against no database at all.
  */
 
 import 'dotenv/config'
@@ -375,8 +379,26 @@ async function liveQuestion(token: string, questionId: string) {
   return qs.find((q: any) => q.id === questionId) ?? null
 }
 
+const CLOCK_ONLY = process.argv.includes('--clock-only')
+
+async function report(): Promise<never> {
+  section('Result')
+  console.log(`  ${passed} passed, ${failed} failed`)
+  if (failures.length) {
+    console.log('\nFailures:')
+    for (const f of failures) console.log(`  - ${f}`)
+  }
+  await prisma.$disconnect()
+  process.exit(failed === 0 ? 0 : 1)
+}
+
 async function main() {
   clockTests()
+
+  // Part 2 and the cleanup that follows it both touch the database. Leaving before
+  // either is what lets CI run the clock on a runner with no Postgres and still
+  // fail the build on a real regression.
+  if (CLOCK_ONLY) await report()
 
   let timed: Awaited<ReturnType<typeof createFixture>> | null = null
   let untimed: Awaited<ReturnType<typeof createFixture>> | null = null
@@ -560,14 +582,7 @@ async function main() {
     check('all fixture data removed', leftover === 0, `${leftover} classes remain`)
   }
 
-  section('Result')
-  console.log(`  ${passed} passed, ${failed} failed`)
-  if (failures.length) {
-    console.log('\nFailures:')
-    for (const f of failures) console.log(`  - ${f}`)
-  }
-  await prisma.$disconnect()
-  process.exit(failed === 0 ? 0 : 1)
+  await report()
 }
 
 main().catch(async (err) => {

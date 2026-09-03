@@ -1,0 +1,42 @@
+name: CI
+
+# Push only, deliberately. Every branch here is pushed before it is reviewed, so
+# adding pull_request would double every run without catching anything earlier.
+on: push
+
+jobs:
+  build:
+    name: Build and clock tests
+    runs-on: ubuntu-latest
+
+    env:
+      # `prisma generate` reads the schema, not the database, and the clock half of
+      # the autoclose suite never opens a connection. A syntactically valid URL is
+      # all either one needs — nothing in this job talks to Postgres.
+      DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # Covers the typecheck: every workspace build runs tsc, and the backend's
+      # also runs prisma generate, so a schema that no longer matches the client
+      # fails here rather than on deploy.
+      - name: Build all workspaces
+        run: npm run build
+
+      # The clock is the piece where a regression is silent and expensive: it would
+      # accept answers after a countdown ended, and nobody in the room would know.
+      # Driven on injected timestamps, so it needs neither a server nor a database.
+      - name: Clock unit tests
+        run: npm run test:clock
+
+      # Not yet wired: smoke-themes.ts and e2e-qr.ts. Both want a Postgres service
+      # and a booted backend, and smoke-themes additionally spends real Anthropic
+      # tokens, so it needs a decision about a CI key before it belongs here.

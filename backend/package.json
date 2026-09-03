@@ -13,6 +13,7 @@
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
     "db:seed": "prisma db seed",
+    "test:clock": "tsx scripts/smoke-autoclose.ts --clock-only",
     "test:e2e:qr": "tsx scripts/e2e-qr.ts",
     "test:smoke:themes": "tsx scripts/smoke-themes.ts",
     "test:smoke:autoclose": "tsx scripts/smoke-autoclose.ts",
