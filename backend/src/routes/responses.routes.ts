@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
 import { prisma } from '../db/index.js'
-import { AppError } from '../middleware/error.middleware.js'
+import { AppError, isUniqueViolation } from '../middleware/error.middleware.js'
 import { requireStudent, StudentRequest } from '../middleware/auth.middleware.js'
 import { getIo } from '../socket.js'
 import { themesEnabled, scheduleThemeWork } from '../services/themes.service.js'
@@ -287,17 +287,27 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
       })
       if (existing) throw new AppError('Already answered', 409)
 
-      const response = await prisma.response.create({
-        data: {
-          questionId,
-          studentId: student.id,
-          runId: openRun.id,
-          responseText: storedText,
-          wordCount,
-          isFlagged: question.type === 'FREE_TEXT' && wordCount < 10,
-          isDraft: false,
-        },
-      })
+      // The check above is not the guard — the unique constraint is. A double-tapped
+      // button or a retried request can put two creates between that findUnique and
+      // this create, and the loser must be told it already answered rather than shown
+      // an internal error for a race it did nothing wrong to lose.
+      let response
+      try {
+        response = await prisma.response.create({
+          data: {
+            questionId,
+            studentId: student.id,
+            runId: openRun.id,
+            responseText: storedText,
+            wordCount,
+            isFlagged: question.type === 'FREE_TEXT' && wordCount < 10,
+            isDraft: false,
+          },
+        })
+      } catch (err) {
+        if (isUniqueViolation(err)) throw new AppError('Already answered', 409)
+        throw err
+      }
 
       // Reset the countdown: every answer buys the room more time, which is what
       // makes a collective stall end the question instead of extending it.
