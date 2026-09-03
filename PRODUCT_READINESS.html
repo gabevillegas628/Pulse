@@ -302,6 +302,8 @@
   .now   { color: var(--sev-now);   background: var(--sev-now-bg); }
   .soon  { color: var(--sev-soon);  background: var(--sev-soon-bg); }
   .later { color: var(--sev-later); background: var(--sev-later-bg); }
+  .done  { color: var(--accent);    background: var(--accent-soft); }
+  .struck th[scope="row"] { text-decoration: line-through; text-decoration-color: var(--rule-strong); }
 
   /* ── Callout ────────────────────────────────────────────── */
   .callout {
@@ -395,13 +397,14 @@
     <p class="eyebrow">Pulse · Engineering &amp; commercial readiness</p>
     <h1>What it would take to run <em>Pulse</em> for someone else</h1>
     <p class="standfirst">Written ahead of the November talk, so there is a real answer when somebody says they'd like to use it. Three thresholds, what stands between here and each one, and what it actually costs to run.</p>
+    <p class="standfirst"><strong>Updated 2 September 2026.</strong> Gate A is closed — four items fixed and a fifth withdrawn. The register now starts at Gate B.</p>
 
     <dl class="status">
       <div><dt>Status</dt><dd>First full rollout</dd></div>
       <div><dt>Scope</dt><dd>1 course · ~140 seats</dd></div>
       <div><dt>Topology</dt><dd>Single instance</dd></div>
       <div><dt>Token spend</dt><dd>~$17 / semester</dd></div>
-      <div><dt>Assertions</dt><dd>180, nothing runs them</dd></div>
+      <div><dt>Assertions</dt><dd>183 · clock half in CI</dd></div>
     </dl>
   </header>
 
@@ -411,7 +414,7 @@
       <h2>A well-built single-tenant app wearing a multi-tenant shape</h2>
       <p>The code is in better condition than most things at this stage. The hard parts — the arming threshold on the close countdown, monotonic deadlines, token renewal on activity, warming clocks from <code>Response.submittedAt</code> after a restart — are not just implemented but reasoned about in the comments. That is the part that is genuinely difficult to buy.</p>
       <p>What is missing is everything that assumes there is exactly one professor, one machine, and one person who cares when it breaks. None of it is deep, but it is broad, and it does not surface until a second person shows up. The list below is that list.</p>
-      <p>Testing is further along than it looks from the outside: there are 180 assertions in <code>backend/scripts/</code>, including a real unit suite for the clock driven on injected timestamps. They just aren't wired to anything that runs them.</p>
+      <p>Testing is further along than it looks from the outside: there are 183 assertions in <code>backend/scripts/</code>, including a real unit suite for the clock driven on injected timestamps. The clock half now runs on every push; the two integration scripts still want a Postgres service and a booted backend before they can join it.</p>
     </div>
   </section>
 
@@ -427,7 +430,7 @@
         <span class="tag">Gate A</span>
         <h4>Survive this semester</h4>
         <p>One course, you operating it, you on the hook. The bar is that a lecture never fails in a way you can't recover from in the room.</p>
-        <p class="verdict">Mostly there. Four real bugs and one silent data-loss path stand in the way.</p>
+        <p class="verdict">Closed. Four items fixed, and a fifth that turned out not to be one.</p>
       </article>
       <article class="gate">
         <span class="tag">Gate B</span>
@@ -446,9 +449,56 @@
 
   <section>
     <div class="col">
+      <p class="kicker">Closed</p>
+      <h2>What Gate A actually took</h2>
+      <p>Four items, plus one that turned out not to be an item at all — the estimates added up to seven hours, and nothing in them was wrong about the shape of the work.</p>
+    </div>
+
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Item</th>
+            <th scope="col">Gate</th>
+            <th scope="col">What changed</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Duplicate submit returned HTTP 500<span class="path">responses.routes.ts · error.middleware.ts</span></th>
+            <td><span class="chip done">Fixed</span></td>
+            <td>The unique constraint is the guard now, not the <code>findUnique</code> in front of it. The in-class submit path catches <code>P2002</code> and answers "Already answered" with a 409; the error middleware carries a generic <code>P2002</code> → 409 backstop for every other check-then-create in the codebase.</td>
+          </tr>
+          <tr>
+            <th scope="row">Tests existed; nothing ran them<span class="path">.github/workflows/ci.yml</span></th>
+            <td><span class="chip done">Fixed</span></td>
+            <td>Builds all four workspaces on push — which is the typecheck, since every workspace build runs <code>tsc</code> — then runs <code>npm run test:clock</code>. A new <code>--clock-only</code> flag stops <code>smoke-autoclose.ts</code> before anything opens a connection, so its 37 clock assertions run on a runner with no Postgres at all.</td>
+          </tr>
+          <tr>
+            <th scope="row">No error tracking<span class="path">utils/reporting.ts</span></th>
+            <td><span class="chip soon">Seam only</span></td>
+            <td><code>captureException()</code> is called from the 500 branch of the error middleware and from process-level handlers for <code>unhandledRejection</code> and <code>uncaughtException</code>, so adopting a service is one file and an env var. <strong>The weakest of the four</strong> — until something sits behind it, a 500 mid-lecture is still a log line. One behaviour changed with it: an unhandled rejection now logs and carries on rather than killing the process, which is the right trade during a lecture but means a broken invariant runs on.</td>
+          </tr>
+          <tr>
+            <th scope="row"><code>/health</code> didn't touch the database<span class="path">app.ts</span></th>
+            <td><span class="chip done">Fixed</span></td>
+            <td><code>SELECT 1</code>, answering 503 and <code>db: "down"</code> when it fails. Railway reads this path for both routing and its restart policy, so an instance that cannot reach Postgres now says so instead of taking traffic.</td>
+          </tr>
+          <tr class="struck">
+            <th scope="row">Uploads live on ephemeral disk<span class="path">config/index.ts:17</span></th>
+            <td><span class="chip done">Withdrawn</span></td>
+            <td><strong>Not a bug.</strong> A Railway volume is mounted and <code>UPLOAD_DIR</code> points at it. Worth revisiting if Pulse ever runs more than one instance, since a volume attaches to one — but nothing is being deleted, and reading the default in <code>config/index.ts</code> as the deployed value was the mistake.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
       <p class="kicker">The register</p>
       <h2>What actually stands in the way</h2>
-      <p>Ordered by when it bites, not by size. The gate column is the earliest threshold at which the item stops being optional.</p>
+      <p>Ordered by when it bites, not by size. The gate column is the earliest threshold at which the item stops being optional. Gate A rows have moved to the section above.</p>
     </div>
 
     <div class="scroller">
@@ -462,36 +512,6 @@
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <th scope="row">Uploads live on ephemeral disk<span class="path">config/index.ts:17 · app.ts:144</span></th>
-            <td><span class="chip now">A</span></td>
-            <td>Every professor-uploaded image is deleted on the next deploy. Silent, already happening, and unrecoverable after the fact. Needs S3/R2 or a mounted volume.</td>
-            <td class="num">1 day</td>
-          </tr>
-          <tr>
-            <th scope="row">Duplicate submit returns HTTP 500<span class="path">responses.routes.ts:285</span></th>
-            <td><span class="chip now">A</span></td>
-            <td>Check-then-create race. A double tap on a flaky phone hits the unique constraint; no <code>P2002</code> branch exists, so the student sees "Internal server error" instead of the intended "Already answered".</td>
-            <td class="num">2 hrs</td>
-          </tr>
-          <tr>
-            <th scope="row">Tests exist; nothing runs them<span class="path">backend/scripts/ · 180 assertions</span></th>
-            <td><span class="chip now">A</span></td>
-            <td>Not a coverage gap — a wiring gap. <code>smoke-autoclose.ts</code> already unit-tests the clock on injected time (arming, monotonicity, floor, reset, clamps, out-of-order) and needs nothing running; all three scripts exit non-zero on failure. What's missing is a workflow invoking them, and a typecheck on push.</td>
-            <td class="num">2 hrs</td>
-          </tr>
-          <tr>
-            <th scope="row">No error tracking</th>
-            <td><span class="chip now">A</span></td>
-            <td>Winston to stdout. A 500 during a lecture is a log line nobody reads at the moment it matters.</td>
-            <td class="num">2 hrs</td>
-          </tr>
-          <tr>
-            <th scope="row"><code>/health</code> doesn't touch the database<span class="path">app.ts:131</span></th>
-            <td><span class="chip now">A</span></td>
-            <td>Returns <code>ok</code> unconditionally, so the platform routes traffic to an instance that can't reach Postgres.</td>
-            <td class="num">1 hr</td>
-          </tr>
           <tr>
             <th scope="row">Any professor can watch any lecture<span class="path">socket.ts:27</span></th>
             <td><span class="chip soon">B</span></td>
@@ -753,20 +773,19 @@
     <div class="col">
       <p class="kicker">Sequence</p>
       <h2>The order I'd actually do it in</h2>
-      <p>The first four are worth doing before November regardless of whether anyone ever asks, because they're all things that hurt you this semester.</p>
+      <p>Everything worth doing before November is done. What follows is what's left, and none of it is urgent in the way the Gate A items were.</p>
     </div>
 
     <ol class="roadmap">
-      <li><span class="n">01</span><span class="what">Uploads off local disk<span class="why">Actively destructive today. Everything else on this list can wait a week; this one is deleting data now.</span></span></li>
-      <li><span class="n">02</span><span class="what">The 500 on duplicate submit, and socket room ownership<span class="why">Hours each. One is a student-visible bug mid-lecture, the other stops being theoretical the moment a second professor registers.</span></span></li>
-      <li><span class="n">03</span><span class="what">CI around the tests you already wrote<span class="why">Typecheck and build on push, then run <code>clockTests()</code> — it needs no server and already exits non-zero. The two integration scripts want a Postgres service and a booted backend; do those second.</span></span></li>
-      <li><span class="n">04</span><span class="what">Error tracking and a real health check<span class="why">So the next bad lecture produces a stack trace and an alert instead of a story.</span></span></li>
-      <li><span class="n">05</span><span class="what">Run ID in the response uniqueness constraint<span class="why">A five-minute migration now, a data-archaeology project in two years.</span></span></li>
-      <li><span class="n">06</span><span class="what">Restore a backup, once, to a scratch database<span class="why">Half a day, and it converts an assumption into a fact.</span></span></li>
-      <li><span class="n">07</span><span class="what">Spend caps and a kill switch<span class="why">The gate on ever letting a second person's lecture touch your API key.</span></span></li>
-      <li><span class="n">08</span><span class="what">Redis: adapter, clocks, theme locks, rate limits, leader election<span class="why">One project. Do it when you want deploys that don't interrupt a lecture — not before.</span></span></li>
-      <li><span class="n">09</span><span class="what">Email, then SSO<span class="why">Email unblocks reset and verification; SSO makes both obsolete and is what institutions will ask for anyway. If Gate C looks likely, skip ahead.</span></span></li>
-      <li><span class="n">10</span><span class="what">LTI, accessibility, HECVAT, entity<span class="why">Only once someone has actually said yes. Doing this speculatively is how side projects die.</span></span></li>
+      <li><span class="n">01</span><span class="what">Socket room ownership<span class="why">Hours, and the only Gate B item that is a live privacy hole rather than a missing feature. It was bundled with the duplicate-submit 500; that half is fixed and this half isn't.</span></span></li>
+      <li><span class="n">02</span><span class="what">Run ID in the response uniqueness constraint<span class="why">A five-minute migration now, a data-archaeology project in two years.</span></span></li>
+      <li><span class="n">03</span><span class="what">A provider behind <code>captureException()</code><span class="why">The seam is in and every call site already routes through it, so this is an account, a DSN and one file. Deferred deliberately, not forgotten.</span></span></li>
+      <li><span class="n">04</span><span class="what">Restore a backup, once, to a scratch database<span class="why">Half a day, and it converts an assumption into a fact.</span></span></li>
+      <li><span class="n">05</span><span class="what">The two integration scripts in CI<span class="why">They want a Postgres service and a booted backend, and <code>smoke-themes.ts</code> spends real Anthropic tokens, so it needs a decision about a CI key first.</span></span></li>
+      <li><span class="n">06</span><span class="what">Spend caps and a kill switch<span class="why">The gate on ever letting a second person's lecture touch your API key.</span></span></li>
+      <li><span class="n">07</span><span class="what">Redis: adapter, clocks, theme locks, rate limits, leader election<span class="why">One project. Do it when you want deploys that don't interrupt a lecture — not before.</span></span></li>
+      <li><span class="n">08</span><span class="what">Email, then SSO<span class="why">Email unblocks reset and verification; SSO makes both obsolete and is what institutions will ask for anyway. If Gate C looks likely, skip ahead.</span></span></li>
+      <li><span class="n">09</span><span class="what">LTI, accessibility, HECVAT, entity<span class="why">Only once someone has actually said yes. Doing this speculatively is how side projects die.</span></span></li>
     </ol>
   </section>
 

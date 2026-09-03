@@ -6,9 +6,11 @@ when somebody says they'd like to use it.
 A formatted version of this document is in `PRODUCT_READINESS.html`,
 self-contained — open it in any browser.
 
-Status at time of writing: first full rollout, one course, ~140 seats, single
-instance, 180 test assertions that nothing runs automatically, ~$17/semester in
-model spend.
+Status: first full rollout, one course, ~140 seats, single instance, 183 test
+assertions, ~$17/semester in model spend.
+
+Updated 2 September 2026 — Gate A is closed. See *Closed since this was
+written*; the register below now starts at Gate B.
 
 ---
 
@@ -23,9 +25,10 @@ What is missing is everything that assumes there is exactly one professor, one
 machine, and one person who cares when it breaks. None of it is deep, but it is
 broad, and it does not surface until a second person shows up.
 
-Testing is further along than it looks from the outside: 180 assertions in
+Testing is further along than it looks from the outside: 183 assertions in
 `backend/scripts/`, including a real unit suite for the clock driven on injected
-timestamps. They just aren't wired to anything that runs them.
+timestamps. The clock half now runs on every push; the two integration scripts
+still want a Postgres service and a booted backend before they can join it.
 
 ## Three thresholds, not one
 
@@ -34,7 +37,7 @@ they need almost disjoint work.
 
 **Gate A — survive this semester.** One course, you operating it. The bar is
 that a lecture never fails in a way you can't recover from in the room.
-*Mostly there; four real bugs and one silent data-loss path.*
+*Closed — four items fixed, and a fifth that turned out not to be one.*
 
 **Gate B — a second instructor at Rutgers.** Someone you know, no contract. The
 bar shifts from "it works" to "it is isolated, recoverable, and doesn't need you
@@ -45,18 +48,25 @@ has opinions. The bar is procurement, not engineering. *Months, mostly not code.
 
 ---
 
+## Closed since this was written
+
+| Item | What changed |
+|---|---|
+| Duplicate submit returned 500 | The unique constraint is the guard now, not the `findUnique` in front of it. `responses.routes.ts` catches `P2002` and answers "Already answered" (409), and `error.middleware.ts` carries a generic `P2002` → 409 backstop for every other check-then-create in the codebase. |
+| Tests existed; nothing ran them | `.github/workflows/ci.yml` builds all four workspaces on push — which is the typecheck, since every workspace build runs `tsc` — then runs `npm run test:clock`. A new `--clock-only` flag stops `smoke-autoclose.ts` before anything opens a connection, so its 37 clock assertions run on a runner with no Postgres at all. |
+| No error tracking | A seam, not a provider. `utils/reporting.ts` exposes `captureException()`, called from the 500 branch of the error middleware and from process-level handlers for `unhandledRejection` and `uncaughtException`. Adopting a service is now one file and an env var. **Still the weakest of the four** — until something is behind it, a 500 mid-lecture is a log line, exactly as before. One behaviour changed with it: an unhandled rejection now logs and carries on rather than killing the process, which is the right trade during a lecture but means a broken invariant runs on. |
+| `/health` didn't touch the database | Now `SELECT 1`, answering 503 and `db: "down"` when that fails. Railway reads this path for both routing and its restart policy, so an instance that cannot reach Postgres now says so. |
+| ~~Uploads on ephemeral disk~~ | **Not a bug.** A Railway volume is mounted and `UPLOAD_DIR` points at it. Worth revisiting if Pulse ever runs more than one instance, since a volume attaches to one — but nothing is being deleted, and this was a misreading of `config/index.ts:17`. |
+
+---
+
 ## The register
 
 Ordered by when it bites. Gate = earliest threshold at which it stops being
-optional.
+optional. Gate A rows have moved to the section above.
 
 | Item | Gate | If skipped | Size |
 |---|---|---|---|
-| Uploads on ephemeral disk (`config/index.ts:17`, `app.ts:144`) | A | Every uploaded image deleted on next deploy. Silent, already happening. Needs S3/R2 or a volume. | 1 day |
-| Duplicate submit returns 500 (`responses.routes.ts:285`) | A | Check-then-create race; no `P2002` branch, so student sees "Internal server error" not "Already answered". | 2 hrs |
-| Tests exist; nothing runs them (`backend/scripts/`, 180 assertions) | A | A wiring gap, not a coverage gap. `smoke-autoclose.ts` already unit-tests the clock on injected time (arming, monotonicity, floor, reset, clamps, out-of-order) and needs nothing running; all three scripts exit non-zero on failure. Missing: a workflow invoking them, and typecheck on push. | 2 hrs |
-| No error tracking | A | Winston to stdout. A 500 mid-lecture is a log line nobody reads. | 2 hrs |
-| `/health` doesn't touch the DB (`app.ts:131`) | A | Platform routes traffic to an instance that can't reach Postgres. | 1 hr |
 | Any professor can watch any lecture (`socket.ts:27`) | B | `{sessionId}:professor` checks role, never ownership. That room carries netIDs and answer text. | 1 day |
 | Response uniqueness ignores run (`schema.prisma:235`) | B | `ThemeSet` is keyed by run; responses aren't. Repeating student can't answer, or overwrites last term. | 1 day |
 | No self-service password reset | B | Professor-resets-student works at one class, fails at five. No mail provider wired in. | 3 days |
@@ -150,18 +160,17 @@ attention. Decline per-student pricing explicitly when it comes up.
 
 ## Order to do it in
 
-1. **Uploads off local disk** — actively destructive today.
-2. **The 500 on duplicate submit, and socket room ownership** — hours each.
-3. **CI around the tests you already wrote** — typecheck and build on push, then run `clockTests()`; it needs no server and already exits non-zero. The two integration scripts want a Postgres service and a booted backend; do those second.
-4. **Error tracking and a real health check.**
-5. **Run ID in the response uniqueness constraint** — five minutes now, archaeology in two years.
-6. **Restore a backup, once, to a scratch database.**
-7. **Spend caps and a kill switch** — the gate on anyone else's lecture touching your key.
-8. **Redis** — adapter, clocks, theme locks, rate limits, leader election. One project.
-9. **Email, then SSO.**
-10. **LTI, accessibility, HECVAT, entity** — only once someone has said yes.
+Everything worth doing before November is done. What remains, in order:
 
-Items 1–4 are worth doing before November regardless.
+1. **Socket room ownership** — hours, and the only Gate B item that is a live privacy hole rather than a missing feature. Was bundled with the duplicate-submit 500; that half is fixed and this half isn't.
+2. **Run ID in the response uniqueness constraint** — five minutes now, archaeology in two years.
+3. **A provider behind `captureException()`** — the seam is in and every call site already routes through it, so this is an account, a DSN, and one file. Deferred deliberately, not forgotten.
+4. **Restore a backup, once, to a scratch database.**
+5. **The two integration scripts in CI** — they want a Postgres service and a booted backend, and `smoke-themes.ts` spends real tokens, so it needs a decision about a CI key first.
+6. **Spend caps and a kill switch** — the gate on anyone else's lecture touching your key.
+7. **Redis** — adapter, clocks, theme locks, rate limits, leader election. One project.
+8. **Email, then SSO.**
+9. **LTI, accessibility, HECVAT, entity** — only once someone has said yes.
 
 ---
 
