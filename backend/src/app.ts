@@ -7,6 +7,8 @@ import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { createProxyMiddleware } from 'http-proxy-middleware'
 import { config } from './config/index.js'
+import { prisma } from './db/index.js'
+import { logger } from './utils/logger.js'
 import { errorMiddleware } from './middleware/error.middleware.js'
 import { RENEWED_TOKEN_HEADER } from './middleware/auth.middleware.js'
 import { requestLogger } from './middleware/request-logger.middleware.js'
@@ -126,8 +128,20 @@ if (config.isDev) {
   app.set('trust proxy', 1)
 }
 
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() })
+// Railway reads this to decide whether an instance is live, and restarts it on
+// failure, so answering "ok" from a process that cannot reach Postgres is the
+// one wrong answer: traffic gets routed to an instance that fails every request.
+// SELECT 1 is the cheapest question that distinguishes the two.
+app.get('/health', async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`
+    res.json({ status: 'ok', db: 'up', timestamp: new Date().toISOString() })
+  } catch (err) {
+    // Logged rather than reported: the platform is already about to act on the
+    // 503, and a database outage would otherwise arrive as one alert per probe.
+    logger.error('health check failed to reach the database', err)
+    res.status(503).json({ status: 'degraded', db: 'down', timestamp: new Date().toISOString() })
+  }
 })
 
 const __filename = fileURLToPath(import.meta.url)
