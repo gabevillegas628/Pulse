@@ -5,9 +5,14 @@ import app from './app.js'
 import { config } from './config/index.js'
 import { initIo } from './socket.js'
 import { logger } from './utils/logger.js'
+import { installProcessHandlers } from './utils/reporting.js'
 import { startScheduler } from './scheduler.js'
 import { warmFromDb, startClockSweep } from './services/clock.service.js'
 import { prisma } from './db/index.js'
+
+// Before anything that can throw off the request path — the clock sweep, the
+// scheduler, warmFromDb — so a rejection during boot is reported rather than lost.
+installProcessHandlers()
 
 const httpServer = createServer(app)
 

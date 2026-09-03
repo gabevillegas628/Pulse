@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express'
 import { Prisma } from '@prisma/client'
 import { ZodError } from 'zod'
 import { logger } from '../utils/logger.js'
+import { captureException } from '../utils/reporting.js'
 
 export class AppError extends Error {
   constructor(
@@ -57,5 +58,6 @@ export function errorMiddleware(
   }
 
   logger.error(err)
+  captureException(err, { path: req.path, method: req.method })
   res.status(500).json({ success: false, error: 'Internal server error' })
 }
