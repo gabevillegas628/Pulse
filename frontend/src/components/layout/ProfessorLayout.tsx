@@ -1,7 +1,7 @@
 import { ReactNode, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useProfessorAuth } from '@/context/ProfessorAuthContext'
-import { LogOut, KeyRound } from 'lucide-react'
+import { LogOut, KeyRound, Shield } from 'lucide-react'
 import PasswordChangeModal from '@/components/PasswordChangeModal'
 import PulseMark from '@/components/ui/PulseMark'
 
@@ -25,6 +25,13 @@ export default function ProfessorLayout({ children }: { children: ReactNode }) {
           </Link>
           <div className="flex items-center gap-3">
             <span className="text-sm text-muted">{professor?.name}</span>
+            {/* Only rendered for admins; the server-side gate is requireAdmin, not this. */}
+            {professor?.isAdmin && (
+              <Link to="/professor/admin" className="flex items-center gap-1 text-sm text-muted hover:text-ink transition-colors" title="Administration">
+                <Shield size={15} />
+                Admin
+              </Link>
+            )}
             <button onClick={() => setShowPwModal(true)} className="text-muted hover:text-ink-2 transition-colors" title="Change password">
               <KeyRound size={15} />
             </button>

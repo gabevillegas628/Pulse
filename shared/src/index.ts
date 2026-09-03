@@ -28,6 +28,8 @@ export interface Professor {
   id: string
   email: string
   name: string
+  isAdmin: boolean
+  deactivatedAt: string | null
   createdAt: string
   updatedAt: string
 }
@@ -265,6 +267,24 @@ export interface SessionDetail extends Session {
   class: Pick<Class, 'id' | 'name' | 'liveThemesDefault' | 'autoCloseDefault'>
   runs: SessionRun[]
   enrolledCount: number
+}
+
+// Admin system view: every professor with every class and the numbers that make
+// a forgotten account visible. Answer counts exclude drafts.
+export interface AdminClassSummary {
+  id: string
+  name: string
+  joinCode: string
+  createdAt: string
+  enrollmentCount: number
+  sessionCount: number
+  assignmentCount: number
+  responseCount: number
+  lastResponseAt: string | null
+}
+
+export interface AdminProfessorSummary extends Professor {
+  classes: AdminClassSummary[]
 }
 
 export interface ClassWithCounts extends Class {

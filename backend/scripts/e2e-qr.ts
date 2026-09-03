@@ -128,7 +128,9 @@ async function createFixture() {
 }
 
 async function destroyFixture(professorId: string, studentId: string) {
-  // Classes cascade from professor; responses/enrollments cascade from student.
+  // Classes first: professor deletion is Restrict-ed while any remain. Sessions
+  // and questions cascade from the class; responses/enrollments from the student.
+  await prisma.class.deleteMany({ where: { professorId } }).catch(() => {})
   await prisma.professor.delete({ where: { id: professorId } }).catch(() => {})
   await prisma.student.delete({ where: { id: studentId } }).catch(() => {})
 }

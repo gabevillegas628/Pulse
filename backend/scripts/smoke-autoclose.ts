@@ -366,6 +366,8 @@ async function createFixture(tag: string, autoClose: boolean | null) {
 }
 
 async function destroyFixture(professorId: string, studentIds: string[]) {
+  // Classes first: professor deletion is Restrict-ed while any remain.
+  await prisma.class.deleteMany({ where: { professorId } }).catch(() => {})
   await prisma.professor.delete({ where: { id: professorId } }).catch(() => {})
   for (const id of studentIds) {
     await prisma.student.delete({ where: { id } }).catch(() => {})

@@ -295,8 +295,10 @@ async function createScaleFixture(n: number) {
 }
 
 async function destroyFixture(professorId: string, studentIds: string[]) {
-  // Class → session → question → themeSet → categories all cascade from the professor;
-  // responses and their theme assignments cascade from the students.
+  // Classes first: professor deletion is Restrict-ed while any remain. Session,
+  // question, themeSet, and categories all cascade from the class; responses and
+  // their theme assignments cascade from the students.
+  await prisma.class.deleteMany({ where: { professorId } }).catch(() => {})
   await prisma.professor.delete({ where: { id: professorId } }).catch(() => {})
   for (const id of studentIds) {
     await prisma.student.delete({ where: { id } }).catch(() => {})

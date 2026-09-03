@@ -3,8 +3,8 @@ import type { Prisma, Professor } from '@prisma/client'
 /**
  * What "this is yours" means, in one place.
  *
- * Ownership was previously answered inline at every query — some fifty
- * `professorId: professor.id` clauses across the route files — which is fine
+ * Ownership was previously answered inline at every query â some fifty
+ * `professorId: professor.id` clauses across the route files â which is fine
  * while a professor owns exactly what they created and nobody else may look.
  * It stops being fine the moment there is a second kind of professor: an admin
  * with a system view, a co-instructor, a TA. Each of those is a change to what
@@ -12,21 +12,27 @@ import type { Prisma, Professor } from '@prisma/client'
  * places and finding out about the one that was missed from a support email.
  *
  * So the predicates live here. They compose along the schema's own path back to
- * Class — a Question belongs to a Session or an Assignment, both of which belong
- * to a Class, which belongs to a Professor — and each returns the Prisma filter
+ * Class â a Question belongs to a Session or an Assignment, both of which belong
+ * to a Class, which belongs to a Professor â and each returns the Prisma filter
  * for its own model, so a predicate spread into the wrong query is a type error
  * rather than a silent widening.
  *
- * When an admin role arrives, `Viewer` widens to carry it and `ownedClass`
- * returns `{}` for an admin. Nothing else in the codebase changes.
+ * An admin role arrived (September 2026) and deliberately did not widen these
+ * predicates. Admin power lives only under /api/admin (admin.routes.ts), as
+ * explicitly unscoped queries behind requireAdmin — so `ownedClass` still means
+ * "the class you created" for everyone, an admin using the normal professor UI
+ * is just a professor, and the lecture-room check in socket.ts is untouched.
+ * The widening this module was built to allow — `Viewer` carrying a role, an
+ * institution, co-taught class ids — remains available for the feature that
+ * genuinely needs to act as someone else: "view as", or a co-instructor.
  */
 
 /**
  * Who is asking, for the purpose of what they may see and act on.
  *
  * The id alone today, which is all ownership currently depends on. It is a type
- * rather than a bare string so that widening it — to carry a role, an
- * institution, a set of co-taught class ids — does not touch the call sites.
+ * rather than a bare string so that widening it â to carry a role, an
+ * institution, a set of co-taught class ids â does not touch the call sites.
  */
 export type Viewer = Pick<Professor, 'id'>
 
@@ -80,7 +86,7 @@ export function ownedAssignmentQuestionGroup(viewer: Viewer): Prisma.QuestionGro
 
 /**
  * The same question asked of a record already in hand rather than of the
- * database — a class loaded through a relation, say, where re-querying to check
+ * database â a class loaded through a relation, say, where re-querying to check
  * ownership would be a second round trip for something already known.
  *
  * Kept here with the predicates because it is the same policy: when an admin

@@ -17,6 +17,7 @@
     "test:e2e:qr": "tsx scripts/e2e-qr.ts",
     "test:smoke:themes": "tsx scripts/smoke-themes.ts",
     "test:smoke:socket": "tsx scripts/smoke-socket-auth.ts",
+    "test:smoke:admin": "tsx scripts/smoke-admin.ts",
     "test:smoke:autoclose": "tsx scripts/smoke-autoclose.ts",
     "rehearse": "tsx scripts/rehearse.ts"
   },

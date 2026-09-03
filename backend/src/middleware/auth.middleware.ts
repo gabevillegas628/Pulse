@@ -24,7 +24,7 @@ export const RENEWED_TOKEN_HEADER = 'X-Pulse-Token'
  *
  * Without this a token is a cliff: minted at sign-in, dead exactly `jwtExpiresIn` later
  * whatever is happening at the time. A PowerPoint deck left open across a day hits that
- * cliff mid-lecture, and the surface that discovers it is the projector — which is polling
+ * cliff mid-lecture, and the surface that discovers it is the projector â which is polling
  * every few seconds and so could not be more obviously in use.
  *
  * Renewing on activity rather than on a schedule keeps the point of a short window: a deck
@@ -71,7 +71,10 @@ export async function requireProfessor(
     if (payload.role !== 'professor') throw new AppError('Unauthorized', 401)
 
     const professor = await prisma.professor.findUnique({ where: { id: payload.sub } })
-    if (!professor) throw new AppError('Unauthorized', 401)
+    // Deactivation is enforced here, not by revoking tokens: the row is re-read on
+    // every request, so a deactivated professor's outstanding tokens die on their
+    // next use, renewal included, without anyone keeping a list of them.
+    if (!professor || professor.deactivatedAt) throw new AppError('Unauthorized', 401)
 
     // After the lookup, so a token whose professor no longer exists is not handed a new one.
     renewIfHalfSpent(res, payload)
@@ -82,6 +85,22 @@ export async function requireProfessor(
     if (err instanceof AppError) return next(err)
     next(new AppError('Unauthorized', 401))
   }
+}
+
+/**
+ * requireProfessor, plus the admin bit on the row it just fetched.
+ *
+ * Admin lives only in the database, never in the JWT. The professor row is already
+ * re-read on every authenticated request, so granting and revoking admin take
+ * effect on the next request with nothing to reissue. The 403 rather than 401 is
+ * deliberate: the caller is authenticated fine — this surface just isn't theirs.
+ */
+export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+  void requireProfessor(req, res, (err?: unknown) => {
+    if (err) return next(err)
+    if (!(req as ProfessorRequest).professor.isAdmin) return next(new AppError('Forbidden', 403))
+    next()
+  })
 }
 
 export function requireAnyAuth(req: Request, _res: Response, next: NextFunction): void {

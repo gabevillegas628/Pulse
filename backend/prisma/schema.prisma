@@ -8,13 +8,21 @@ datasource db {
 }
 
 model Professor {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  name         String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  classes      Class[]
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String
+  name          String
+  // Admin is a bit on a professor, not a second kind of account: requireProfessor
+  // re-reads this row on every request, so the bit lives only in the database and
+  // granting or revoking it takes effect on the next request, with no token to chase.
+  isAdmin       Boolean   @default(false)
+  // Deactivation, deliberately not deletion: Class cascades from Professor, so a
+  // delete takes a semester of education records with it. A deactivated professor
+  // keeps every row; login and every outstanding token stop working instead.
+  deactivatedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  classes       Class[]
 }
 
 model Student {
@@ -32,7 +40,11 @@ model Student {
 model Class {
   id                String         @id @default(cuid())
   professorId       String
-  professor         Professor      @relation(fields: [professorId], references: [id], onDelete: Cascade)
+  // Restrict, not Cascade: deleting a professor must never silently take a
+  // semester of responses with it. There is deliberately no path in the app that
+  // deletes a professor — admins deactivate instead — so this guards raw SQL,
+  // Prisma Studio, and future scripts: transfer or delete the classes first.
+  professor         Professor      @relation(fields: [professorId], references: [id], onDelete: Restrict)
   name              String
   description       String?
   joinCode          String         @unique
@@ -88,7 +100,7 @@ model Enrollment {
   @@id([studentId, classId])
 }
 
-// ─── IN_CLASS ─────────────────────────────────────────────────────────────────
+// âââ IN_CLASS âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 model Session {
   id         String          @id @default(cuid())
@@ -121,7 +133,7 @@ model SessionRun {
   @@index([sectionId])
 }
 
-// ─── HOMEWORK ─────────────────────────────────────────────────────────────────
+// âââ HOMEWORK âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 model Assignment {
   id         String              @id @default(cuid())
@@ -166,7 +178,7 @@ model QuestionGroup {
   @@index([assignmentId])
 }
 
-// ─── Shared ───────────────────────────────────────────────────────────────────
+// âââ Shared âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 enum SessionStatus {
   DRAFT
@@ -206,7 +218,7 @@ model Question {
   // null = inherit Class.liveThemesDefault. FREE_TEXT only; ignored for other types.
   liveThemes    Boolean?
   // null = inherit Class.autoCloseDefault. Unlike liveThemes this applies to every
-  // question type — the answer key is most worth protecting on the objective ones.
+  // question type â the answer key is most worth protecting on the objective ones.
   autoClose     Boolean?
   responses     Response[]
   themeSets     ThemeSet[]
@@ -238,7 +250,7 @@ model Response {
   @@index([studentId])
 }
 
-// ─── Live AI themes ───────────────────────────────────────────────────────────
+// âââ Live AI themes âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 //
 // Categories for a FREE_TEXT question, derived once from the first answers and then
 // assigned to each subsequent answer as it lands. See live_ai_themes_spec.md.
@@ -294,8 +306,8 @@ model ThemeCategory {
 }
 
 // A response's category assignment. Deliberately a separate table rather than a column
-// on Response: Response is hot and widely selected — including by the identity-stripped
-// /addin/live payload — so an AI-feature foreign key there would widen every query that
+// on Response: Response is hot and widely selected â including by the identity-stripped
+// /addin/live payload â so an AI-feature foreign key there would widen every query that
 // touches it. Counts come from a groupBy here, so they can never go stale.
 model ResponseTheme {
   id         String        @id @default(cuid())

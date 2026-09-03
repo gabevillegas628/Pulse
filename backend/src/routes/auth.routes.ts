@@ -7,6 +7,7 @@ import { prisma } from '../db/index.js'
 import { config } from '../config/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { requireProfessor, requireStudent, ProfessorRequest, StudentRequest } from '../middleware/auth.middleware.js'
+import { rutgersEmail } from '../utils/validation.js'
 
 const router = Router()
 
@@ -56,11 +57,6 @@ const loginRateLimiter = rateLimit({
   },
   message: { success: false, error: 'Too many failed sign-in attempts for this account. Please try again in 15 minutes.' },
 })
-
-const rutgersEmail = z.string().email().refine(
-  (v) => v.split('@')[1]?.endsWith('rutgers.edu'),
-  { message: 'Must be a rutgers.edu email address' }
-)
 
 const professorRegisterSchema = z.object({
   name: z.string().min(1),
@@ -119,6 +115,10 @@ router.post('/professor/login', loginRateLimiter, async (req: Request, res: Resp
 
     const valid = await bcrypt.compare(body.password, professor.passwordHash)
     if (!valid) throw new AppError('Invalid credentials', 401)
+
+    // After the password check, so whether an account is deactivated is never
+    // leaked to someone guessing at it.
+    if (professor.deactivatedAt) throw new AppError('This account has been deactivated', 403)
 
     const token = jwt.sign({ sub: professor.id, role: 'professor' }, config.jwtSecret, {
       expiresIn: config.jwtExpiresIn as unknown as number,
