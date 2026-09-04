@@ -116,7 +116,9 @@ router.get('/professors', async (_req: Request, res: Response, next: NextFunctio
 router.post('/professors', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = createProfessorSchema.parse(req.body)
-    const existing = await prisma.professor.findUnique({ where: { email: body.email } })
+    const existing = await prisma.professor.findFirst({
+      where: { email: { equals: body.email, mode: 'insensitive' } },
+    })
     if (existing) throw new AppError('Email already in use', 409)
 
     const passwordHash = await bcrypt.hash(body.password, 12)

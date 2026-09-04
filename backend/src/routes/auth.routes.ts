@@ -19,7 +19,11 @@ const professorRegisterSchema = z.object({
 })
 
 const professorLoginSchema = z.object({
-  email: z.string().email(),
+  // Trimmed for the same reason the student credential is: a pasted address arrives
+  // with padding often enough, and an exact-match lookup treats that as a different
+  // person. Not narrowed to rutgersEmail — this is a door for accounts that already
+  // exist, and it is not login's job to re-litigate what address they were made with.
+  email: z.string().trim().email(),
   password: z.string().min(1),
 })
 
@@ -44,7 +48,9 @@ router.post('/professor/register', async (req: Request, res: Response, next: Nex
     const body = professorRegisterSchema.parse(req.body)
     if (!config.professorInviteCode || body.inviteCode !== config.professorInviteCode)
       throw new AppError('Invalid invite code', 403)
-    const existing = await prisma.professor.findUnique({ where: { email: body.email } })
+    const existing = await prisma.professor.findFirst({
+      where: { email: { equals: body.email, mode: 'insensitive' } },
+    })
     if (existing) throw new AppError('Email already in use', 409)
 
     const passwordHash = await bcrypt.hash(body.password, 12)
@@ -66,7 +72,13 @@ router.post('/professor/register', async (req: Request, res: Response, next: Nex
 router.post('/professor/login', loginRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = professorLoginSchema.parse(req.body)
-    const professor = await prisma.professor.findUnique({ where: { email: body.email } })
+    // Case-insensitive for the reason the student lookup is: an address is the same
+    // address whatever case it is typed in, and an exact match meant a professor who
+    // capitalised their own email missed their row and spent one of that account's
+    // ten attempts doing it.
+    const professor = await prisma.professor.findFirst({
+      where: { email: { equals: body.email, mode: 'insensitive' } },
+    })
     if (!professor) throw new AppError('Invalid credentials', 401)
 
     const valid = await bcrypt.compare(body.password, professor.passwordHash)
