@@ -11,7 +11,15 @@ import { apiError } from '@/lib/errors'
 type Role = 'student' | 'professor'
 
 const studentSchema = z.object({
-  netId: z.string().min(1, 'Enter your NetID'),
+  // Mirrors the server's rule (backend/src/utils/validation.ts) so a student is told
+  // at the field rather than by a 400 after submitting. Trimmed and lowercased here
+  // too, so what reaches the API is already the form it will be stored in.
+  netId: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(1, 'Enter your NetID')
+    .regex(/^[a-z]{1,8}[0-9]{1,6}$/, 'Just your NetID — letters then numbers, like abc123'),
   email: z.string().email('Enter a valid email'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
 })

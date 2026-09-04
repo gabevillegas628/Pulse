@@ -7,7 +7,7 @@ import { prisma } from '../db/index.js'
 import { config } from '../config/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { requireProfessor, requireStudent, ProfessorRequest, StudentRequest } from '../middleware/auth.middleware.js'
-import { rutgersEmail } from '../utils/validation.js'
+import { rutgersEmail, netId } from '../utils/validation.js'
 
 const router = Router()
 
@@ -71,13 +71,16 @@ const professorLoginSchema = z.object({
 })
 
 const studentRegisterSchema = z.object({
-  netId: z.string().min(1),
+  netId,
   email: rutgersEmail,
   password: z.string().min(8),
 })
 
 const studentLoginSchema = z.object({
-  credential: z.string().min(1),
+  // Trimmed and lowercased to match how NetIDs are now stored, and how the throttle
+  // above already keys them. Without this a student who typed `SK2997` missed their
+  // own row and still spent one of that account's ten attempts.
+  credential: z.string().trim().toLowerCase().min(1),
   password: z.string().min(1),
 })
 
@@ -162,7 +165,12 @@ router.post('/student/register', async (req: Request, res: Response, next: NextF
   try {
     const body = studentRegisterSchema.parse(req.body)
     const existing = await prisma.student.findFirst({
-      where: { OR: [{ email: body.email }, { netId: body.netId }] },
+      where: {
+        OR: [
+          { email: { equals: body.email, mode: 'insensitive' } },
+          { netId: { equals: body.netId, mode: 'insensitive' } },
+        ],
+      },
     })
     if (existing) throw new AppError('Email or NetID already in use', 409)
 
@@ -186,7 +194,12 @@ router.post('/student/login', loginRateLimiter, async (req: Request, res: Respon
   try {
     const body = studentLoginSchema.parse(req.body)
     const student = await prisma.student.findFirst({
-      where: { OR: [{ email: body.credential }, { netId: body.credential }] },
+      where: {
+        OR: [
+          { email: { equals: body.credential, mode: 'insensitive' } },
+          { netId: { equals: body.credential, mode: 'insensitive' } },
+        ],
+      },
     })
     if (!student) throw new AppError('Invalid credentials', 401)
 
