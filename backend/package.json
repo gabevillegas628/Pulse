@@ -19,6 +19,7 @@
     "test:smoke:socket": "tsx scripts/smoke-socket-auth.ts",
     "test:smoke:admin": "tsx scripts/smoke-admin.ts",
     "test:smoke:autoclose": "tsx scripts/smoke-autoclose.ts",
+    "test:smoke:reset": "tsx scripts/smoke-password-reset.ts",
     "rehearse": "tsx scripts/rehearse.ts"
   },
   "prisma": {

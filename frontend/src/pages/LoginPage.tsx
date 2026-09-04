@@ -118,6 +118,9 @@ export default function LoginPage() {
                     <p className="text-red-500 text-xs mt-1">{studentForm.formState.errors.password.message}</p>
                   )}
                 </div>
+                <div className="text-right -mt-2">
+                  <Link to="/forgot-password" className="text-sm text-signal">Forgot password?</Link>
+                </div>
                 {error && <p className="text-red-500 text-sm bg-red-50 rounded-sm px-3 py-2">{error}</p>}
                 <button
                   type="submit"

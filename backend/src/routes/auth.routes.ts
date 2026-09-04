@@ -7,7 +7,17 @@ import { config } from '../config/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { requireProfessor, requireStudent, ProfessorRequest, StudentRequest } from '../middleware/auth.middleware.js'
 import { rutgersEmail, netId, personName } from '../utils/validation.js'
-import { loginRateLimiter } from '../middleware/login-throttle.js'
+import {
+  loginRateLimiter,
+  passwordResetAccountLimiter,
+  passwordResetIpLimiter,
+} from '../middleware/login-throttle.js'
+import {
+  sendPasswordResetEmail,
+  verifyResetToken,
+  redeemResetToken,
+} from '../services/password-reset.service.js'
+import { captureException } from '../utils/reporting.js'
 
 const router = Router()
 
@@ -201,6 +211,100 @@ router.patch('/student/me/password', requireStudent, async (req: Request, res: R
     const passwordHash = await bcrypt.hash(newPassword, 12)
     await prisma.student.update({ where: { id: student.id }, data: { passwordHash } })
 
+    res.json({ success: true, data: null })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// --- Student password reset ---
+
+/**
+ * The three routes below are the self-service half of password recovery. The other
+ * half — a professor resetting a student from the class roster — stays exactly as it
+ * was, and is still the only path for a student whose email address on file is wrong.
+ *
+ * `token` travels in the body on all three, never in a path segment: paths reach
+ * access logs whole, and a reset token in a log line is a working key to an account.
+ */
+
+const forgotPasswordSchema = z.object({
+  // Same shape as the login credential: a student who has forgotten their password
+  // has certainly not memorised which of the two identifiers we store them under.
+  credential: z.string().trim().toLowerCase().min(1),
+})
+
+const resetTokenSchema = z.object({ token: z.string().min(1) })
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(1),
+  // Matched to registration and to the signed-in change. A reset is not the place to
+  // start enforcing a rule the other two doors do not.
+  newPassword: z.string().min(8),
+})
+
+/**
+ * Ask for a reset link.
+ *
+ * Answers identically whether or not the account exists, and does not wait for the
+ * mail to be handed to Brevo before replying. Both are the same requirement: this
+ * endpoint must not become a way to find out who has a Pulse account, and a response
+ * that is half a second slower for real accounts says so just as loudly as a
+ * different message would.
+ */
+router.post(
+  '/student/forgot-password',
+  passwordResetIpLimiter,
+  passwordResetAccountLimiter,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const body = forgotPasswordSchema.parse(req.body)
+
+      const student = await prisma.student.findFirst({
+        where: {
+          OR: [
+            { email: { equals: body.credential, mode: 'insensitive' } },
+            { netId: { equals: body.credential, mode: 'insensitive' } },
+          ],
+        },
+        select: { id: true, netId: true, email: true },
+      })
+
+      if (student) {
+        void sendPasswordResetEmail(student).catch((err) =>
+          captureException(err, { source: 'forgot-password' })
+        )
+      }
+
+      res.json({
+        success: true,
+        data: { message: 'If that account exists, a reset link is on its way to its Rutgers email.' },
+      })
+    } catch (err) {
+      next(err)
+    }
+  }
+)
+
+/**
+ * Check a link without spending it, so the page can say "this expired" before a
+ * student picks a password rather than after they submit one.
+ */
+router.post('/student/reset-password/verify', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { token } = resetTokenSchema.parse(req.body)
+    const { netId } = await verifyResetToken(token)
+    res.json({ success: true, data: { netId } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/** Spend a link and set the new password. */
+router.post('/student/reset-password', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = resetPasswordSchema.parse(req.body)
+    await redeemResetToken(body.token, body.newPassword)
     res.json({ success: true, data: null })
   } catch (err) {
     next(err)

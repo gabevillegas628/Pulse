@@ -26,15 +26,41 @@ model Professor {
 }
 
 model Student {
-  id           String              @id @default(cuid())
-  netId        String              @unique
-  email        String              @unique
+  id           String               @id @default(cuid())
+  netId        String               @unique
+  email        String               @unique
   passwordHash String
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
   enrollments  Enrollment[]
   responses    Response[]
   extensions   DeadlineExtension[]
+  resetTokens  PasswordResetToken[]
+}
+
+// A pending 'forgot password' link. Rows are the tokens themselves, not a field on
+// Student, so a student can be issued a second link without the first one being
+// silently overwritten mid-flight — both exist, and claiming either retires the rest.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  studentId String
+  student   Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  // The SHA-256 of the token, never the token. A read of this table — a backup, a
+  // Studio window, a leaked dump — must not hand anyone a working reset link.
+  // SHA-256 rather than bcrypt because the token is 32 random bytes and there is
+  // nothing to guess, and because the lookup has to be an indexed read of one row
+  // rather than a scan that bcrypt-compares every outstanding token.
+  tokenHash String    @unique
+  expiresAt DateTime
+  // Set when the link is spent. Kept rather than deleted so a student who clicks
+  // their emailed link twice is told it was already used instead of that it never
+  // existed, which is the difference between a clear message and a support email.
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([studentId])
+  // The sweep that deletes dead rows orders by this.
+  @@index([expiresAt])
 }
 
 model Class {

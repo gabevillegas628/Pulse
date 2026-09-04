@@ -1,5 +1,5 @@
 import { Request, Response } from 'express'
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
+import rateLimit, { ipKeyGenerator, type Options } from 'express-rate-limit'
 
 /**
  * Login throttling, keyed on the account rather than the caller's address.
@@ -46,6 +46,62 @@ export const loginRateLimiter = rateLimit({
     res.status(options.statusCode).json(options.message)
   },
   message: { success: false, error: 'Too many failed sign-in attempts for this account. Please try again in 15 minutes.' },
+})
+
+/**
+ * Throttling for `forgot password`, which is a different risk from a wrong password
+ * and needs two keys rather than one.
+ *
+ * By account, tightly: the request causes mail to be sent to a student who did not
+ * ask for it, so an unbounded endpoint is a way to bury one person's inbox. Three an
+ * hour is more than a student who genuinely lost their password will ever need.
+ *
+ * By address, loosely: what the account key cannot see is one caller walking a roster
+ * of NetIDs, each of which sits under its own separate limit. The ceiling is
+ * deliberately high because of the lecture-hall NAT problem this file exists for — a
+ * room shares one egress address — but a room does not collectively forget its
+ * passwords, so twenty an hour separates a bad afternoon from a script.
+ *
+ * Both count every request, successful or not: what is being rationed is mail sent to
+ * someone else, and the route deliberately never reports whether it sent any.
+ */
+const RESET_WINDOW_MS = 60 * 60 * 1000
+
+const resetThrottleHandler: Options['handler'] = (req, res, _next, options) => {
+  const key = (req as Request & { rateLimit?: { key?: string } }).rateLimit?.key
+  res.locals.refusalReason = `password reset throttled (${key ?? 'unknown key'})`
+  res.status(options.statusCode).json(options.message)
+}
+
+export const passwordResetAccountLimiter = rateLimit({
+  windowMs: RESET_WINDOW_MS,
+  max: 3,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const credential = (req.body as { credential?: unknown } | undefined)?.credential
+    return typeof credential === 'string'
+      ? `reset-acct:${credential.trim().toLowerCase()}`
+      : `reset-ip:${ipKeyGenerator(req.ip ?? '')}`
+  },
+  handler: resetThrottleHandler,
+  message: {
+    success: false,
+    error: 'Too many reset requests for this account. Please check your email, or try again in an hour.',
+  },
+})
+
+export const passwordResetIpLimiter = rateLimit({
+  windowMs: RESET_WINDOW_MS,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `reset-ip:${ipKeyGenerator(req.ip ?? '')}`,
+  handler: resetThrottleHandler,
+  message: {
+    success: false,
+    error: 'Too many reset requests from this connection. Please try again in an hour.',
+  },
 })
 
 /**

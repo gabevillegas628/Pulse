@@ -7,6 +7,8 @@ import SessionExpiredModal from '@/components/SessionExpiredModal'
 
 import LoginPage from '@/pages/LoginPage'
 import RegisterPage from '@/pages/RegisterPage'
+import ForgotPasswordPage from '@/pages/ForgotPasswordPage'
+import ResetPasswordPage from '@/pages/ResetPasswordPage'
 
 // Professor pages
 import DashboardPage from '@/pages/professor/DashboardPage'
@@ -103,6 +105,8 @@ export default function App() {
         {/* Unified auth */}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
 
         {/* Legacy redirects */}
         <Route path="/professor/login" element={<Navigate to="/login?role=professor" replace />} />
