@@ -180,8 +180,8 @@ export default function LoginPage() {
         {role === 'student' && (
           <div className="mt-5 text-center">
             <p className="text-sm text-muted">
-              Have a 4-digit class code?{' '}
-              <Link to="/student/code" className="text-signal">Enter it here</Link>
+              Have a 4-digit question code?{' '}
+              <Link to="/student/enter-code" className="text-signal">Enter it here</Link>
             </p>
           </div>
         )}
