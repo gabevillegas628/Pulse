@@ -28,7 +28,11 @@ export async function renderQrCard(options: QrCardOptions): Promise<HTMLCanvasEl
 
   const accent = 7, pad = 20, radius = 14, shadowPad = 24
   const qrSize = 140, rightWidth = 260, maxCardH = 300
-  const codeFont = 'bold 22px "Courier New", monospace'
+  // The code is what the room reads; the QR is for the few close enough to scan it.
+  // Sized to nearly fill the QR column rather than sit politely under it — at the old
+  // 22px, one projected 1672 came back as 1692, 1675 and 1472 in a single lecture.
+  const codeTargetSize = 48
+  const codeFamily = '"Courier New", monospace'
   const qTextFont = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
   const lineH = 28
 
@@ -58,8 +62,21 @@ export async function renderQrCard(options: QrCardOptions): Promise<HTMLCanvasEl
     return lines
   }
 
+  // Shrink to fit if a code is ever longer than the four digits minted today, so a
+  // wider code narrows instead of spilling past the QR column into the divider.
+  let codeSize = codeTargetSize
+  while (codeSize > 12) {
+    m.font = `bold ${codeSize}px ${codeFamily}`
+    if (m.measureText(accessCode).width <= qrSize) break
+    codeSize--
+  }
+  const codeFont = `bold ${codeSize}px ${codeFamily}`
+  // Derived from the fitted size so the reserved line box cannot drift from the font
+  // and clip the code — the failure the previous hardcoded 26 was one edit away from.
+  const codeH = Math.ceil(codeSize * 1.2)
+
   const qLines = wrapText(questionText, rightWidth, qTextFont)
-  const leftH = pad + qrSize + 8 + 26 + pad
+  const leftH = pad + qrSize + 8 + codeH + pad
   const rightH = pad + qLines.length * lineH + pad
   const H = Math.min(Math.max(leftH, rightH), maxCardH)
 
@@ -110,7 +127,7 @@ export async function renderQrCard(options: QrCardOptions): Promise<HTMLCanvasEl
   ctx.fillRect(ox, oy, accent, H)
 
   // QR — vertically centered for QR+code block
-  const blockH = qrSize + 8 + 26
+  const blockH = qrSize + 8 + codeH
   const qrY = oy + (H - blockH) / 2
   ctx.drawImage(img, ox + accent + pad, qrY, qrSize, qrSize)
 
