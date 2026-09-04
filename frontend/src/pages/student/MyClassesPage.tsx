@@ -194,7 +194,7 @@ export default function MyClassesPage() {
       )}
 
       <PasswordChangeModal
-        endpoint="/student/me/password"
+        endpoint="/auth/student/me/password"
         open={showPwModal}
         onClose={() => setShowPwModal(false)}
       />
