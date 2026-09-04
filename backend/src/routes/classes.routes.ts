@@ -5,6 +5,7 @@ import { customAlphabet } from 'nanoid'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../db/index.js'
 import { AppError } from '../middleware/error.middleware.js'
+import { clearLoginThrottle } from '../middleware/login-throttle.js'
 import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
 import { ownedClass } from '../utils/ownership.js'
 import { gradeSession } from '../utils/scoring.js'
@@ -697,10 +698,17 @@ router.post('/:id/students/:studentId/reset-password', async (req: Request, res:
     if (!enrollment) throw new AppError('Student not in this class', 404)
 
     const passwordHash = await bcrypt.hash(newPassword, 12)
-    await prisma.student.update({
+    const student = await prisma.student.update({
       where: { id: p(req.params.studentId) },
       data: { passwordHash },
+      select: { netId: true, email: true },
     })
+
+    // A student being reset is usually a student the throttle has already locked out —
+    // that is what sent them to their professor. Leaving the bucket behind meant the
+    // new password earned another 429 and the reset changed nothing for a quarter of
+    // an hour, in a room where the question closes in ninety seconds.
+    await clearLoginThrottle(student.netId, student.email)
 
     res.json({ success: true, data: null })
   } catch (err) {
