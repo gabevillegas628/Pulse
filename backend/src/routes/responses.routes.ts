@@ -272,20 +272,20 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
       const openRun = sess.runs.find(
         (r) => r.sectionId === null || r.sectionId === studentSectionId
       )
-      if (!openRun) throw new AppError('Session is not open', 409)
+      if (!openRun) throw new AppError('Session is not open', 409, 'SESSION_CLOSED')
 
       // The countdown ran out on this question. Checked here rather than only in the
       // UI: refusing late answers is the entire point, so a stale client tab, a
       // replayed request or a harvested access code must all hit the same wall.
       if (autoCloseEnabled(question, sess.class) && !isOpen(openRun.id, questionId)) {
-        throw new AppError('This question has closed', 409)
+        throw new AppError('This question has closed', 409, 'QUESTION_CLOSED')
       }
 
       // IN_CLASS: reject if already answered (clicker answers are final)
       const existing = await prisma.response.findUnique({
         where: { questionId_studentId: { questionId, studentId: student.id } },
       })
-      if (existing) throw new AppError('Already answered', 409)
+      if (existing) throw new AppError('Already answered', 409, 'ALREADY_ANSWERED')
 
       // The check above is not the guard — the unique constraint is. A double-tapped
       // button or a retried request can put two creates between that findUnique and
@@ -305,7 +305,7 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
           },
         })
       } catch (err) {
-        if (isUniqueViolation(err)) throw new AppError('Already answered', 409)
+        if (isUniqueViolation(err)) throw new AppError('Already answered', 409, 'ALREADY_ANSWERED')
         throw err
       }
 

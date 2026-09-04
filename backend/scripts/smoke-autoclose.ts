@@ -508,6 +508,13 @@ async function main() {
       check('a late answer is refused', late.status === 409, `status ${late.status}`)
       check('the refusal says why', /closed/i.test((late.body as any)?.error ?? ''),
         JSON.stringify((late.body as any)?.error))
+      // The student page branches on this code to flip itself to the closed state.
+      // Without it the form stays live and a student whose socket dropped can
+      // re-submit as fast as they can tap — one lecture logged fourteen POSTs in
+      // under four seconds, all refused.
+      check('the refusal carries a code the client can act on',
+        (late.body as any)?.code === 'QUESTION_CLOSED',
+        JSON.stringify((late.body as any)?.code))
 
       const lateInDb = await prisma.response.count({
         where: { questionId: timed.question.id, studentId: timed.students[VOTERS]!.id },

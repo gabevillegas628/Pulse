@@ -6,7 +6,7 @@ import { useStudentAuth } from '@/context/StudentAuthContext'
 import StudentLayout from '@/components/layout/StudentLayout'
 import { io } from 'socket.io-client'
 import type { StudentQuestion } from 'shared'
-import { apiError } from '@/lib/errors'
+import { apiError, apiErrorCode } from '@/lib/errors'
 import {
   DndContext,
   closestCenter,
@@ -130,6 +130,15 @@ export default function QuestionPage() {
       await api.post('/responses', { questionId: question.id, responseText })
       navigate(`/q/${question.id}/confirmation`)
     } catch (e: unknown) {
+      // The server is the authority on whether this question is still taking
+      // answers, and its refusal is the same news the socket carries. Treating it
+      // only as a message to display left the form live: a student whose socket
+      // dropped never saw the close, and could re-submit into a wall as fast as
+      // they could tap. One lecture produced fourteen POSTs in under four seconds.
+      const code = apiErrorCode(e)
+      if (code === 'QUESTION_CLOSED') { setQuestionClosed(true); return }
+      if (code === 'SESSION_CLOSED') { setSessionClosed(true); return }
+      if (code === 'ALREADY_ANSWERED') { setQuestion((q) => q && { ...q, alreadyAnswered: true }); return }
       setSubmitError(apiError(e, 'Submission failed — please try again'))
     }
   }

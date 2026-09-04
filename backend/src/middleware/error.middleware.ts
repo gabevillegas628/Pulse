@@ -7,7 +7,14 @@ import { captureException } from '../utils/reporting.js'
 export class AppError extends Error {
   constructor(
     public message: string,
-    public statusCode: number = 500
+    public statusCode: number = 500,
+    /**
+     * Stable identifier for refusals a client must *act* on rather than merely
+     * display. The message is prose meant for a student and gets reworded; a
+     * client that branches on it breaks silently the first time someone edits
+     * the wording. Only the refusals that change client behaviour carry one.
+     */
+    public code?: string
   ) {
     super(message)
     this.name = 'AppError'
@@ -35,7 +42,11 @@ export function errorMiddleware(
     // whole question. Handed to requestLogger rather than logged here, so a refusal
     // costs one line carrying both the reason and who hit it.
     res.locals.refusalReason = err.message
-    res.status(err.statusCode).json({ success: false, error: err.message })
+    res.status(err.statusCode).json({
+      success: false,
+      error: err.message,
+      ...(err.code ? { code: err.code } : {}),
+    })
     return
   }
 
