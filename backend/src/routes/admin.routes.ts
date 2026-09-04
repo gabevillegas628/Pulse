@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { prisma } from '../db/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { requireAdmin, ProfessorRequest } from '../middleware/auth.middleware.js'
-import { rutgersEmail } from '../utils/validation.js'
+import { rutgersEmail, personName } from '../utils/validation.js'
 import { p } from '../utils/params.js'
 
 /**
@@ -31,7 +31,7 @@ const router = Router()
 router.use(requireAdmin)
 
 const createProfessorSchema = z.object({
-  name: z.string().min(1),
+  name: personName,
   email: rutgersEmail,
   // A temporary password the admin hands over out of band; the professor changes
   // it from the header menu. Self-service reset is its own register row.

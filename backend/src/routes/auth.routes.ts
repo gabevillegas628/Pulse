@@ -6,13 +6,13 @@ import { prisma } from '../db/index.js'
 import { config } from '../config/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { requireProfessor, requireStudent, ProfessorRequest, StudentRequest } from '../middleware/auth.middleware.js'
-import { rutgersEmail, netId } from '../utils/validation.js'
+import { rutgersEmail, netId, personName } from '../utils/validation.js'
 import { loginRateLimiter } from '../middleware/login-throttle.js'
 
 const router = Router()
 
 const professorRegisterSchema = z.object({
-  name: z.string().min(1),
+  name: personName,
   email: rutgersEmail,
   password: z.string().min(8),
   inviteCode: z.string().min(1),

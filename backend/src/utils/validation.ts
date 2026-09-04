@@ -5,7 +5,7 @@ import { z } from 'zod'
  * invite code or is created for someone by an admin. One definition, so the two
  * doors can't drift apart on what counts as a Rutgers address.
  */
-export const rutgersEmail = z.string().email().refine(
+export const rutgersEmail = z.string().trim().email().refine(
   (v) => v.split('@')[1]?.endsWith('rutgers.edu'),
   { message: 'Must be a rutgers.edu email address' }
 )
@@ -31,3 +31,13 @@ export const netId = z
     /^[a-z]{1,8}[0-9]{1,6}$/,
     'A NetID is letters followed by numbers, like abc123 — no spaces, punctuation, or full email addresses'
   )
+
+/**
+ * A person's name on an account.
+ *
+ * Trimmed before the length check, not after: `z.string().min(1)` is satisfied by
+ * three spaces, so without the trim an account could be created whose name renders
+ * as nothing at all. Both doors that create a professor — self-registration and an
+ * admin creating one — share this for the same reason they share the email rule.
+ */
+export const personName = z.string().trim().min(1, 'Enter a name')
