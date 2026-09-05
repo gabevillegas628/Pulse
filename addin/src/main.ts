@@ -66,6 +66,7 @@ function wireEvents() {
   })
   $('class-select').addEventListener('change', onClassChange)
   $('session-select').addEventListener('change', onSessionChange)
+  $('picker-reload').addEventListener('click', () => void onPickerReload())
   $('insert-btn').addEventListener('click', onInsert)
   $('verify-btn').addEventListener('click', () => void runVerify())
   $('sync-btn').addEventListener('click', onSync)
@@ -114,10 +115,10 @@ async function showSignedIn() {
   show('signed-out', false)
   show('signed-in', true)
   try {
-    classes = await listClasses()
     deckClassId = await getDeckClassId()
-    renderClassOptions()
-    await onClassChange()
+    await loadClasses()
+    await loadSessions()
+    await loadQuestions()
     await runVerify()
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) return showSignedOut()
@@ -127,8 +128,15 @@ async function showSignedIn() {
 
 // ─── Picker ───────────────────────────────────────────────────────────────────
 
-function renderClassOptions() {
+/**
+ * Each loader re-renders one dropdown and keeps whatever was selected if it is still
+ * there, so a reload never yanks the professor off the row they were about to insert.
+ */
+
+async function loadClasses(): Promise<void> {
   const select = $('class-select') as HTMLSelectElement
+  const previous = select.value
+  classes = await listClasses()
   select.innerHTML = classes
     .map((c) => {
       // Description carries the semester, which is what distinguishes two classes
@@ -137,43 +145,106 @@ function renderClassOptions() {
       return `<option value="${c.id}">${escapeHtml(label)}</option>`
     })
     .join('')
-  // Default to whatever class this deck is already bound to
-  if (deckClassId && classes.some((c) => c.id === deckClassId)) select.value = deckClassId
+  // Prefer where the professor already was, then whatever class this deck is bound to.
+  const wanted = [previous, deckClassId].find((id) => id && classes.some((c) => c.id === id))
+  if (wanted) select.value = wanted
+}
+
+async function loadSessions(): Promise<void> {
+  const classId = ($('class-select') as HTMLSelectElement).value
+  const select = $('session-select') as HTMLSelectElement
+  const previous = select.value
+  if (!classId) {
+    sessions = []
+    select.innerHTML = ''
+    return
+  }
+  sessions = await listSessions(classId)
+  select.innerHTML = sessions
+    .map((s) => `<option value="${s.id}">${escapeHtml(s.title)} (${s._count?.questions ?? 0})</option>`)
+    .join('')
+  if (sessions.some((s) => s.id === previous)) select.value = previous
+}
+
+async function loadQuestions(): Promise<void> {
+  const sessionId = ($('session-select') as HTMLSelectElement).value
+  const select = $('question-select') as HTMLSelectElement
+  const previous = select.value
+  if (!sessionId) {
+    questions = []
+    select.innerHTML = ''
+    return
+  }
+  const session = await getSession(sessionId)
+  questions = session.questions
+  select.innerHTML = questions
+    .map((q, i) => `<option value="${q.id}">Q${i + 1} — ${escapeHtml(questionLabel(q))}</option>`)
+    .join('')
+  if (questions.some((q) => q.id === previous)) select.value = previous
 }
 
 async function onClassChange() {
-  const classId = (($('class-select') as HTMLSelectElement).value) || null
-  const sessionSelect = $('session-select') as HTMLSelectElement
-  if (!classId) {
-    sessionSelect.innerHTML = ''
-    return
-  }
   try {
-    sessions = await listSessions(classId)
-    sessionSelect.innerHTML = sessions
-      .map((s) => `<option value="${s.id}">${escapeHtml(s.title)} (${s._count?.questions ?? 0})</option>`)
-      .join('')
-    await onSessionChange()
+    await loadSessions()
+    await loadQuestions()
   } catch (err) {
     setStatus('insert-status', errText(err), 'error')
   }
 }
 
 async function onSessionChange() {
-  const sessionId = ($('session-select') as HTMLSelectElement).value
-  const questionSelect = $('question-select') as HTMLSelectElement
-  if (!sessionId) {
-    questionSelect.innerHTML = ''
-    return
-  }
   try {
-    const session = await getSession(sessionId)
-    questions = session.questions
-    questionSelect.innerHTML = questions
-      .map((q, i) => `<option value="${q.id}">Q${i + 1} — ${escapeHtml(questionLabel(q))}</option>`)
-      .join('')
+    await loadQuestions()
   } catch (err) {
     setStatus('insert-status', errText(err), 'error')
+  }
+}
+
+/**
+ * Pull the picker fresh without leaving the deck.
+ *
+ * The lists are loaded once when the pane opens, so a question written in the browser
+ * mid-lecture is invisible here until something re-fetches. Sessions come along too — a
+ * new question often arrives in a brand new session. Anything that appeared since the
+ * last load is called out, and a single new question is selected outright, because that
+ * is almost always the one just written and the one about to be inserted.
+ */
+async function onPickerReload(): Promise<void> {
+  const button = $('picker-reload') as HTMLButtonElement
+  const questionSelect = $('question-select') as HTMLSelectElement
+  const sessionBefore = ($('session-select') as HTMLSelectElement).value
+  const idsBefore = new Set(questions.map((q) => q.id))
+
+  button.disabled = true
+  setStatus('insert-status', 'Reloading…', 'muted')
+  try {
+    await loadClasses()
+    await loadSessions()
+    await loadQuestions()
+
+    // Only meaningful when we are still looking at the same session as before.
+    const sessionAfter = ($('session-select') as HTMLSelectElement).value
+    const added =
+      sessionAfter === sessionBefore ? questions.filter((q) => !idsBefore.has(q.id)) : []
+
+    if (added.length === 0) {
+      setStatus('insert-status', 'Up to date — nothing new.', 'muted')
+      return
+    }
+    const newest = added[added.length - 1]
+    questionSelect.value = newest.id
+    setStatus(
+      'insert-status',
+      added.length === 1
+        ? `New: ${questionLabel(newest)} — selected.`
+        : `${added.length} new questions — ${questionLabel(newest)} selected.`,
+      'ok'
+    )
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) return showSignedOut()
+    setStatus('insert-status', errText(err), 'error')
+  } finally {
+    button.disabled = false
   }
 }
 
