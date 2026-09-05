@@ -57,10 +57,22 @@ export const loginRateLimiter = rateLimit({
  * hour is more than a student who genuinely lost their password will ever need.
  *
  * By address, loosely: what the account key cannot see is one caller walking a roster
- * of NetIDs, each of which sits under its own separate limit. The ceiling is
- * deliberately high because of the lecture-hall NAT problem this file exists for — a
- * room shares one egress address — but a room does not collectively forget its
- * passwords, so twenty an hour separates a bad afternoon from a script.
+ * of NetIDs, each of which sits under its own separate limit. The ceiling has to clear
+ * the lecture-hall NAT problem this file exists for — a room shares one egress address
+ * — and the first attempt at it, twenty an hour, was set on the reasoning that a room
+ * does not collectively forget its passwords.
+ *
+ * A room does not have to. The account limit above allows three requests each, so it
+ * takes only seven students in one hall to exhaust twenty without any of them doing
+ * anything unusual — five per cent of a 140-seat lecture. The evening of 2026-09-04
+ * reached eighteen in a rolling hour from eight students, two below the ceiling, and
+ * that was while every send was failing; the number would be reached sooner, not
+ * later, once the mail works and more of the room reaches for it.
+ *
+ * Two hundred clears any single room asking its full allowance and still stops a
+ * script cold. The exposure this bounds is mail volume rather than disclosure — the
+ * route answers identically whether or not the account exists — and the per-account
+ * limit, not this one, is what protects any individual inbox.
  *
  * Both count every request, successful or not: what is being rationed is mail sent to
  * someone else, and the route deliberately never reports whether it sent any.
@@ -93,7 +105,7 @@ export const passwordResetAccountLimiter = rateLimit({
 
 export const passwordResetIpLimiter = rateLimit({
   windowMs: RESET_WINDOW_MS,
-  max: 20,
+  max: 200,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) => `reset-ip:${ipKeyGenerator(req.ip ?? '')}`,
