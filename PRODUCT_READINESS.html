@@ -398,13 +398,15 @@
     <h1>What it would take to run <em>Pulse</em> for someone else</h1>
     <p class="standfirst">Written ahead of the November talk, so there is a real answer when somebody says they'd like to use it. Three thresholds, what stands between here and each one, and what it actually costs to run.</p>
     <p class="standfirst"><strong>Updated 2 September 2026.</strong> Gate A is closed — four items fixed and a fifth withdrawn — and the first Gate B item with it: ownership is now enforced in one place rather than fifty. There is also a scratch database now, cloned from prod, which is what finally let the integration suites run.</p>
+    <p class="standfirst"><strong>Updated 3 September 2026.</strong> The admin role is closed — the second Gate B item: a system view, account creation, transfer, and deactivation, built without widening what ownership means. Deleting a professor is now refused by the database while their classes remain.</p>
+    <p class="standfirst"><strong>Updated 4 September 2026.</strong> Self-service password reset is closed — the third Gate B item. Brevo is wired in behind a provider-agnostic seam, the sending domain is authenticated, and a student who has forgotten their password no longer needs their professor to be in the room.</p>
 
     <dl class="status">
       <div><dt>Status</dt><dd>First full rollout</dd></div>
       <div><dt>Scope</dt><dd>1 course · ~140 seats</dd></div>
       <div><dt>Topology</dt><dd>Single instance</dd></div>
       <div><dt>Token spend</dt><dd>~$17 / semester</dd></div>
-      <div><dt>Assertions</dt><dd>192 · clock half in CI</dd></div>
+      <div><dt>Assertions</dt><dd>246 · clock half in CI</dd></div>
     </dl>
   </header>
 
@@ -414,7 +416,7 @@
       <h2>A well-built single-tenant app wearing a multi-tenant shape</h2>
       <p>The code is in better condition than most things at this stage. The hard parts — the arming threshold on the close countdown, monotonic deadlines, token renewal on activity, warming clocks from <code>Response.submittedAt</code> after a restart — are not just implemented but reasoned about in the comments. That is the part that is genuinely difficult to buy.</p>
       <p>What is missing is everything that assumes there is exactly one professor, one machine, and one person who cares when it breaks. None of it is deep, but it is broad, and it does not surface until a second person shows up. The list below is that list.</p>
-      <p>Testing is further along than it looks from the outside: there are 192 assertions in <code>backend/scripts/</code>, including a real unit suite for the clock driven on injected timestamps. All four suites pass. The clock half runs on every push; the other three have been run by hand against a clone of prod and want only a Postgres service in CI to join it — plus a decision about an API key, since one of them spends real tokens.</p>
+      <p>Testing is further along than it looks from the outside: there are 246 assertions in <code>backend/scripts/</code> across six suites, including a real unit suite for the clock driven on injected timestamps. All six pass. The clock half runs on every push; the other five have been run by hand against a clone of prod and want only a Postgres service in CI to join it — plus a decision about an API key, since one of them spends real tokens.</p>
     </div>
   </section>
 
@@ -436,7 +438,7 @@
         <span class="tag">Gate B</span>
         <h4>A second instructor at Rutgers</h4>
         <p>Someone you know, same institution, no contract. The bar shifts from "it works" to "it is isolated, recoverable, and doesn't need you in the room."</p>
-        <p class="verdict">Weeks of work. Account self-service is the bulk of what is left, now that ownership is enforced in one place.</p>
+        <p class="verdict">Weeks of work. The admin role and password reset are in; spend caps and a tested backup are the bulk of what is left.</p>
       </article>
       <article class="gate">
         <span class="tag">Gate C</span>
@@ -451,7 +453,7 @@
     <div class="col">
       <p class="kicker">Closed</p>
       <h2>What has actually been closed</h2>
-      <p>All of Gate A — four items, plus one that turned out not to be an item at all — and the first Gate B item, which was worth pulling forward because fixing it properly is what makes an admin role affordable later.</p>
+      <p>All of Gate A — four items, plus one that turned out not to be an item at all — and the first three Gate B items: ownership in one place, the admin role that consolidation was priced for, and self-service password reset.</p>
     </div>
 
     <div class="scroller">
@@ -468,6 +470,16 @@
             <th scope="row">Any professor could watch any lecture<span class="path">utils/ownership.ts · socket.ts</span></th>
             <td><span class="chip done">Fixed</span></td>
             <td>The reason it was possible is fixed along with it. Ownership used to be answered inline at 54 query sites; it now lives in one module as composable Prisma predicates, typed per model so a predicate spread into the wrong query is a compile error. <code>socket.ts</code> — the one caller that isn't a query — uses the same module to check the session is actually the professor's before admitting them to <code>{sessionId}:professor</code>. <code>smoke-socket-auth.ts</code> covers it with two professors and one session, asserting both the room decision the server reports and what actually arrives on each socket when a student answers. Nine assertions, all passing against a clone of prod.</td>
+          </tr>
+          <tr>
+            <th scope="row">No admin role<span class="path">routes/admin.routes.ts · scripts/make-admin.ts</span></th>
+            <td><span class="chip done">Built</span></td>
+            <td>Closed, minus one deliberate deviation from the plan: ownership was <em>not</em> widened. <code>ownedClass</code> still means "the class you created" for everyone; admin power exists only under <code>/api/admin</code>, so an admin in the normal UI is just a professor. Admin itself is a bit on <code>Professor</code>, read from the row <code>requireProfessor</code> already re-fetches on every request — never in the JWT, so granting and revoking take effect on the next request with no token to chase. The surface: a system view (every professor, every class, enrollment and submitted-answer counts, when the last answer landed — the forgotten account with 61 students would now be impossible to miss), account creation with a hand-over password (superseding the shared invite code as the door for colleague two; both doors kept), class transfer, and deactivation. Deactivation, not deletion — and <code>Class → Professor</code> flipped from <code>Cascade</code> to <code>Restrict</code>, so even raw SQL cannot take a semester of responses out through a professor row. Minting an admin is <code>scripts/make-admin.ts</code>, which takes database access — at one instance, the honest answer to "who admins the admins". <code>smoke-admin.ts</code>: 29 assertions, all passing against the clone.</td>
+          </tr>
+          <tr>
+            <th scope="row">No self-service password reset<span class="path">services/password-reset.service.ts · services/email.service.ts</span></th>
+            <td><span class="chip done">Built</span></td>
+            <td>Closed, and the mail provider it was waiting on is in with it. A student asks for a link with their NetID or email and gets one at the address on their account. The link carries 32 bytes from the CSPRNG and only its SHA-256 is stored, so a read of the table is not a set of working keys; it is checked before the form is shown, so a stale one says "expired" rather than failing after a password has been chosen; and redeeming it retires every other outstanding link. Requesting a reset cannot be used to discover who has an account — the response is byte-identical for an unknown NetID, and the send is not awaited, so a real account is not measurably slower to answer. A reset also clears the sign-in throttle, for the reason <code>clearLoginThrottle</code> already documented: the student resetting is usually the student the throttle locked out. Brevo over its HTTP API rather than SMTP, behind a provider-agnostic <code>sendEmail()</code>, so switching providers is one file; unconfigured in development it prints the link to the log instead of sending, which makes the flow testable with no API key. <strong>The professor-side reset is kept, not replaced</strong> — registration still never verifies an email address, so a student who typo'd theirs has no self-service path and still needs their professor. <code>smoke-password-reset.ts</code>: 21 assertions, all passing against the clone; delivery itself verified by hand, a real link clicked and redeemed.</td>
           </tr>
           <tr>
             <th scope="row">Duplicate submit returned HTTP 500<span class="path">responses.routes.ts · error.middleware.ts</span></th>
@@ -524,18 +536,6 @@
             <td class="num">1 day</td>
           </tr>
           <tr>
-            <th scope="row">No self-service password reset</th>
-            <td><span class="chip soon">B</span></td>
-            <td>A professor can reset a student, which works when it's your class and fails at five. Needs email — there is no mail provider wired in at all.</td>
-            <td class="num">3 days</td>
-          </tr>
-          <tr>
-            <th scope="row">No admin role</th>
-            <td><span class="chip soon">B</span></td>
-            <td>Professors are a flat list behind one shared invite code. No way to transfer a class, deactivate an account, or see the whole system. Three features under one row, and only the system view is expensive — cheaper now that what it has to change lives in one file. Not hypothetical: a real class with 61 students and 121 answers turned up under a second, forgotten account, and no screen in the app would ever have shown it.</td>
-            <td class="num">1–2 days</td>
-          </tr>
-          <tr>
             <th scope="row">Unbounded AI spend per account</th>
             <td><span class="chip soon">B</span></td>
             <td><code>MAX_CLASSIFY_CALLS</code> bounds a runaway loop within one theme set; nothing bounds a term, a class, or a person. Before anyone else's lecture can spend your key, you need a cap and a kill switch.</td>
@@ -556,7 +556,7 @@
           <tr>
             <th scope="row">SSO (Shibboleth / InCommon)</th>
             <td><span class="chip later">C</span></td>
-            <td>No university wants a separate password for your tool. Also happens to dissolve the password-reset and verification problems entirely.</td>
+            <td>No university wants a separate password for your tool. Retires the reset flow rather than improving it — no password, nothing to reset — and brings verified identity with it.</td>
             <td class="num">2 weeks</td>
           </tr>
           <tr>
@@ -777,14 +777,13 @@
 
     <ol class="roadmap">
       <li><span class="n">01</span><span class="what">Run ID in the response uniqueness constraint<span class="why">A five-minute migration now, a data-archaeology project in two years.</span></span></li>
-      <li><span class="n">02</span><span class="what">An admin role<span class="why">Decide which of the three bundled features you actually need before building any. Creating an account for someone and handing them a class is most of a day; a system view over every professor's classes is the expensive one, and expensive only because it changes what ownership means — which now happens in one file. That is the whole reason this comes after the consolidation rather than before it.</span></span></li>
-      <li><span class="n">03</span><span class="what">A provider behind <code>captureException()</code><span class="why">The seam is in and every call site already routes through it, so this is an account, a DSN and one file. Deferred deliberately, not forgotten.</span></span></li>
-      <li><span class="n">04</span><span class="what">Restore an actual backup to the scratch database<span class="why">A <code>pg_dump</code> of a live database restored cleanly, which proves the mechanism but says nothing about whether Railway's own backups are any good. That is still the untested half — and now there is somewhere to test it.</span></span></li>
-      <li><span class="n">05</span><span class="what">The three integration scripts in CI<span class="why">A Postgres service and a booted backend in the workflow. All three pass by hand against the clone; <code>smoke-themes.ts</code> spends real Anthropic tokens, so it needs a decision about a CI key before it can join.</span></span></li>
-      <li><span class="n">06</span><span class="what">Spend caps and a kill switch<span class="why">The gate on ever letting a second person's lecture touch your API key.</span></span></li>
-      <li><span class="n">07</span><span class="what">Redis: adapter, clocks, theme locks, rate limits, leader election<span class="why">One project. Do it when you want deploys that don't interrupt a lecture — not before.</span></span></li>
-      <li><span class="n">08</span><span class="what">Email, then SSO<span class="why">Email unblocks reset and verification; SSO makes both obsolete and is what institutions will ask for anyway. If Gate C looks likely, skip ahead.</span></span></li>
-      <li><span class="n">09</span><span class="what">LTI, accessibility, HECVAT, entity<span class="why">Only once someone has actually said yes. Doing this speculatively is how side projects die.</span></span></li>
+      <li><span class="n">02</span><span class="what">A provider behind <code>captureException()</code><span class="why">The seam is in and every call site already routes through it, so this is an account, a DSN and one file. Deferred deliberately, not forgotten.</span></span></li>
+      <li><span class="n">03</span><span class="what">Restore an actual backup to the scratch database<span class="why">A <code>pg_dump</code> of a live database restored cleanly, which proves the mechanism but says nothing about whether Railway's own backups are any good. That is still the untested half — and now there is somewhere to test it.</span></span></li>
+      <li><span class="n">04</span><span class="what">The five integration scripts in CI<span class="why">A Postgres service and a booted backend in the workflow. All five pass by hand against the clone; <code>smoke-themes.ts</code> spends real Anthropic tokens, so it needs a decision about a CI key before it can join.</span></span></li>
+      <li><span class="n">05</span><span class="what">Spend caps and a kill switch<span class="why">The gate on ever letting a second person's lecture touch your API key.</span></span></li>
+      <li><span class="n">06</span><span class="what">Redis: adapter, clocks, theme locks, rate limits, leader election<span class="why">One project. Do it when you want deploys that don't interrupt a lecture — not before.</span></span></li>
+      <li><span class="n">07</span><span class="what">SSO<span class="why">Email is in, so this is no longer what unblocks reset. It is what institutions will ask for anyway, and it retires the password entirely — along with the address-verification gap the reset flow inherited.</span></span></li>
+      <li><span class="n">08</span><span class="what">LTI, accessibility, HECVAT, entity<span class="why">Only once someone has actually said yes. Doing this speculatively is how side projects die.</span></span></li>
     </ol>
   </section>
 
