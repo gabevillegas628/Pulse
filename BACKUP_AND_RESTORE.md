@@ -209,8 +209,12 @@ that saying yes is deliberate.
    real `SELECT 1`, so it is a genuine answer.
 8. **Then say what was lost**, to whoever lost it, with the boundary from step 1.
 
-At current size a restore is a few minutes, most of it provisioning. Put the
-real number here after the first drill.
+**How long this takes.** From the first drill, 5 September 2026, against a
+235 KB encrypted dump: fetching from R2, checking the sha and decrypting took
+about six seconds, `pg_restore` itself about a tenth of one, and the verifier
+under a second. The database is not the slow part and will not be for a long
+while — provisioning a new Postgres and redeploying is the whole cost. Plan
+around Railway's clock, not this one.
 
 ---
 

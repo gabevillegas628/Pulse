@@ -7,7 +7,7 @@ A formatted version of this document is in `PRODUCT_READINESS.html`,
 self-contained — open it in any browser.
 
 Status: first full rollout, one course, ~140 seats, single instance, 246 test
-assertions, ~$17/semester in model spend.
+assertions plus a monthly restore drill, ~$17/semester in model spend.
 
 Updated 2 September 2026 — Gate A is closed, and the first Gate B item with it.
 There is also a scratch database now, cloned from prod, which is what finally
@@ -23,6 +23,12 @@ Gate B item. Brevo is wired in behind a provider-agnostic seam, the sending
 domain is authenticated, and a student who has forgotten their password no
 longer needs their professor to be in the room. See *Closed since this was
 written*.
+
+Updated 5 September 2026 — backups are closed, the fourth Gate B item, and the
+one the register was most pointed about. There is now a nightly encrypted copy
+off Railway, retention as a policy rather than a habit, and a monthly drill that
+restores the newest backup into an empty database and checks it row by row. It
+has run: 23 assertions, nothing short. Spend caps are the last of Gate B.
 
 ---
 
@@ -44,6 +50,12 @@ every push; the other five have been run by hand against a clone of prod and
 want only a Postgres service in CI to join it — plus a decision about an API
 key, since one of them spends real tokens.
 
+A seventh now runs unattended: `verify-restore.ts`, monthly, against a real
+restore of the previous night's backup rather than against fixtures. Its
+assertion count follows the table list — 23 on the current database. It also
+settles how the other five get into CI, since `restore-drill.yml` is a working
+example of the Postgres service they were waiting on.
+
 ## Three thresholds, not one
 
 "Could I use it?" means three different things depending on who is asking, and
@@ -55,8 +67,8 @@ that a lecture never fails in a way you can't recover from in the room.
 
 **Gate B — a second instructor at Rutgers.** Someone you know, no contract. The
 bar shifts from "it works" to "it is isolated, recoverable, and doesn't need you
-in the room." *Weeks of work; the admin role and password reset are in —
-spend caps and a tested backup are the bulk of what is left.*
+in the room." *Weeks of work; the admin role, password reset, and a drilled
+backup are in — spend caps are the bulk of what is left.*
 
 **Gate C — another institution.** People you've never met, whose IT department
 has opinions. The bar is procurement, not engineering. *Months, mostly not code.*
@@ -74,6 +86,7 @@ has opinions. The bar is procurement, not engineering. *Months, mostly not code.
 | Any professor could watch any lecture | Fixed, and the reason it was possible is fixed too. Ownership used to be answered inline at 54 query sites; it now lives in `utils/ownership.ts` as composable Prisma predicates, and `socket.ts` — the one caller that isn't a query — uses the same module to check that the session is actually the professor's before admitting them to `{sessionId}:professor`. `scripts/smoke-socket-auth.ts` covers it with two professors and one session, asserting both the room decision the server reports and what actually arrives on each socket when a student answers. Nine assertions, all passing against a clone of prod. |
 | No admin role | Closed, minus one deliberate deviation from the plan: ownership was *not* widened. `ownedClass` still means "the class you created" for everyone; admin power exists only under `/api/admin`, so an admin in the normal UI is just a professor. Admin itself is a bit on `Professor`, read from the row `requireProfessor` already re-fetches on every request — never in the JWT, so granting and revoking take effect on the next request with no token to chase. The surface: a system view (every professor, every class, enrollment and submitted-answer counts, when the last answer landed — the forgotten account with 61 students would now be impossible to miss), account creation with a hand-over password (superseding the shared invite code as the door for colleague two; both doors kept), class transfer, and deactivation. Deactivation, not deletion — and `Class → Professor` flipped from `Cascade` to `Restrict`, so even raw SQL cannot take a semester of responses out through a professor row. Minting an admin is `scripts/make-admin.ts`, which takes database access — at one instance, the honest answer to "who admins the admins". `smoke-admin.ts`: 29 assertions, all passing against the clone. |
 | No self-service password reset | Closed, and the mail provider it was waiting on is in with it. A student asks for a link with their NetID or email and gets one at the address on their account; only the SHA-256 of the token is stored, the link is checked before the form is shown so a stale one says "expired" rather than failing after a password is chosen, and redeeming it retires every other outstanding link. Requesting a reset cannot be used to discover who has an account — the response is byte-identical for an unknown NetID, and the send is not awaited, so a real account is not measurably slower to answer. A reset also clears the sign-in throttle, for the reason `clearLoginThrottle` already documented. Brevo over its HTTP API rather than SMTP, behind a provider-agnostic `sendEmail()`, so switching providers is one file; unconfigured in development prints the link to the log instead of sending. **The professor-side reset is kept, not replaced** — registration still never verifies an email address, so a student who typo'd theirs has no self-service path and still needs their professor. `smoke-password-reset.ts`: 21 assertions, all passing against the clone; delivery itself verified by hand, a real link clicked and redeemed. |
+| Untested backups, no retention policy | Closed, and the untested half is the half that got fixed. A nightly GitHub Action dumps prod, encrypts to an `age` key, and pushes to Cloudflare R2 — a third company holding ciphertext, so a leaked bucket token is worth nothing and losing the Railway account does not lose the data. Railway's own backups stay on; this is the copy that survives losing Railway. Retention is lifecycle rules on prefixes rather than delete logic in a script — `daily/` 35 days, `monthly/` 400 — and the first successful backup of each month is promoted by asking whether one is there yet, so a failed run on the 1st does not cost the month. The drill is monthly and restores into an empty Postgres in the runner, which is a stronger claim than overwriting a database that already has the right shape: `verify-restore.ts` compares every table against row counts taken at dump time, checks migration history against the checkout, and loads a response with its relations — raw SQL would not notice a restore whose columns no longer match the generated client. First run end to end: a 235 KB encrypted dump restored and 23 assertions passing, in about nine seconds. **Two things deliberately not covered.** Uploads: `UPLOAD_DIR` is a Railway volume, a volume attaches to one service, so a restored database points at images that are gone — moving uploads to the same bucket would fix it and retire the one-instance caveat below with it. And retention of the *live* data is still unwritten; lifecycle rules expire copies, not records. Runbook in `BACKUP_AND_RESTORE.md`. |
 | ~~Uploads on ephemeral disk~~ | **Not a bug.** A Railway volume is mounted and `UPLOAD_DIR` points at it. Worth revisiting if Pulse ever runs more than one instance, since a volume attaches to one — but nothing is being deleted, and this was a misreading of `config/index.ts:17`. |
 
 ---
@@ -87,7 +100,7 @@ optional. Gate A rows have moved to the section above.
 |---|---|---|---|
 | Response uniqueness ignores run (`schema.prisma:235`) | B | `ThemeSet` is keyed by run; responses aren't. Repeating student can't answer, or overwrites last term. | 1 day |
 | Unbounded AI spend per account | B | `MAX_CLASSIFY_CALLS` bounds a runaway loop, not a term or a person. | 2 days |
-| Untested backups, no retention policy | B | A backup never restored is not a backup. Responses are education records, and there is at least one class of them with no defined end of life sitting under an account nobody was tracking. | 2 days |
+| No retention policy for the records themselves | B | The surviving half of the backup row. Backups now expire on a schedule; the responses they are copies of do not. Education records with no defined end of life, including one class of them under an account nobody was tracking. Needs a written policy — deleted N years after the class's term ends — and something that enforces it. Mostly a decision, not a script. | 1 day |
 | Multi-instance coordination | B | See below. For zero-downtime deploys, not capacity. | 1 week |
 | SSO (Shibboleth / InCommon) | C | No university wants a separate password. Retires the reset flow rather than improving it — no password, nothing to reset. | 2 weeks |
 | LTI 1.3 / Canvas grade passback | C | Largest adoption lever after "does it work". Rutgers is a Canvas school. | 3 weeks |
@@ -179,12 +192,13 @@ Everything worth doing before November is done. What remains, in order:
 
 1. **Run ID in the response uniqueness constraint** — five minutes now, archaeology in two years.
 2. **A provider behind `captureException()`** — the seam is in and every call site already routes through it, so this is an account, a DSN, and one file. Deferred deliberately, not forgotten.
-3. **Restore an actual backup to the scratch database** — a `pg_dump` of a live database restored cleanly, which proves the mechanism but says nothing about whether Railway's backups are any good. That is still the untested half, and now there is somewhere to test it.
-4. **The five integration scripts in CI** — a Postgres service and a booted backend in the workflow. They all pass by hand against the clone; `smoke-themes.ts` spends real tokens, so it needs a decision about a CI key before it can join.
-5. **Spend caps and a kill switch** — the gate on anyone else's lecture touching your key.
-6. **Redis** — adapter, clocks, theme locks, rate limits, leader election. One project.
-7. **SSO** — email is in, so this is no longer the thing that unblocks reset. It is what institutions will ask for, and it retires the password entirely.
-8. **LTI, accessibility, HECVAT, entity** — only once someone has said yes.
+3. **The five integration scripts in CI** — a Postgres service and a booted backend in the workflow. `restore-drill.yml` is now a working example of the first half, so what is left is the booted backend and a decision about a CI key, since `smoke-themes.ts` spends real tokens.
+4. **Spend caps and a kill switch** — the gate on anyone else's lecture touching your key. The last of Gate B.
+5. **A retention policy for responses** — what the backup work left behind. A written end of life and something that enforces it; the decision is the slow part, not the code.
+6. **Uploads off the volume and into the bucket** — closes the one hole in the backup and retires the single-instance caveat with it, since a volume attaches to one service and object storage does not.
+7. **Redis** — adapter, clocks, theme locks, rate limits, leader election. One project.
+8. **SSO** — email is in, so this is no longer the thing that unblocks reset. It is what institutions will ask for, and it retires the password entirely.
+9. **LTI, accessibility, HECVAT, entity** — only once someone has said yes.
 
 ---
 

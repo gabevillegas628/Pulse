@@ -400,13 +400,14 @@
     <p class="standfirst"><strong>Updated 2 September 2026.</strong> Gate A is closed — four items fixed and a fifth withdrawn — and the first Gate B item with it: ownership is now enforced in one place rather than fifty. There is also a scratch database now, cloned from prod, which is what finally let the integration suites run.</p>
     <p class="standfirst"><strong>Updated 3 September 2026.</strong> The admin role is closed — the second Gate B item: a system view, account creation, transfer, and deactivation, built without widening what ownership means. Deleting a professor is now refused by the database while their classes remain.</p>
     <p class="standfirst"><strong>Updated 4 September 2026.</strong> Self-service password reset is closed — the third Gate B item. Brevo is wired in behind a provider-agnostic seam, the sending domain is authenticated, and a student who has forgotten their password no longer needs their professor to be in the room.</p>
+    <p class="standfirst"><strong>Updated 5 September 2026.</strong> Backups are closed — the fourth Gate B item, and the one the register was most pointed about. A nightly encrypted copy off Railway, retention as a policy rather than a habit, and a monthly drill that restores the newest backup into an empty database and checks it row by row. It has run: 23 assertions, nothing short. Spend caps are the last of Gate B.</p>
 
     <dl class="status">
       <div><dt>Status</dt><dd>First full rollout</dd></div>
       <div><dt>Scope</dt><dd>1 course · ~140 seats</dd></div>
       <div><dt>Topology</dt><dd>Single instance</dd></div>
       <div><dt>Token spend</dt><dd>~$17 / semester</dd></div>
-      <div><dt>Assertions</dt><dd>246 · clock half in CI</dd></div>
+      <div><dt>Assertions</dt><dd>246 + restore drill · clock half in CI</dd></div>
     </dl>
   </header>
 
@@ -417,6 +418,7 @@
       <p>The code is in better condition than most things at this stage. The hard parts — the arming threshold on the close countdown, monotonic deadlines, token renewal on activity, warming clocks from <code>Response.submittedAt</code> after a restart — are not just implemented but reasoned about in the comments. That is the part that is genuinely difficult to buy.</p>
       <p>What is missing is everything that assumes there is exactly one professor, one machine, and one person who cares when it breaks. None of it is deep, but it is broad, and it does not surface until a second person shows up. The list below is that list.</p>
       <p>Testing is further along than it looks from the outside: there are 246 assertions in <code>backend/scripts/</code> across six suites, including a real unit suite for the clock driven on injected timestamps. All six pass. The clock half runs on every push; the other five have been run by hand against a clone of prod and want only a Postgres service in CI to join it — plus a decision about an API key, since one of them spends real tokens.</p>
+      <p>A seventh now runs unattended: <code>verify-restore.ts</code>, monthly, against a real restore of the previous night's backup rather than against fixtures. Its assertion count follows the table list — 23 on the current database. It also settles how the other five get into CI, since <code>restore-drill.yml</code> is a working example of the Postgres service they were waiting on.</p>
     </div>
   </section>
 
@@ -438,7 +440,7 @@
         <span class="tag">Gate B</span>
         <h4>A second instructor at Rutgers</h4>
         <p>Someone you know, same institution, no contract. The bar shifts from "it works" to "it is isolated, recoverable, and doesn't need you in the room."</p>
-        <p class="verdict">Weeks of work. The admin role and password reset are in; spend caps and a tested backup are the bulk of what is left.</p>
+        <p class="verdict">Weeks of work. The admin role, password reset and a drilled backup are in; spend caps are the bulk of what is left.</p>
       </article>
       <article class="gate">
         <span class="tag">Gate C</span>
@@ -501,6 +503,11 @@
             <td><span class="chip done">Fixed</span></td>
             <td><code>SELECT 1</code>, answering 503 and <code>db: "down"</code> when it fails. Railway reads this path for both routing and its restart policy, so an instance that cannot reach Postgres now says so instead of taking traffic.</td>
           </tr>
+          <tr>
+            <th scope="row">Untested backups; no retention policy<span class="path">scripts/backup-db.sh · scripts/restore-db.sh · scripts/verify-restore.ts</span></th>
+            <td><span class="chip done">Built</span></td>
+            <td>Closed, and the untested half is the half that got fixed. A nightly GitHub Action dumps prod, encrypts to an <code>age</code> key and pushes to Cloudflare R2 — a third company holding ciphertext, so a leaked bucket token is worth nothing and losing the Railway account does not lose the data. Railway's own backups stay on; this is the copy that survives losing Railway. Retention is lifecycle rules on prefixes rather than delete logic in a script — <code>daily/</code> 35 days, <code>monthly/</code> 400 — and the first successful backup of each month is promoted by asking whether one is there yet, so a failed run on the 1st does not quietly cost the month. The drill is monthly and restores into an empty Postgres in the runner, which is a stronger claim than overwriting a database that already has the right shape: <code>verify-restore.ts</code> compares every table against row counts taken at dump time, checks migration history against the checkout, and loads a response with its relations — raw SQL would not notice a restore whose columns no longer match the generated client. First run end to end: a 235 KB encrypted dump restored and 23 assertions passing, in about nine seconds. <strong>Two things deliberately not covered.</strong> Uploads: <code>UPLOAD_DIR</code> is a Railway volume, a volume attaches to one service, so a restored database points at images that are gone — moving uploads to the same bucket would fix it and retire the single-instance caveat with it. And retention of the <em>live</em> data is still unwritten; lifecycle rules expire copies, not records. Runbook in <code>BACKUP_AND_RESTORE.md</code>.</td>
+          </tr>
           <tr class="struck">
             <th scope="row">Uploads live on ephemeral disk<span class="path">config/index.ts:17</span></th>
             <td><span class="chip done">Withdrawn</span></td>
@@ -542,10 +549,10 @@
             <td class="num">2 days</td>
           </tr>
           <tr>
-            <th scope="row">Untested backups; no retention policy</th>
+            <th scope="row">No retention policy for the records themselves</th>
             <td><span class="chip soon">B</span></td>
-            <td>Managed Postgres has backups. A backup you have never restored is not a backup. Student responses are education records and currently have no stated retention or deletion path — and there is at least one class of them sitting under an account nobody was tracking.</td>
-            <td class="num">2 days</td>
+            <td>The surviving half of the backup row. Backups now expire on a schedule; the responses they are copies of do not. Education records with no defined end of life, including one class of them under an account nobody was tracking. Needs a written policy — deleted N years after the class's term ends — and something that enforces it. Mostly a decision, not a script.</td>
+            <td class="num">1 day</td>
           </tr>
           <tr>
             <th scope="row">Multi-instance coordination</th>
@@ -778,12 +785,13 @@
     <ol class="roadmap">
       <li><span class="n">01</span><span class="what">Run ID in the response uniqueness constraint<span class="why">A five-minute migration now, a data-archaeology project in two years.</span></span></li>
       <li><span class="n">02</span><span class="what">A provider behind <code>captureException()</code><span class="why">The seam is in and every call site already routes through it, so this is an account, a DSN and one file. Deferred deliberately, not forgotten.</span></span></li>
-      <li><span class="n">03</span><span class="what">Restore an actual backup to the scratch database<span class="why">A <code>pg_dump</code> of a live database restored cleanly, which proves the mechanism but says nothing about whether Railway's own backups are any good. That is still the untested half — and now there is somewhere to test it.</span></span></li>
-      <li><span class="n">04</span><span class="what">The five integration scripts in CI<span class="why">A Postgres service and a booted backend in the workflow. All five pass by hand against the clone; <code>smoke-themes.ts</code> spends real Anthropic tokens, so it needs a decision about a CI key before it can join.</span></span></li>
-      <li><span class="n">05</span><span class="what">Spend caps and a kill switch<span class="why">The gate on ever letting a second person's lecture touch your API key.</span></span></li>
-      <li><span class="n">06</span><span class="what">Redis: adapter, clocks, theme locks, rate limits, leader election<span class="why">One project. Do it when you want deploys that don't interrupt a lecture — not before.</span></span></li>
-      <li><span class="n">07</span><span class="what">SSO<span class="why">Email is in, so this is no longer what unblocks reset. It is what institutions will ask for anyway, and it retires the password entirely — along with the address-verification gap the reset flow inherited.</span></span></li>
-      <li><span class="n">08</span><span class="what">LTI, accessibility, HECVAT, entity<span class="why">Only once someone has actually said yes. Doing this speculatively is how side projects die.</span></span></li>
+      <li><span class="n">03</span><span class="what">The five integration scripts in CI<span class="why">A Postgres service and a booted backend in the workflow. <code>restore-drill.yml</code> is now a working example of the first half, so what is left is the booted backend and a decision about a CI key, since <code>smoke-themes.ts</code> spends real Anthropic tokens.</span></span></li>
+      <li><span class="n">04</span><span class="what">Spend caps and a kill switch<span class="why">The gate on ever letting a second person's lecture touch your API key. The last of Gate B.</span></span></li>
+      <li><span class="n">05</span><span class="what">A retention policy for responses<span class="why">What the backup work left behind. A written end of life and something that enforces it; the decision is the slow part, not the code.</span></span></li>
+      <li><span class="n">06</span><span class="what">Uploads off the volume and into the bucket<span class="why">Closes the one hole in the backup and retires the single-instance caveat with it, since a volume attaches to one service and object storage does not.</span></span></li>
+      <li><span class="n">07</span><span class="what">Redis: adapter, clocks, theme locks, rate limits, leader election<span class="why">One project. Do it when you want deploys that don't interrupt a lecture — not before.</span></span></li>
+      <li><span class="n">08</span><span class="what">SSO<span class="why">Email is in, so this is no longer what unblocks reset. It is what institutions will ask for anyway, and it retires the password entirely — along with the address-verification gap the reset flow inherited.</span></span></li>
+      <li><span class="n">09</span><span class="what">LTI, accessibility, HECVAT, entity<span class="why">Only once someone has actually said yes. Doing this speculatively is how side projects die.</span></span></li>
     </ol>
   </section>
 
