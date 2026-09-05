@@ -25,7 +25,7 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # pg_dump refuses to dump a server newer than itself, so the client major
       # is pinned to the server's rather than left to whatever the runner

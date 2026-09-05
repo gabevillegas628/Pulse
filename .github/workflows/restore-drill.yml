@@ -38,9 +38,9 @@ jobs:
       DRILL_URL: postgresql://postgres:drill@localhost:5432/pulse_drill
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: npm
@@ -102,7 +102,7 @@ jobs:
       # is the paper trail that says which backup was drilled and what was in it.
       - name: Keep the manifest
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: drill-manifest
           path: restore/manifest.json
