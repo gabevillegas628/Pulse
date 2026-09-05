@@ -12,3 +12,7 @@ Redesign/
 docs/
 .vscode/settings.json
 migrate_structures_q.sql
+
+# Dumps land here when backup-db.sh runs without a bucket; never in git.
+backups/
+restore/

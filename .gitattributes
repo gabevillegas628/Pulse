@@ -1,0 +1,6 @@
+# Shell scripts reach every checkout with LF. Git Bash turns out to tolerate
+# CRLF in these, so this is not fixing a break — it is removing the dependence
+# on that tolerance. backup-db.sh and restore-db.sh are the scripts you run on
+# an unfamiliar machine on a bad morning, which is the wrong moment to find out
+# whether the shell in front of you is one of the forgiving ones.
+*.sh text eol=lf

@@ -1,0 +1,56 @@
+name: Backup
+
+# 08:00 UTC is 4am Eastern: no lecture, and no answers landing, which is the
+# hour when the row counts the manifest records and the snapshot pg_dump takes
+# describe the same database. GitHub's scheduler is best-effort and can run
+# late; nothing here depends on the exact minute.
+#
+# Note the failure mode this file cannot fix by itself: GitHub disables
+# scheduled workflows in a repository with 60 days of no activity, which is
+# roughly what a summer looks like. A run that breaks sends mail; a schedule
+# that quietly stopped does not. That is what BACKUP_HEALTHCHECK_URL is for.
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  dump:
+    name: Dump, encrypt, upload
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # pg_dump refuses to dump a server newer than itself, so the client major
+      # is pinned to the server's rather than left to whatever the runner
+      # happens to ship. Production is on 18.6 as of September 2026. If Railway
+      # upgrades it, three places move together: this pin, the same pin in
+      # restore-drill.yml, and the postgres service image there — a drill that
+      # restores an 18 dump into a 17 container fails for a reason that has
+      # nothing to do with the backup.
+      - name: Install postgresql-client-18 and age
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc > /dev/null
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18 age
+
+      - name: Back up
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          AGE_PUBLIC_KEY: ${{ secrets.AGE_PUBLIC_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          HEALTHCHECK_URL: ${{ secrets.BACKUP_HEALTHCHECK_URL }}
+        run: bash backend/scripts/backup-db.sh

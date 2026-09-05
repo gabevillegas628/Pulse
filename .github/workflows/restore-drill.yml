@@ -1,0 +1,104 @@
+name: Restore drill
+
+# A backup nobody has restored is not a backup, so this restores the newest
+# daily every month and fails loudly if it does not come back whole.
+#
+# It restores into a throwaway Postgres inside the runner rather than into the
+# scratch database on Railway. That costs nothing, clobbers nothing anybody
+# might be using, and proves the harder property: that the dump can rebuild a
+# database starting from empty, rather than overwrite one that already happens
+# to have the right shape. The one thing it does not exercise is Railway's own
+# path — provisioning, connecting, migrating — which is why the runbook still
+# asks for a by-hand restore into the scratch database once a term.
+on:
+  schedule:
+    - cron: '0 9 1 * *'
+  workflow_dispatch:
+
+jobs:
+  drill:
+    name: Restore the newest backup and check it
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: drill
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DRILL_URL: postgresql://postgres:drill@localhost:5432/pulse_drill
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install postgresql-client-18 and age
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc > /dev/null
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18 age
+
+      # Written to a file rather than passed on a command line, where it would
+      # be readable by every other process on the runner.
+      - name: Write the age identity
+        env:
+          AGE_IDENTITY: ${{ secrets.AGE_IDENTITY }}
+        run: |
+          umask 077
+          printf '%s\n' "$AGE_IDENTITY" > "$RUNNER_TEMP/age.key"
+
+      - name: Create an empty target
+        run: psql "postgresql://postgres:drill@localhost:5432/postgres" -c 'CREATE DATABASE pulse_drill'
+
+      - name: Restore the newest daily backup
+        env:
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          bash backend/scripts/restore-db.sh \
+            --latest --into "$DRILL_URL" \
+            --work-dir "$GITHUB_WORKSPACE/restore" \
+            --identity "$RUNNER_TEMP/age.key" \
+            --yes
+
+      - name: Generate the Prisma client
+        working-directory: backend
+        run: npx prisma generate
+
+      - name: Verify the restore
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://postgres:drill@localhost:5432/pulse_drill
+        run: npx tsx scripts/verify-restore.ts --manifest "$GITHUB_WORKSPACE/restore/manifest.json"
+
+      # The manifest is table names and row counts, no student data. Keeping it
+      # is the paper trail that says which backup was drilled and what was in it.
+      - name: Keep the manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: drill-manifest
+          path: restore/manifest.json
+          if-no-files-found: warn
+          retention-days: 90
