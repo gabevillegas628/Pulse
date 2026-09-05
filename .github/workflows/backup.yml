@@ -43,6 +43,14 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
           sudo apt-get update -qq
           sudo apt-get install -y -qq postgresql-client-18 age
+          # Installing 18 does not move /usr/bin/pg_dump, which on this image is
+          # the client 16 the runner ships. That is how a run reached "server
+          # version mismatch" with 18 installed and unused. Put the versioned
+          # directory first, and print which binary won so the next version bump
+          # is one line of log rather than a puzzle.
+          test -x /usr/lib/postgresql/18/bin/pg_dump
+          echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
+          /usr/lib/postgresql/18/bin/pg_dump --version
 
       - name: Back up
         env:

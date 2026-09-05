@@ -55,6 +55,24 @@ fi
 command -v pg_dump >/dev/null || fail "pg_dump is not installed"
 command -v psql >/dev/null || fail "psql is not installed"
 
+# pg_dump refuses to dump a server newer than itself, and left to its own
+# devices it says so only after connecting, several steps in, in the language of
+# version numbers rather than of what to change. psql is the tolerant one, so it
+# can be asked first. Two ways to be here: a runner where the versioned client
+# is installed but not first on PATH, or a laptop whose client is simply old.
+SERVER_NUM="$(psql "$DATABASE_URL" -Atq -c 'SHOW server_version_num')"
+SERVER_MAJOR=$((SERVER_NUM / 10000))
+CLIENT_MAJOR="$(pg_dump --version | awk '{print $3}' | cut -d. -f1)"
+if [ "$CLIENT_MAJOR" -lt "$SERVER_MAJOR" ]; then
+  fail "pg_dump is $CLIENT_MAJOR, the server is $SERVER_MAJOR ($(command -v pg_dump)).
+  On a runner: the versioned binaries are in /usr/lib/postgresql/$SERVER_MAJOR/bin and that
+  directory has to come first on PATH — installing the package does not move /usr/bin/pg_dump.
+  Locally: install client tools >= $SERVER_MAJOR.
+  If the server was upgraded, three pins move together — the client in backup.yml,
+  the client in restore-drill.yml, and the postgres service image in restore-drill.yml."
+fi
+echo "backup-db: pg_dump $CLIENT_MAJOR against server $SERVER_MAJOR"
+
 STAMP="$(date -u +%Y-%m-%dT%H%M%SZ)"
 MONTH="$(date -u +%Y-%m)"
 WORK="$(mktemp -d)"
