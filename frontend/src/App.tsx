@@ -16,6 +16,7 @@ import ClassPage from '@/pages/professor/ClassPage'
 import SessionPage from '@/pages/professor/SessionPage'
 import AssignmentDetailPage from '@/pages/professor/AssignmentDetailPage'
 import AdminPage from '@/pages/professor/AdminPage'
+import AdminStudentsPage from '@/pages/professor/AdminStudentsPage'
 
 // Student pages
 import CodeEntryPage from '@/pages/student/CodeEntryPage'
@@ -117,6 +118,7 @@ export default function App() {
         {/* Professor routes */}
         <Route path="/professor" element={<ProfessorProtected><DashboardPage /></ProfessorProtected>} />
         <Route path="/professor/admin" element={<ProfessorProtected><AdminPage /></ProfessorProtected>} />
+        <Route path="/professor/admin/students" element={<ProfessorProtected><AdminStudentsPage /></ProfessorProtected>} />
         <Route path="/professor/classes/:classId" element={<ProfessorProtected><ClassPage /></ProfessorProtected>} />
         <Route path="/professor/classes/:classId/assignments/:assignmentId" element={<ProfessorProtected><AssignmentDetailPage /></ProfessorProtected>} />
         <Route path="/professor/sessions/:sessionId" element={<ProfessorProtected><SessionPage /></ProfessorProtected>} />

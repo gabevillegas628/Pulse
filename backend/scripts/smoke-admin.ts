@@ -306,6 +306,86 @@ async function main() {
       email: profB.email, password: TEMP_PASSWORD,
     })
     check('a reactivated professor signs straight back in', bBack.status === 200, `status ${bBack.status}`)
+
+    section('Student management')
+
+    const sAsB = await call('GET', `/api/admin/students?q=${TAG}`, bToken)
+    check('the student list is behind the same door', sAsB.status === 403, `status ${sAsB.status}`)
+
+    const sList = await call('GET', `/api/admin/students?q=${TAG}`, adminToken)
+    const sRows: any[] = sList.json?.data?.students ?? []
+    const s1Row = sRows.find((r) => r.id === fixture!.s1.id)
+    const s2Row = sRows.find((r) => r.id === fixture!.s2.id)
+    check('search by netID substring finds the fixture students',
+      sList.status === 200 && sList.json?.data?.total === 2 && Boolean(s1Row) && Boolean(s2Row),
+      `status ${sList.status}, total ${sList.json?.data?.total}`)
+    check('a draft counts here — it is weight a delete would take',
+      s1Row?.responseCount === 1 && s2Row?.responseCount === 1,
+      `s1 ${s1Row?.responseCount}, s2 ${s2Row?.responseCount}`)
+    check('enrollments name the class', s1Row?.enrollments?.[0]?.className === cls.name,
+      `got ${s1Row?.enrollments?.[0]?.className}`)
+
+    const byEmailQ = await call('GET', `/api/admin/students?q=${TAG}-s1%40`, adminToken)
+    check('search by email substring narrows to one',
+      byEmailQ.status === 200 && byEmailQ.json?.data?.total === 1, `total ${byEmailQ.json?.data?.total}`)
+
+    const newNetId = `${TAG}-s2-fixed`
+    const sEdit = await call('PATCH', `/api/admin/students/${fixture.s2.id}`, adminToken, {
+      netId: newNetId, email: `${TAG}-s2-fixed@scarletmail.rutgers.edu`,
+    })
+    check('a typo\'d identity is fixable',
+      sEdit.status === 200 && sEdit.json?.data?.student?.netId === newNetId,
+      `status ${sEdit.status}`)
+
+    // Collide with the address just written to s2 — it has to pass the rutgers.edu
+    // validation first, or the 400 masks the constraint this is checking.
+    const sCollide = await call('PATCH', `/api/admin/students/${fixture.s1.id}`, adminToken, {
+      email: `${TAG}-s2-fixed@scarletmail.rutgers.edu`,
+    })
+    check('colliding with another account is refused with 409', sCollide.status === 409,
+      `status ${sCollide.status}`)
+
+    const NEW_PW = `pw2-${RUN_ID}-x`
+    const sPw = await call('POST', `/api/admin/students/${fixture.s1.id}/set-password`, adminToken, {
+      newPassword: NEW_PW,
+    })
+    const sLogin = await call('POST', '/api/auth/student/login', null, {
+      credential: fixture.s1.netId, password: NEW_PW,
+    })
+    check('an admin-set password signs the student in',
+      sPw.status === 200 && sLogin.status === 200,
+      `set ${sPw.status}, login ${sLogin.status}`)
+
+    const sReset = await call('POST', `/api/admin/students/${fixture.s1.id}/send-reset`, adminToken)
+    const tokenRows = await prisma.passwordResetToken.count({ where: { studentId: fixture.s1.id } })
+    check('send-reset mints a real reset token',
+      sReset.status === 200 && tokenRows === 1, `status ${sReset.status}, tokens ${tokenRows}`)
+
+    const sDel = await call('DELETE', `/api/admin/students/${fixture.s2.id}`, adminToken)
+    const s2Gone = await prisma.student.findUnique({ where: { id: fixture.s2.id } })
+    const s2Responses = await prisma.response.count({ where: { studentId: fixture.s2.id } })
+    check('deleting a student takes the row and its responses',
+      sDel.status === 200 && s2Gone === null && s2Responses === 0,
+      `status ${sDel.status}, row ${s2Gone ? 'remains' : 'gone'}, responses ${s2Responses}`)
+
+    section('Professor identity')
+
+    const pEdit = await call('PATCH', `/api/admin/professors/${profC.id}`, adminToken, {
+      name: `Smoke Prof C Renamed ${RUN_ID}`, email: `${TAG}-c2@scarletmail.rutgers.edu`,
+    })
+    check('a professor\'s name and email are fixable the same way',
+      pEdit.status === 200 && pEdit.json?.data?.professor?.email === `${TAG}-c2@scarletmail.rutgers.edu`,
+      `status ${pEdit.status}`)
+
+    const pPw = await call('POST', `/api/admin/professors/${profC.id}/set-password`, adminToken, {
+      newPassword: NEW_PW,
+    })
+    const pLogin = await call('POST', '/api/auth/professor/login', null, {
+      email: `${TAG}-c2@scarletmail.rutgers.edu`, password: NEW_PW,
+    })
+    check('an admin-set password signs the professor in',
+      pPw.status === 200 && pLogin.status === 200,
+      `set ${pPw.status}, login ${pLogin.status}`)
   } finally {
     section('Cleanup')
     if (fixture) {

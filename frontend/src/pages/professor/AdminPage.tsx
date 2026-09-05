@@ -1,13 +1,13 @@
-import { useState } from 'react'
-import { Link, Navigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import { useProfessorAuth } from '@/context/ProfessorAuthContext'
-import ProfessorLayout from '@/components/layout/ProfessorLayout'
+import AdminLayout from '@/components/layout/AdminLayout'
+import AdminSetPasswordModal from '@/components/AdminSetPasswordModal'
 import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
 import Empty from '@/components/ui/Empty'
-import { Shield, UserPlus, UserX, UserCheck, ArrowRightLeft, X, Users, ChevronLeft } from 'lucide-react'
+import { UserPlus, UserX, UserCheck, ArrowRightLeft, Pencil, KeyRound, X, Users } from 'lucide-react'
 import type { AdminProfessorSummary, AdminClassSummary } from 'shared'
 import { apiError } from '@/lib/errors'
 
@@ -40,6 +40,8 @@ export default function AdminPage() {
   const { professor: me } = useProfessorAuth()
   const [showCreate, setShowCreate] = useState(false)
   const [transferTarget, setTransferTarget] = useState<{ cls: AdminClassSummary; fromId: string } | null>(null)
+  const [editTarget, setEditTarget] = useState<AdminProfessorSummary | null>(null)
+  const [passwordTarget, setPasswordTarget] = useState<AdminProfessorSummary | null>(null)
   const [actionError, setActionError] = useState('')
 
   const { data, isLoading } = useQuery<AdminProfessorSummary[]>({
@@ -62,20 +64,9 @@ export default function AdminPage() {
     onError: (e: unknown) => setActionError(apiError(e, 'Failed to reactivate account')),
   })
 
-  // The gate mirrors the server's: requireAdmin answers 403 regardless of what
-  // this renders, so this is navigation, not security.
-  if (me && !me.isAdmin) return <Navigate to="/professor" replace />
-
   return (
-    <ProfessorLayout>
-      <Link to="/professor" className="flex items-center gap-1 text-sm text-muted hover:text-ink mb-4 transition-colors">
-        <ChevronLeft size={16} /> All classes
-      </Link>
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-2">
-          <Shield size={20} className="text-signal" />
-          <h1 className="text-xl font-bold text-ink">Administration</h1>
-        </div>
+    <AdminLayout>
+      <div className="flex justify-end mb-4">
         <Button variant="primary" onClick={() => setShowCreate(true)}>
           <UserPlus size={15} />
           Create account
@@ -115,32 +106,44 @@ export default function AdminPage() {
                   </div>
                   <p className="text-sm text-muted mt-0.5">{prof.email}</p>
                 </div>
-                {prof.id !== me?.id && (
-                  prof.deactivatedAt ? (
-                    <Button onClick={() => { setActionError(''); reactivateMutation.mutate(prof.id) }}>
-                      <UserCheck size={15} />
-                      Reactivate
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button onClick={() => { setActionError(''); setEditTarget(prof) }} title="Change name or email">
+                    <Pencil size={15} />
+                    Edit
+                  </Button>
+                  {prof.id !== me?.id && (
+                    <Button onClick={() => { setActionError(''); setPasswordTarget(prof) }} title="Set a temporary password">
+                      <KeyRound size={15} />
+                      Password
                     </Button>
-                  ) : (
-                    <Button
-                      onClick={() => {
-                        setActionError('')
-                        // Nothing in the student path checks the professor's status: a
-                        // deactivated professor's courses keep running, unattended. So
-                        // the moment of deactivation is the moment to say "transfer first".
-                        const owns = prof.classes.length
-                        const warning = owns > 0
-                          ? `\n\nThey still own ${owns === 1 ? 'a class' : `${owns} classes`}. If a course is still being taught, transfer it first — students keep access either way, but nobody will be grading.`
-                          : ''
-                        if (!confirm(`Deactivate ${prof.name}? They will be signed out everywhere and unable to sign back in. Their classes and data are kept.${warning}`)) return
-                        deactivateMutation.mutate(prof.id)
-                      }}
-                    >
-                      <UserX size={15} />
-                      Deactivate
-                    </Button>
-                  )
-                )}
+                  )}
+                  {prof.id !== me?.id && (
+                    prof.deactivatedAt ? (
+                      <Button onClick={() => { setActionError(''); reactivateMutation.mutate(prof.id) }}>
+                        <UserCheck size={15} />
+                        Reactivate
+                      </Button>
+                    ) : (
+                      <Button
+                        onClick={() => {
+                          setActionError('')
+                          // Nothing in the student path checks the professor's status: a
+                          // deactivated professor's courses keep running, unattended. So
+                          // the moment of deactivation is the moment to say "transfer first".
+                          const owns = prof.classes.length
+                          const warning = owns > 0
+                            ? `\n\nThey still own ${owns === 1 ? 'a class' : `${owns} classes`}. If a course is still being taught, transfer it first — students keep access either way, but nobody will be grading.`
+                            : ''
+                          if (!confirm(`Deactivate ${prof.name}? They will be signed out everywhere and unable to sign back in. Their classes and data are kept.${warning}`)) return
+                          deactivateMutation.mutate(prof.id)
+                        }}
+                      >
+                        <UserX size={15} />
+                        Deactivate
+                      </Button>
+                    )
+                  )}
+                </div>
               </div>
 
               {prof.classes.length === 0 ? (
@@ -198,7 +201,13 @@ export default function AdminPage() {
         onClose={() => setTransferTarget(null)}
         onTransferred={invalidate}
       />
-    </ProfessorLayout>
+      <EditProfessorModal target={editTarget} onClose={() => setEditTarget(null)} onSaved={invalidate} />
+      <AdminSetPasswordModal
+        endpoint={passwordTarget ? `/admin/professors/${passwordTarget.id}/set-password` : null}
+        who={passwordTarget?.name ?? ''}
+        onClose={() => setPasswordTarget(null)}
+      />
+    </AdminLayout>
   )
 }
 
@@ -338,6 +347,56 @@ function TransferModal({
           {error && <p className="text-sm text-warn">{error}</p>}
           <Button variant="primary" type="submit" disabled={loading || !toId} className="w-full">
             {loading ? 'Transferring…' : 'Transfer'}
+          </Button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function EditProfessorModal({ target, onClose, onSaved }: { target: AdminProfessorSummary | null; onClose: () => void; onSaved: () => void }) {
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (target) { setName(target.name); setEmail(target.email); setError('') }
+  }, [target?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!target) return
+    setError('')
+    setLoading(true)
+    try {
+      await api.patch(`/admin/professors/${target.id}`, { name, email })
+      onSaved()
+      onClose()
+    } catch (err: unknown) {
+      setError(apiError(err, 'Failed to update professor'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (!target) return null
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+      <div className="bg-surface rounded-[14px] shadow-pop border border-hairline w-full max-w-sm p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-semibold text-ink">Edit {target.name}</h2>
+          <button onClick={onClose} className="text-muted hover:text-ink-2 transition-colors">
+            <X size={18} />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" className={inputClass} />
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="rutgers.edu email" className={inputClass} />
+          {error && <p className="text-sm text-warn">{error}</p>}
+          <Button variant="primary" type="submit" disabled={loading || !name || !email} className="w-full">
+            {loading ? 'Saving…' : 'Save'}
           </Button>
         </form>
       </div>

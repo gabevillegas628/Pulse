@@ -102,7 +102,7 @@ export interface Question {
   autoClose: boolean | null
 }
 
-/** One class meeting — the event entity for IN_CLASS sessions */
+/** One class meeting â the event entity for IN_CLASS sessions */
 export interface SessionRun {
   id: string
   sessionId: string
@@ -114,7 +114,7 @@ export interface SessionRun {
   section?: { id: string; name: string } | null
 }
 
-/** IN_CLASS question set — authoring entity */
+/** IN_CLASS question set â authoring entity */
 export interface Session {
   id: string
   classId: string
@@ -287,6 +287,17 @@ export interface AdminProfessorSummary extends Professor {
   classes: AdminClassSummary[]
 }
 
+// Admin student management. responseCount is every response row, drafts
+// included — it is the number a delete would take with it.
+export interface AdminStudentSummary {
+  id: string
+  netId: string
+  email: string
+  createdAt: string
+  responseCount: number
+  enrollments: Array<{ classId: string; className: string }>
+}
+
 export interface ClassWithCounts extends Class {
   _count: { sessions: number; enrollments: number }
   sessions: Array<{ id: string; title: string; status: string; createdAt: string }>
@@ -308,7 +319,7 @@ export interface SessionWithCounts extends Session {
   questions: Question[]
 }
 
-// ─── View model types (used by frontend pages) ────────────────────────────────
+// âââ View model types (used by frontend pages) ââââââââââââââââââââââââââââââââ
 
 /** AI grading / summarize response category */
 export interface SummaryCategory {
@@ -324,7 +335,7 @@ export interface SummaryCategory {
  */
 export interface ThemeCategory extends SummaryCategory {
   id: string
-  /** The "Still forming" bucket — low-confidence answers, never a real theme. */
+  /** The "Still forming" bucket â low-confidence answers, never a real theme. */
   isOther: boolean
 }
 
