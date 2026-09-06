@@ -46,6 +46,9 @@ interface SearchResult {
 const sanitizeSchema: Schema = {
   ...defaultSchema,
   clobber: [],  // don't prefix heading IDs with user-content- (breaks TOC anchors)
+  // Not in the default allowlist: without these, <figure> unwraps and the caption
+  // spills into the surrounding prose. Structural tags only, no new attributes.
+  tagNames: [...(defaultSchema.tagNames ?? []), 'figure', 'figcaption'],
   attributes: {
     ...(defaultSchema.attributes ?? {}),
     code: [['className', /^language-./, 'math-inline', 'math-display'] as [string, ...(string | RegExp)[]]],
