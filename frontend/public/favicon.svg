@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+  <!-- The PulseMark from src/components/ui/PulseMark.tsx. The stroke is heavier than
+       the component's 2.2 because a tab renders this at 16px, where 2.2 disappears. -->
+  <path
+    d="M2 13 H7 L9 7 L12 17 L14.5 11 L16 13 H22"
+    stroke="#ee4d2e"
+    stroke-width="2.6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

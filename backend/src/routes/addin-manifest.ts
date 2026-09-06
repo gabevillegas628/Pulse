@@ -19,6 +19,7 @@ const router = Router()
 const ADDIN_ID = '5e0f6c2a-9b41-4a7d-8f3e-2c1d7b6a4e90'
 
 function manifestXml(baseUrl: string): string {
+  const icon16 = `${baseUrl}/addin/icon-16.png`
   const icon = `${baseUrl}/addin/icon-32.png`
   const icon80 = `${baseUrl}/addin/icon-80.png`
 
@@ -95,7 +96,7 @@ function manifestXml(baseUrl: string): string {
     </Hosts>
     <Resources>
       <bt:Images>
-        <bt:Image id="Pulse.Icon16" DefaultValue="${icon}" />
+        <bt:Image id="Pulse.Icon16" DefaultValue="${icon16}" />
         <bt:Image id="Pulse.Icon32" DefaultValue="${icon}" />
         <bt:Image id="Pulse.Icon80" DefaultValue="${icon80}" />
       </bt:Images>
