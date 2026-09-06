@@ -11,7 +11,9 @@ interface TextbookLayoutProps {
 
 export default function TextbookLayout({ children, backHref, backLabel, className }: TextbookLayoutProps) {
   return (
-    <div className={`min-h-screen bg-canvas flex flex-col ${className ?? ''}`}>
+    // dvh, not vh: on mobile Safari and Chrome `100vh` is the height with the URL bar
+    // hidden, so a vh-sized reader runs off the bottom of the screen until you scroll.
+    <div className={`min-h-[100dvh] bg-canvas flex flex-col ${className ?? ''}`}>
       {/* Header */}
       <header className="bg-surface border-b border-hairline shrink-0">
         <div className="max-w-screen-xl mx-auto px-4 h-14 flex items-center gap-3">

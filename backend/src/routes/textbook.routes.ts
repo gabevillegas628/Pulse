@@ -52,6 +52,10 @@ const sanitizeSchema: Schema = {
   attributes: {
     ...(defaultSchema.attributes ?? {}),
     code: [['className', /^language-./, 'math-inline', 'math-display'] as [string, ...(string | RegExp)[]]],
+    // Two literal class names, so a chapter can float a figure. Named rather than a
+    // pattern on purpose: the markdown comes from a public GitHub repo, and an author
+    // who can write arbitrary class names can reach any rule the app ships.
+    figure: [['className', 'fig-left', 'fig-right'] as [string, ...(string | RegExp)[]]],
   },
 }
 

@@ -189,6 +189,16 @@
 .pulse-scroll::-webkit-scrollbar-thumb  { background: var(--hairline-strong); border-radius: 99px; }
 .pulse-scroll::-webkit-scrollbar-track  { background: transparent; }
 
+/* ── Textbook reader shell ────────────────────────────────────────────────── */
+/* The reader is usually a panel rather than the page: both class tabs mount it inside a
+   fixed-height box and fullscreen is 95vw, so viewport width says little about the box
+   the text is laid out in. Naming the panel as a container lets everything below key off
+   the width that actually applies. The JS side measures the same element. */
+.textbook-reader {
+  container-type: inline-size;
+  container-name: reader;
+}
+
 /* ── Textbook prose ───────────────────────────────────────────────────────── */
 .textbook-prose {
   @apply prose prose-slate max-w-none;
@@ -200,16 +210,71 @@
   text-align: left;
 }
 
+/* Justifying needs room to distribute. In a phone-width column it opens rivers between
+   words and hyphenates almost every line, so the narrow column reads ragged-right. */
+@container reader (max-width: 640px) {
+  .textbook-prose {
+    text-align: left;
+    hyphens: manual;
+  }
+}
+
 /* Figure captions: italic paragraph immediately after an image */
 .textbook-prose img + em,
-.textbook-prose p > img + em,
-.textbook-prose figure figcaption {
+.textbook-prose p > img + em {
   display: block;
   text-align: center;
   font-size: 0.82rem;
   color: #6b7280;
   margin-top: 0.35rem;
   font-style: normal;
+}
+
+/* A figure shrink-wraps its image, so the caption is measured against the image instead
+   of the prose column. The table box is what makes that hold for long captions: a table's
+   width comes from its grid — here, the image — and the caption is then laid out at that
+   width. A plain `width: fit-content` would measure the caption too, and any caption
+   longer than its image would widen the figure back out to the full column. */
+.textbook-prose figure {
+  display: table;
+  margin-inline: auto;
+}
+
+.textbook-prose figure figcaption {
+  display: table-caption;
+  caption-side: bottom;
+  text-align: center;
+  font-size: 0.82rem;
+  color: #6b7280;
+  margin-top: 0.35rem;
+  font-style: normal;
+}
+
+/* Floated figures, opt in per figure from the markdown with class="fig-left". Only once
+   the column is wide enough that text wrapping beside them still reads — below that they
+   fall back to the centred block above, which is the right shape for a phone. */
+@container reader (min-width: 560px) {
+  .textbook-prose figure.fig-left,
+  .textbook-prose figure.fig-right {
+    max-width: min(42%, 340px);
+  }
+
+  .textbook-prose figure.fig-left {
+    float: left;
+    margin: 0.35rem 1.5rem 0.75rem 0;
+  }
+
+  .textbook-prose figure.fig-right {
+    float: right;
+    margin: 0.35rem 0 0.75rem 1.5rem;
+  }
+}
+
+/* A heading starts its own line rather than tucking into whatever a float left over. */
+.textbook-prose h1,
+.textbook-prose h2,
+.textbook-prose h3 {
+  clear: both;
 }
 
 /* Make images centered by default */

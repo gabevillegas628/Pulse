@@ -1,19 +1,35 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { BookOpen, ChevronRight, Maximize2, Menu, Minimize2, RotateCcw, Search, X } from 'lucide-react'
+import { BookOpen, ChevronRight, Maximize2, Menu, Minimize2, Search, X } from 'lucide-react'
 
-const NARROW_BREAKPOINT = 768
+/**
+ * Below this the reader drops its desktop affordances: the chapter list is already an
+ * overlay drawer rather than a column, so what is left to shed is the fullscreen button,
+ * the width slider, and the outer padding. Matches the @container rule in globals.css.
+ */
+const NARROW_BREAKPOINT = 640
 
-function useIsNarrow() {
-  const [narrow, setNarrow] = useState(() => window.innerWidth < NARROW_BREAKPOINT)
+/**
+ * Inline size of one element, observed on the element itself.
+ *
+ * Deliberately not `window.innerWidth`: three of the four mounts are embedded panels — the
+ * professor and student class tabs, and the 95vw fullscreen overlay — so a wide window can
+ * hold a narrow reader and the window measurement would answer for the wrong box. Reading
+ * the panel keeps these decisions on the same reference frame as the CSS ones.
+ */
+function useElementWidth(ref: React.RefObject<HTMLElement | null>) {
+  const [width, setWidth] = useState<number | null>(null)
   useEffect(() => {
-    const handler = () => setNarrow(window.innerWidth < NARROW_BREAKPOINT)
-    window.addEventListener('resize', handler)
-    return () => window.removeEventListener('resize', handler)
-  }, [])
-  return narrow
+    const el = ref.current
+    if (!el) return
+    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width))
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [ref])
+  return width
 }
+
 import { contentsApiUrl, filenameToTitle, chapterSortKey, parseChapterList } from '@/lib/textbook'
 import { api } from '@/api/client'
 
@@ -80,6 +96,7 @@ const FONT_SIZES = [
 type FontSize = typeof FONT_SIZES[number]['value']
 
 function ChapterSidebar({
+  narrow,
   chapters,
   selectedName,
   onSelect,
@@ -99,6 +116,7 @@ function ChapterSidebar({
   chapterTitles,
   contentRootRef,
 }: {
+  narrow: boolean
   chapters: Chapter[]
   selectedName: string | null
   onSelect: (ch: Chapter) => void
@@ -218,13 +236,16 @@ function ChapterSidebar({
               >
                 <Search size={14} />
               </button>
-              <button
-                onClick={onToggleExpand}
-                className="text-muted hover:text-ink transition-colors"
-                title={expanded ? 'Exit fullscreen' : 'Fullscreen'}
-              >
-                {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-              </button>
+              {/* Hidden on narrow for the same reason as the one in the chapter header. */}
+              {!narrow && (
+                <button
+                  onClick={onToggleExpand}
+                  className="text-muted hover:text-ink transition-colors"
+                  title={expanded ? 'Exit fullscreen' : 'Fullscreen'}
+                >
+                  {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                </button>
+              )}
             </div>
           </div>
 
@@ -336,21 +357,25 @@ function ChapterSidebar({
           </nav>
           {/* Width + font size controls */}
           <div className="px-4 py-3 border-t border-hairline shrink-0 space-y-3">
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <p className="text-xs text-muted">Text width</p>
-                <span className="text-xs font-medium text-muted tabular-nums font-mono">{contentWidth}px</span>
+            {/* A measure preference is meaningless where the column is already the whole
+                screen — every setting would render identically. Text size still matters. */}
+            {!narrow && (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-xs text-muted">Text width</p>
+                  <span className="text-xs font-medium text-muted tabular-nums font-mono">{contentWidth} chars</span>
+                </div>
+                <input
+                  type="range"
+                  min={45}
+                  max={120}
+                  step={5}
+                  value={contentWidth}
+                  onChange={(e) => onWidthChange(Number(e.target.value))}
+                  className="w-full accent-[var(--signal)]"
+                />
               </div>
-              <input
-                type="range"
-                min={400}
-                max={1100}
-                step={20}
-                value={contentWidth}
-                onChange={(e) => onWidthChange(Number(e.target.value))}
-                className="w-full accent-[var(--signal)]"
-              />
-            </div>
+            )}
             <div>
               <p className="text-xs text-muted mb-1.5">Text size</p>
               <div className="flex rounded-sm border border-hairline overflow-hidden">
@@ -378,6 +403,7 @@ function ChapterSidebar({
 // ─── Chapter content pane ─────────────────────────────────────────────────────
 
 function ChapterContent({
+  narrow,
   name,
   downloadUrl,
   contentWidth,
@@ -393,6 +419,7 @@ function ChapterContent({
   chapterTitles,
   contentRootRef,
 }: {
+  narrow: boolean
   name: string
   downloadUrl: string
   contentWidth: number
@@ -518,19 +545,33 @@ function ChapterContent({
   return (
     <article className="flex-1 flex flex-col overflow-hidden">
       {/* Chapter header bar */}
-      <div className="flex items-center justify-between px-8 py-3 border-b border-hairline shrink-0">
+      <div className={`flex items-center justify-between ${narrow ? 'px-4' : 'px-8'} py-3 border-b border-hairline shrink-0`}>
         <p className="text-sm font-semibold text-ink-2 truncate pr-4">{filenameToTitle(name, chapterTitles)}</p>
-        <button
-          onClick={onToggleExpand}
-          className="flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-sm border border-hairline text-sm text-ink-2 hover:bg-surface-2 hover:border-hairline-strong transition-colors"
-        >
-          {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-          {expanded ? 'Exit fullscreen' : 'Fullscreen'}
-        </button>
+        {/* Nothing to expand into on a phone — the reader already fills the screen. */}
+        {!narrow && (
+          <button
+            onClick={onToggleExpand}
+            className="flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-sm border border-hairline text-sm text-ink-2 hover:bg-surface-2 hover:border-hairline-strong transition-colors"
+          >
+            {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            {expanded ? 'Exit fullscreen' : 'Fullscreen'}
+          </button>
+        )}
       </div>
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto px-8 py-10" style={{ maxWidth: contentWidth }}>
+        {/*
+          The measure is in `ch`, so it holds steady in characters when the reader changes
+          text size — against a fixed pixel cap, larger text meant fewer words per line,
+          which is backwards. `ch` resolves against this element's own font size, which is
+          why the size lands here as well as on the prose block inside.
+
+          min(…, 100%) lets a panel narrower than the preference win instead of overflowing.
+        */}
+        <div
+          className={`mx-auto ${narrow ? 'px-4 py-6' : 'px-8 py-10'}`}
+          style={{ fontSize, maxWidth: `min(${contentWidth}ch, 100%)` }}
+        >
           <div
             ref={(el) => { contentRef.current = el; if (contentRootRef) contentRootRef.current = el }}
             className="textbook-prose"
@@ -608,9 +649,16 @@ function Reader({
   const contentRootRef = useRef<HTMLDivElement | null>(null)
 
   const selectedChapter = chapters.find((c) => c.name === selectedName) ?? null
+  const readerRef = useRef<HTMLDivElement | null>(null)
+  const readerWidth = useElementWidth(readerRef)
+  // null until the observer's first callback. Assume roomy so the first paint is the
+  // desktop layout rather than a narrow one that snaps wide a frame later.
+  const narrow = readerWidth !== null && readerWidth < NARROW_BREAKPOINT
+
   return (
-    <div className="relative flex flex-1 overflow-hidden">
+    <div ref={readerRef} className="textbook-reader relative flex flex-1 overflow-hidden">
       <ChapterSidebar
+        narrow={narrow}
         chapters={chapters}
         selectedName={selectedName}
         onSelect={onSelect}
@@ -632,6 +680,7 @@ function Reader({
       />
       {selectedChapter ? (
         <ChapterContent
+          narrow={narrow}
           name={selectedChapter.name}
           downloadUrl={selectedChapter.downloadUrl}
           contentWidth={contentWidth}
@@ -681,9 +730,10 @@ export default function TextbookPage({ repo, path, classId, viewCounts }: Textbo
   const [expanded, setExpanded] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [fullscreenSidebarCollapsed, setFullscreenSidebarCollapsed] = useState(false)
-  const [contentWidth, setContentWidth] = useState(672)
+  // Characters per line, not pixels — see the measure comment in ChapterContent.
+  // 80ch at the default text size is close to the 672px this replaced.
+  const [contentWidth, setContentWidth] = useState(80)
   const [fontSize, setFontSize] = useState<FontSize>('1rem')
-  const isNarrow = useIsNarrow()
 
   // Close on Escape
   useEffect(() => {
@@ -736,18 +786,6 @@ export default function TextbookPage({ repo, path, classId, viewCounts }: Textbo
     return (
       <div className="flex-1 flex items-center justify-center text-red-500 text-sm p-8 text-center">
         Could not load chapters from GitHub. Make sure the repo is public and the name is correct.
-      </div>
-    )
-  }
-
-  if (isNarrow) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center px-8 text-center bg-gray-900">
-        <RotateCcw size={40} className="text-white/60 mb-5" />
-        <p className="text-white text-lg font-semibold mb-2">Rotate your device</p>
-        <p className="text-white/60 text-sm leading-relaxed">
-          The textbook needs a wider screen. Try landscape mode or open it on a tablet or computer.
-        </p>
       </div>
     )
   }
