@@ -15,6 +15,8 @@ import ResultsSummary from '@/components/ResultsSummary'
 import ThemeBars from '@/components/ThemeBars'
 import LiveMonitorPanel from '@/components/LiveMonitorPanel'
 import { apiError } from '@/lib/errors'
+import QuestionImageField from '@/components/QuestionImageField'
+import { deleteUpload } from '@/lib/uploadImage'
 import { downloadCsv } from '@/lib/downloadCsv'
 import { calcResponseScore, cycleScore } from '@/lib/scoring'
 import { copyQrCardToClipboard } from 'shared'
@@ -27,6 +29,7 @@ export default function SessionPage() {
   const qc = useQueryClient()
   const [activeTab, setActiveTab] = useState(0)
   const [expandedQr, setExpandedQr] = useState<string | null>(null)
+  const [expandedImage, setExpandedImage] = useState<string | null>(null)
 
   // Themes live in the query cache, written by the fetch, the summarize mutation and the
   // socket alike. Dismiss only collapses the panel, so that stays local.
@@ -42,6 +45,7 @@ export default function SessionPage() {
   const [aqText, setAqText] = useState('')
   const [aqType, setAqType] = useState<'FREE_TEXT' | 'MULTIPLE_CHOICE' | 'RATING' | 'YES_NO' | 'NUMERIC' | 'MULTI_SELECT' | 'ORDERING' | 'STRUCTURE'>('FREE_TEXT')
   const [aqOptions, setAqOptions] = useState('')
+  const [aqImageUrl, setAqImageUrl] = useState<string | null>(null)
   const [aqNumericAnswer, setAqNumericAnswer] = useState('')
   const [aqTolerance, setAqTolerance] = useState('')
   const [aqUnit, setAqUnit] = useState('')
@@ -52,6 +56,7 @@ export default function SessionPage() {
   const [eqTitle, setEqTitle] = useState('')
   const [eqText, setEqText] = useState('')
   const [eqOptions, setEqOptions] = useState<string[]>([])
+  const [eqImageUrl, setEqImageUrl] = useState<string | null>(null)
   const [eqCorrectAnswer, setEqCorrectAnswer] = useState('')
   const [eqTolerance, setEqTolerance] = useState('')
   const [eqUnit, setEqUnit] = useState('')
@@ -61,11 +66,25 @@ export default function SessionPage() {
   const [numericDraftTolerance, setNumericDraftTolerance] = useState<Record<string, string>>({})
   const [numericDraftUnit, setNumericDraftUnit] = useState<Record<string, string>>({})
 
+  /**
+   * Abandon the new question, and the image it never got attached to.
+   *
+   * The upload happens the moment the professor picks a file, so backing out of the
+   * dialog is the one path that can leave a file with nothing pointing at it.
+   */
+  function closeAddQuestion() {
+    if (aqImageUrl) deleteUpload(aqImageUrl)
+    setShowAddQuestion(false)
+    setAqImageUrl(null)
+    setAqError('')
+  }
+
   function openEditQuestion(q: QuestionWithResponses) {
     setEqId(q.id)
     setEqTitle(q.title ?? '')
     setEqText(q.text)
     setEqOptions((q.options as string[] | null) ?? [])
+    setEqImageUrl(q.imageUrl ?? null)
     setEqCorrectAnswer(q.correctAnswer ?? '')
     setEqTolerance(q.tolerance != null ? String(q.tolerance) : '')
     setEqUnit(q.unit ?? '')
@@ -98,12 +117,14 @@ export default function SessionPage() {
       correctAnswer: aqType === 'NUMERIC' && aqNumericAnswer ? aqNumericAnswer : undefined,
       tolerance: aqType === 'NUMERIC' && aqTolerance ? parseFloat(aqTolerance) : undefined,
       unit: aqType === 'NUMERIC' && aqUnit ? aqUnit : undefined,
+      imageUrl: aqImageUrl ?? undefined,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['session', sessionId] })
       setShowAddQuestion(false)
       setAqTitle(''); setAqText(''); setAqType('FREE_TEXT'); setAqOptions('')
       setAqNumericAnswer(''); setAqTolerance(''); setAqUnit(''); setAqError('')
+      setAqImageUrl(null)
     },
     onError: (e: unknown) => {
       setAqError(apiError(e, 'Failed to add question'))
@@ -120,6 +141,8 @@ export default function SessionPage() {
       const newTitle = eqTitle.trim() || null
       if (newTitle !== (question.title ?? null)) payload.title = newTitle
       if (eqText.trim() !== question.text) payload.text = eqText.trim()
+
+      if (eqImageUrl !== (question.imageUrl ?? null)) payload.imageUrl = eqImageUrl
 
       const hasOptions = ['MULTIPLE_CHOICE', 'MULTI_SELECT', 'ORDERING'].includes(question.type)
       if (hasOptions) {
@@ -143,6 +166,7 @@ export default function SessionPage() {
       qc.invalidateQueries({ queryKey: ['session', sessionId] })
       setShowEditQuestion(false)
       setEqId(null); setEqTitle(''); setEqText(''); setEqOptions([]); setEqCorrectAnswer(''); setEqTolerance(''); setEqUnit(''); setEqError('')
+      setEqImageUrl(null)
     },
     onError: (e: unknown) => setEqError(apiError(e, 'Failed to save question')),
   })
@@ -659,6 +683,14 @@ export default function SessionPage() {
                   <p className="text-sm font-semibold text-ink mb-1">{activeQuestion.title}</p>
                 )}
                 <p className="text-ink font-medium">{activeQuestion.text}</p>
+                {activeQuestion.imageUrl && (
+                  <img
+                    src={activeQuestion.imageUrl}
+                    alt="Attached to this question"
+                    onClick={() => setExpandedImage(activeQuestion.imageUrl)}
+                    className="mt-2 max-h-48 rounded-[14px] border border-hairline object-contain bg-surface cursor-zoom-in"
+                  />
+                )}
                 {data.status !== SessionStatus.ARCHIVED && (
                   <button
                     onClick={() => openEditQuestion(activeQuestion)}
@@ -1130,7 +1162,7 @@ export default function SessionPage() {
           <Card flat className="w-full max-w-md p-6 shadow-pop">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-base font-semibold text-ink">Add question</h2>
-              <button onClick={() => setShowAddQuestion(false)} className="text-muted hover:text-ink-2 transition-colors"><X size={18} /></button>
+              <button onClick={closeAddQuestion} className="text-muted hover:text-ink-2 transition-colors"><X size={18} /></button>
             </div>
             <div className="space-y-4">
               <input
@@ -1147,6 +1179,7 @@ export default function SessionPage() {
                 placeholder="Question text…"
                 className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
               />
+              <QuestionImageField value={aqImageUrl} onChange={setAqImageUrl} cleanupOnReplace />
               <select
                 value={aqType}
                 onChange={(e) => setAqType(e.target.value as typeof aqType)}
@@ -1194,7 +1227,7 @@ export default function SessionPage() {
               )}
               {aqError && <p className="text-red-500 text-xs">{aqError}</p>}
               <div className="flex justify-end gap-3 pt-1">
-                <button onClick={() => setShowAddQuestion(false)} className="px-4 py-2 text-sm text-muted hover:text-ink transition-colors">Cancel</button>
+                <button onClick={closeAddQuestion} className="px-4 py-2 text-sm text-muted hover:text-ink transition-colors">Cancel</button>
                 <Button
                   variant="primary"
                   onClick={() => addQuestionMutation.mutate()}
@@ -1235,6 +1268,7 @@ export default function SessionPage() {
                   placeholder="Question text…"
                   className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
                 />
+                <QuestionImageField value={eqImageUrl} onChange={setEqImageUrl} />
                 {hasOptions && (
                   <div className="space-y-2">
                     <p className="text-xs text-muted font-medium">Options</p>
@@ -1360,6 +1394,16 @@ export default function SessionPage() {
           </div>
         )
       })()}
+
+      {/* Question image fullscreen overlay */}
+      {expandedImage && (
+        <div
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 cursor-zoom-out p-8"
+          onClick={() => setExpandedImage(null)}
+        >
+          <img src={expandedImage} alt="" className="max-w-full max-h-full object-contain rounded-[14px]" />
+        </div>
+      )}
 
       {/* QR fullscreen overlay */}
       {expandedQr && activeQuestion && 'qrDataUrl' in activeQuestion && (

@@ -9,6 +9,7 @@ import { generateUniqueCode } from '../utils/codes.js'
 import { generateQuestionQr } from '../utils/qr.js'
 import { p } from '../utils/params.js'
 import { toInchi } from '../utils/indigo.js'
+import { uploadPathSchema, deleteUploadIfUnreferenced } from '../utils/uploads.js'
 import { reopen } from '../services/clock.service.js'
 import { getIo } from '../socket.js'
 
@@ -53,7 +54,7 @@ async function getAssignment(assignmentId: string, viewer: Viewer) {
 router.post('/sessions/:id/questions', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
-    const { title, text, type, options, groupId, correctAnswer, tolerance, unit, liveThemes, autoClose } = z.object({
+    const { title, text, type, options, groupId, correctAnswer, tolerance, unit, imageUrl, liveThemes, autoClose } = z.object({
       title: z.string().max(120).optional(),
       text: z.string().min(1),
       type: z.enum(['FREE_TEXT', 'MULTIPLE_CHOICE', 'RATING', 'YES_NO', 'NUMERIC', 'MULTI_SELECT', 'ORDERING', 'STRUCTURE']),
@@ -62,6 +63,8 @@ router.post('/sessions/:id/questions', requireProfessor, async (req: Request, re
       correctAnswer: z.string().optional(),
       tolerance: z.number().optional(),
       unit: z.string().optional(),
+      // A path this server minted, never an arbitrary URL — see utils/uploads.ts.
+      imageUrl: uploadPathSchema.optional(),
       // null (or absent) inherits the class default. FREE_TEXT only.
       liveThemes: z.boolean().nullable().optional(),
       // null (or absent) inherits the class default. Applies to every question type.
@@ -98,6 +101,9 @@ router.post('/sessions/:id/questions', requireProfessor, async (req: Request, re
           : undefined,
         tolerance: type === 'NUMERIC' ? (tolerance ?? null) : undefined,
         unit: type === 'NUMERIC' ? (unit ?? null) : undefined,
+        // Any question type can carry a diagram: a structure to critique, a spectrum
+        // to read off, a photo of the board.
+        imageUrl: imageUrl ?? null,
         // Meaningless on other types — themesEnabled() ignores them regardless, but
         // storing it only where it applies keeps the column honest.
         liveThemes: type === 'FREE_TEXT' ? (liveThemes ?? null) : null,
@@ -236,6 +242,8 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
       title: z.string().max(120).nullable().optional(),
       text: z.string().min(1).optional(),
       options: z.array(z.string().min(1)).optional(),
+      // null removes the image. Any value must be a path this server minted.
+      imageUrl: uploadPathSchema.nullable().optional(),
       // null inherits the class default; true/false override it. FREE_TEXT only.
       liveThemes: z.boolean().nullable().optional(),
       // null inherits the class default; true/false override it. Any question type.
@@ -312,9 +320,16 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
       updateData.groupId = body.groupId
     }
 
-    if (body.text !== undefined || body.options !== undefined) {
+    // The image is part of the prompt, so it is governed like the wording: students
+    // who already answered saw a particular question, and swapping the diagram under
+    // them mid-run would silently make their answers answers to something else.
+    if (body.text !== undefined || body.options !== undefined || body.imageUrl !== undefined) {
       if (hasOpenRun)
-        throw new AppError('Cannot edit question text/options while a run is open', 400)
+        throw new AppError('Cannot edit question text/image/options while a run is open', 400)
+    }
+
+    if (body.imageUrl !== undefined) {
+      updateData.imageUrl = body.imageUrl
     }
 
     if (body.text !== undefined) {
@@ -361,6 +376,12 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
     }
 
     const updated = await prisma.question.update({ where: { id: question.id }, data: updateData })
+
+    // After the write, so the row no longer counts itself as a reference.
+    if (body.imageUrl !== undefined && question.imageUrl && question.imageUrl !== body.imageUrl) {
+      await deleteUploadIfUnreferenced(question.imageUrl)
+    }
+
     res.json({ success: true, data: { question: updated } })
   } catch (err) {
     next(err)
@@ -382,6 +403,7 @@ router.delete('/sessions/:sessionId/questions/:questionId', requireProfessor, as
     if (!question) throw new AppError('Question not found', 404)
     if (question.session!.runs.length > 0) throw new AppError('Cannot delete questions while a run is open', 400)
     await prisma.question.delete({ where: { id: question.id } })
+    await deleteUploadIfUnreferenced(question.imageUrl)
     res.json({ success: true })
   } catch (err) {
     next(err)

@@ -7,6 +7,7 @@ import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { createProxyMiddleware } from 'http-proxy-middleware'
 import { config } from './config/index.js'
+import { uploadDir } from './utils/uploads.js'
 import { prisma } from './db/index.js'
 import { logger } from './utils/logger.js'
 import { errorMiddleware } from './middleware/error.middleware.js'
@@ -147,10 +148,6 @@ app.get('/health', async (_req, res) => {
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-
-const uploadDir = path.isAbsolute(config.uploadDir)
-  ? config.uploadDir
-  : path.resolve(__dirname, '..', '..', config.uploadDir)
 
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true })

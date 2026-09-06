@@ -250,6 +250,9 @@ model Question {
   correctAnswer String?
   tolerance     Float?
   unit          String?
+  // A diagram or photo shown above the answer input, as a "/uploads/<name>" path
+  // this server minted. Never an external URL: it goes straight into an <img src>.
+  imageUrl      String?
   // null = inherit Class.liveThemesDefault. FREE_TEXT only; ignored for other types.
   liveThemes    Boolean?
   // null = inherit Class.autoCloseDefault. Unlike liveThemes this applies to every

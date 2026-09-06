@@ -57,6 +57,7 @@ export default function QuestionPage() {
   const [submitError, setSubmitError] = useState('')
   const [sessionClosed, setSessionClosed] = useState(false)
   const [questionClosed, setQuestionClosed] = useState(false)
+  const [imageZoomed, setImageZoomed] = useState(false)
   const [orderedItems, setOrderedItems] = useState<string[]>([])
   const [selectedOptions, setSelectedOptions] = useState<string[]>([])
   const ketcherRef = useRef<Ketcher | null>(null)
@@ -214,6 +215,15 @@ export default function QuestionPage() {
 
         <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-6">
           <p className="text-sm font-medium text-ink">{q.text}</p>
+
+          {q.imageUrl && (
+            <img
+              src={q.imageUrl}
+              alt="Figure for this question"
+              onClick={() => setImageZoomed(true)}
+              className="w-full max-h-[60vh] object-contain rounded-[14px] border border-hairline bg-surface-2 cursor-zoom-in"
+            />
+          )}
 
           <div>
             {q.type === 'FREE_TEXT' && (
@@ -389,6 +399,16 @@ export default function QuestionPage() {
           </button>
         </form>
       </div>
+
+      {/* A diagram at phone width is often unreadable — tapping it fills the screen. */}
+      {imageZoomed && q.imageUrl && (
+        <div
+          className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 cursor-zoom-out p-4"
+          onClick={() => setImageZoomed(false)}
+        >
+          <img src={q.imageUrl} alt="" className="max-w-full max-h-full object-contain" />
+        </div>
+      )}
     </StudentLayout>
   )
 }

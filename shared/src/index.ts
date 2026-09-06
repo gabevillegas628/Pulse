@@ -90,6 +90,8 @@ export interface Question {
   correctAnswer: string | null
   tolerance: number | null
   unit: string | null
+  /** Diagram shown with the question, as a "/uploads/…" path this server minted */
+  imageUrl: string | null
   /**
    * Live AI theming for this question's free-text answers.
    * null inherits the class default; true/false override it. FREE_TEXT only.
@@ -233,6 +235,8 @@ export interface StudentQuestion {
   order: number
   accessCode: string
   unit: string | null
+  /** Diagram shown with the question, as a "/uploads/…" path this server minted */
+  imageUrl: string | null
   /** Set when this is a session question */
   session?: {
     id: string

@@ -13,6 +13,10 @@ docs/
 .vscode/settings.json
 migrate_structures_q.sql
 
+# Question images the professor attached. User content, and in production it lives
+# on a mounted volume rather than in the tree at all.
+uploads/
+
 # Dumps land here when backup-db.sh runs without a bucket; never in git.
 backups/
 restore/

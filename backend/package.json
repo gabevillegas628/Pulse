@@ -15,6 +15,7 @@
     "db:seed": "prisma db seed",
     "test:clock": "tsx scripts/smoke-autoclose.ts --clock-only",
     "test:e2e:qr": "tsx scripts/e2e-qr.ts",
+    "test:e2e:image": "tsx scripts/e2e-question-image.ts",
     "test:smoke:themes": "tsx scripts/smoke-themes.ts",
     "test:smoke:socket": "tsx scripts/smoke-socket-auth.ts",
     "test:smoke:admin": "tsx scripts/smoke-admin.ts",

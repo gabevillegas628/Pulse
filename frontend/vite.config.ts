@@ -17,6 +17,9 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': { target: 'http://localhost:3001', changeOrigin: true },
+      // Uploaded images are served by the API, not by Vite. Without this they fall
+      // through to the SPA fallback and every question image is broken in dev.
+      '/uploads': { target: 'http://localhost:3001', changeOrigin: true },
       '/socket.io': { target: 'http://localhost:3001', ws: true, changeOrigin: true },
     },
   },

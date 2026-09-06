@@ -138,6 +138,7 @@ router.get('/student/questions/:id', requireStudent, async (req: Request, res: R
             type: question.type,
             options: question.options,
             unit: question.unit,
+            imageUrl: question.imageUrl,
             order: question.order,
             accessCode: question.accessCode,
             session: {
@@ -184,6 +185,7 @@ router.get('/student/questions/:id', requireStudent, async (req: Request, res: R
             type: question.type,
             options: question.options,
             unit: question.unit,
+            imageUrl: question.imageUrl,
             order: question.order,
             accessCode: question.accessCode,
             assignment: {

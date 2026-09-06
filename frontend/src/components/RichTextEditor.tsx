@@ -5,7 +5,7 @@ import Subscript from '@tiptap/extension-subscript'
 import Superscript from '@tiptap/extension-superscript'
 import { Bold, Italic, List, Subscript as SubscriptIcon, Superscript as SuperscriptIcon, ImageIcon } from 'lucide-react'
 import { useRef } from 'react'
-import { api } from '@/api/client'
+import { uploadImage } from '@/lib/uploadImage'
 
 interface Props {
   content: string
@@ -31,15 +31,11 @@ export default function RichTextEditor({ content, onChange }: Props) {
   })
 
   async function handleImageUpload(file: File) {
-    const form = new FormData()
-    form.append('image', file)
     try {
-      const { data } = await api.post<{ url: string }>('/uploads/image', form, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
-      editor?.chain().focus().setImage({ src: data.url }).run()
-    } catch {
-      alert('Image upload failed. Check file type and size (max 5 MB).')
+      const url = await uploadImage(file)
+      editor?.chain().focus().setImage({ src: url }).run()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Image upload failed.')
     }
   }
 

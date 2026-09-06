@@ -276,6 +276,10 @@ router.post('/:id/duplicate', async (req: Request, res: Response, next: NextFunc
         correctAnswer: q.correctAnswer,
         tolerance: q.tolerance,
         unit: q.unit,
+        // Both copies now point at one file. deleteUploadIfUnreferenced counts
+        // references before unlinking, so deleting one term's question leaves the
+        // other term's diagram intact.
+        imageUrl: q.imageUrl,
       }
     }
 
