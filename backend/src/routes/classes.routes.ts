@@ -444,6 +444,50 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
   }
 })
 
+/** One row per student who has answered anything in the class. */
+interface Participation {
+  studentId: string
+  totalResponses: number
+  sessionsParticipated: number
+  averageWordCount: number
+}
+
+/**
+ * Per-student participation for one class, counted in Postgres.
+ *
+ * This was two unbounded findMany calls — every response row in the class, session and
+ * assignment alike, pulled into Node and folded into a Map. A semester of a 140-seat
+ * class is tens of thousands of rows materialised as JS objects, for a page that shows
+ * four numbers per student, and the trip holds its connections for the whole of it.
+ * That is how opening the roster came to be the thing most likely to leave the auth
+ * middleware's own lookup waiting on a connection, which it then reported as an
+ * expired session (see asAuthError in auth.middleware.ts).
+ *
+ * Raw SQL rather than Prisma because of sessionsParticipated: a distinct count over a
+ * column on the joined table, which groupBy cannot express and distinct cannot reach.
+ * One statement is also one round trip holding one connection instead of three.
+ *
+ * A question hangs off a session or an assignment and never both, so the two LEFT JOINs
+ * cannot both match and COUNT(*) cannot double-count. COUNT(DISTINCT) ignores nulls, so
+ * assignment answers drop out of the session tally on their own. The ::int casts matter:
+ * COUNT and ROUND return bigint and numeric, and both reach JSON as values it refuses.
+ */
+async function participationByStudent(classId: string): Promise<Participation[]> {
+  return prisma.$queryRaw<Participation[]>`
+    SELECT
+      r."studentId" AS "studentId",
+      COUNT(*)::int AS "totalResponses",
+      COUNT(DISTINCT q."sessionId")::int AS "sessionsParticipated",
+      COALESCE(ROUND(AVG(r."wordCount") FILTER (WHERE q."type" = 'FREE_TEXT')), 0)::int AS "averageWordCount"
+    FROM "Response" r
+    JOIN "Question" q ON q."id" = r."questionId"
+    LEFT JOIN "Session" s ON s."id" = q."sessionId"
+    LEFT JOIN "Assignment" a ON a."id" = q."assignmentId"
+    WHERE s."classId" = ${classId} OR a."classId" = ${classId}
+    GROUP BY r."studentId"
+  `
+}
+
 router.get('/:id/enrollments', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
@@ -452,7 +496,7 @@ router.get('/:id/enrollments', async (req: Request, res: Response, next: NextFun
     const cls = await prisma.class.findFirst({ where: { id: classId, ...ownedClass(professor) } })
     if (!cls) throw new AppError('Class not found', 404)
 
-    const [enrollments, allSessionResponses, allAssignmentResponses, totalClosedSessionRuns] = await Promise.all([
+    const [enrollments, participation, totalClosedSessionRuns] = await Promise.all([
       prisma.enrollment.findMany({
         where: { classId },
         include: {
@@ -461,47 +505,14 @@ router.get('/:id/enrollments', async (req: Request, res: Response, next: NextFun
         },
         orderBy: { enrolledAt: 'desc' },
       }),
-      // Responses via session runs
-      prisma.response.findMany({
-        where: { question: { session: { classId } } },
-        select: {
-          studentId: true,
-          wordCount: true,
-          question: { select: { sessionId: true, type: true } },
-        },
-      }),
-      // Responses via assignments
-      prisma.response.findMany({
-        where: { question: { assignment: { classId } } },
-        select: {
-          studentId: true,
-          wordCount: true,
-          question: { select: { assignmentId: true, type: true } },
-        },
-      }),
+      participationByStudent(classId),
       // Count sessions that have at least one closed run
       prisma.session.count({
         where: { classId, runs: { some: { status: { in: ['CLOSED', 'ARCHIVED'] } } } },
       }),
     ])
 
-    type StatsAgg = { totalResponses: number; sessionIds: Set<string>; totalWordCount: number; freeTextCount: number }
-    const byStudent = new Map<string, StatsAgg>()
-
-    for (const r of allSessionResponses) {
-      const s = byStudent.get(r.studentId) ?? { totalResponses: 0, sessionIds: new Set<string>(), totalWordCount: 0, freeTextCount: 0 }
-      s.totalResponses++
-      if (r.question.sessionId) s.sessionIds.add(r.question.sessionId)
-      if (r.question.type === 'FREE_TEXT') { s.totalWordCount += r.wordCount; s.freeTextCount++ }
-      byStudent.set(r.studentId, s)
-    }
-
-    for (const r of allAssignmentResponses) {
-      const s = byStudent.get(r.studentId) ?? { totalResponses: 0, sessionIds: new Set<string>(), totalWordCount: 0, freeTextCount: 0 }
-      s.totalResponses++
-      if (r.question.type === 'FREE_TEXT') { s.totalWordCount += r.wordCount; s.freeTextCount++ }
-      byStudent.set(r.studentId, s)
-    }
+    const byStudent = new Map(participation.map((s) => [s.studentId, s]))
 
     const enriched = enrollments.map((e) => {
       const s = byStudent.get(e.student.id)
@@ -509,9 +520,9 @@ router.get('/:id/enrollments', async (req: Request, res: Response, next: NextFun
         ...e,
         stats: {
           totalResponses: s?.totalResponses ?? 0,
-          sessionsParticipated: s?.sessionIds.size ?? 0,
+          sessionsParticipated: s?.sessionsParticipated ?? 0,
           totalClosedSessions: totalClosedSessionRuns,
-          averageWordCount: s && s.freeTextCount > 0 ? Math.round(s.totalWordCount / s.freeTextCount) : 0,
+          averageWordCount: s?.averageWordCount ?? 0,
         },
       }
     })

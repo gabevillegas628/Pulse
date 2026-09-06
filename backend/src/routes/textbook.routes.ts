@@ -153,6 +153,24 @@ function findOccurrences(text: string, query: string, proximityThreshold = 300):
   return results
 }
 
+/**
+ * Hand the event loop back for a turn.
+ *
+ * Rendering a chapter is seconds of synchronous CPU wearing an async signature. Nothing
+ * else on the process runs during it, so the only way a long job stays neighbourly is to
+ * stop between the pieces and let the queue drain.
+ */
+const yieldToEventLoop = () => new Promise<void>((resolve) => setImmediate(resolve))
+
+/**
+ * How many chapters a search works on at once.
+ *
+ * Enough that the GitHub fetches overlap, which is the part that genuinely benefits from
+ * concurrency. Raising it further buys nothing: the renders behind them are CPU and take
+ * their turns one at a time whatever this says.
+ */
+const SEARCH_CONCURRENCY = 4
+
 async function getOrRenderChapter(downloadUrl: string): Promise<string> {
   const cached = cache.get(downloadUrl)
   if (cached && Date.now() - cached.cachedAt < CACHE_TTL_MS) return cached.html
@@ -280,23 +298,39 @@ router.get('/textbook/search', async (req, res, next) => {
       .map(f => ({ name: f.name, downloadUrl: f.download_url! }))
 
     const results: SearchResult[] = []
-    const qLower = q.toLowerCase()
-    await Promise.all(chapters.map(async (ch) => {
-      try {
-        const html = await getOrRenderChapter(ch.downloadUrl)
-        for (const sec of extractSections(html)) {
-          const occurrences = findOccurrences(sec.text, q)
-          if (occurrences.length > 0) {
-            for (const { excerpt, occurrenceIndex } of occurrences) {
-              results.push({ chapterName: ch.name, downloadUrl: ch.downloadUrl, sectionId: sec.id, sectionTitle: sec.title, excerpt, occurrenceIndex })
+
+    // A few lanes with a yield between chapters, rather than Promise.all over the whole
+    // book. Firing every chapter at once bought no parallelism: the renders are
+    // synchronous, so it only queued them back to back with no gaps, and on a cold cache
+    // the process answered nothing else for as long as the book took to render. That is
+    // one professor's search box holding up every other request on the instance —
+    // including the roster load that then finds no free connection, and the auth
+    // middleware's own lookup behind it. Same total work, spread so the rest gets a turn.
+    const queue = [...chapters]
+    const searchLane = async (): Promise<void> => {
+      for (;;) {
+        const ch = queue.shift()
+        if (!ch) return
+        try {
+          const html = await getOrRenderChapter(ch.downloadUrl)
+          for (const sec of extractSections(html)) {
+            const occurrences = findOccurrences(sec.text, q)
+            if (occurrences.length > 0) {
+              for (const { excerpt, occurrenceIndex } of occurrences) {
+                results.push({ chapterName: ch.name, downloadUrl: ch.downloadUrl, sectionId: sec.id, sectionTitle: sec.title, excerpt, occurrenceIndex })
+              }
+            } else if (wholeWordRegex(q).test(sec.title)) {
+              const preview = sec.text.slice(0, 220)
+              results.push({ chapterName: ch.name, downloadUrl: ch.downloadUrl, sectionId: sec.id, sectionTitle: sec.title, excerpt: preview + (sec.text.length > 220 ? '…' : ''), occurrenceIndex: 0 })
             }
-          } else if (wholeWordRegex(q).test(sec.title)) {
-            const preview = sec.text.slice(0, 220)
-            results.push({ chapterName: ch.name, downloadUrl: ch.downloadUrl, sectionId: sec.id, sectionTitle: sec.title, excerpt: preview + (sec.text.length > 220 ? '…' : ''), occurrenceIndex: 0 })
           }
-        }
-      } catch { /* skip chapters that fail to load */ }
-    }))
+        } catch { /* skip chapters that fail to load */ }
+        await yieldToEventLoop()
+      }
+    }
+    await Promise.all(
+      Array.from({ length: Math.min(SEARCH_CONCURRENCY, chapters.length) }, () => searchLane())
+    )
 
     res.json({ data: results })
   } catch (err) {

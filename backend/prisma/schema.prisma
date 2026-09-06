@@ -112,6 +112,8 @@ model Section {
   createdAt   DateTime     @default(now())
   enrollments Enrollment[]
   runs        SessionRun[]
+
+  @@index([classId])
 }
 
 model Enrollment {
@@ -124,9 +126,12 @@ model Enrollment {
   enrolledAt DateTime @default(now())
 
   @@id([studentId, classId])
+  // The primary key leads with studentId, so it cannot serve "who is in this class" —
+  // the query behind every roster load. Without this that read scans the table.
+  @@index([classId])
 }
 
-// âââ IN_CLASS âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ───── IN_CLASS ──────────────────────────────────────────────────────────────
 
 model Session {
   id         String          @id @default(cuid())
@@ -140,6 +145,8 @@ model Session {
   questions  Question[]
   groups     QuestionGroup[]
   runs       SessionRun[]
+
+  @@index([classId])
 }
 
 model SessionRun {
@@ -159,7 +166,7 @@ model SessionRun {
   @@index([sectionId])
 }
 
-// âââ HOMEWORK âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ───── HOMEWORK ──────────────────────────────────────────────────────────────
 
 model Assignment {
   id         String              @id @default(cuid())
@@ -173,6 +180,8 @@ model Assignment {
   questions  Question[]
   groups     QuestionGroup[]
   extensions DeadlineExtension[]
+
+  @@index([classId])
 }
 
 model DeadlineExtension {
@@ -204,7 +213,7 @@ model QuestionGroup {
   @@index([assignmentId])
 }
 
-// âââ Shared âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ───── Shared ──────────────────────────────────────────────────────────────
 
 enum SessionStatus {
   DRAFT
@@ -276,7 +285,7 @@ model Response {
   @@index([studentId])
 }
 
-// âââ Live AI themes âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ───── Live AI themes ──────────────────────────────────────────────────────────
 //
 // Categories for a FREE_TEXT question, derived once from the first answers and then
 // assigned to each subsequent answer as it lands. See live_ai_themes_spec.md.

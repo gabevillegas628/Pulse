@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken'
 import { prisma } from '../db/index.js'
 import { config } from '../config/index.js'
 import { AppError } from './error.middleware.js'
+import { logger } from '../utils/logger.js'
 import type { Professor, Student } from '@prisma/client'
 
 interface JwtPayload {
@@ -40,10 +41,43 @@ function renewIfHalfSpent(res: Response, payload: JwtPayload): void {
   if (payload.iat == null || payload.exp == null) return
   const halfway = payload.iat + (payload.exp - payload.iat) / 2
   if (Date.now() / 1000 < halfway) return
-  const fresh = jwt.sign({ sub: payload.sub, role: 'professor' }, config.jwtSecret, {
-    expiresIn: config.jwtExpiresIn as unknown as number, // StringValue cast, as at sign-in
-  })
-  res.setHeader(RENEWED_TOKEN_HEADER, fresh)
+  try {
+    const fresh = jwt.sign({ sub: payload.sub, role: 'professor' }, config.jwtSecret, {
+      expiresIn: config.jwtExpiresIn as unknown as number, // StringValue cast, as at sign-in
+    })
+    res.setHeader(RENEWED_TOKEN_HEADER, fresh)
+  } catch (err) {
+    // A renewal that cannot be minted is not a reason to refuse the request carrying it.
+    // The caller's current token is still valid and still has half its life left, so the
+    // only cost of skipping is that the next request tries again.
+    logger.error('professor token renewal failed', err)
+  }
+}
+
+/**
+ * The error to refuse a request with, keeping "not signed in" apart from "we broke".
+ *
+ * These middlewares used to answer 401 for anything that threw, which reads as a safe
+ * default until you notice what else is inside the try: a database round trip. A pool
+ * checkout that times out behind a heavy query, a connection dropped by a restarting
+ * database, a renewal that fails to sign — every one of those left here as
+ * "Unauthorized", and the client has no way to know better. It deletes the token and
+ * raises the session-expired prompt, so a blip lasting a single request costs the
+ * professor their sign-in and a retyped password on a token with hours of life left.
+ * That is the shape of the report from the textbook and roster tabs: their queries are
+ * the heaviest in the app, so they are the likeliest to have the pool short when the
+ * next request needs a connection to look up who is asking.
+ *
+ * jsonwebtoken's own errors — malformed, wrong secret, past exp — are the only failures
+ * here that genuinely mean sign in again. TokenExpiredError and NotBeforeError both
+ * extend JsonWebTokenError, so one check covers all three. Anything else travels to the
+ * error middleware as itself: logged, reported, and answered 500. Honest to the client,
+ * and visible to us rather than disguised as somebody's expired session.
+ */
+function asAuthError(err: unknown): unknown {
+  if (err instanceof AppError) return err
+  if (err instanceof jwt.JsonWebTokenError) return new AppError('Unauthorized', 401)
+  return err
 }
 
 export interface ProfessorRequest extends Request {
@@ -65,26 +99,29 @@ export async function requireProfessor(
   res: Response,
   next: NextFunction
 ): Promise<void> {
+  let professor: Professor
   try {
     const token = extractToken(req)
     const payload = jwt.verify(token, config.jwtSecret) as JwtPayload
     if (payload.role !== 'professor') throw new AppError('Unauthorized', 401)
 
-    const professor = await prisma.professor.findUnique({ where: { id: payload.sub } })
+    const row = await prisma.professor.findUnique({ where: { id: payload.sub } })
     // Deactivation is enforced here, not by revoking tokens: the row is re-read on
     // every request, so a deactivated professor's outstanding tokens die on their
     // next use, renewal included, without anyone keeping a list of them.
-    if (!professor || professor.deactivatedAt) throw new AppError('Unauthorized', 401)
+    if (!row || row.deactivatedAt) throw new AppError('Unauthorized', 401)
+    professor = row
 
     // After the lookup, so a token whose professor no longer exists is not handed a new one.
     renewIfHalfSpent(res, payload)
-
-    ;(req as ProfessorRequest).professor = professor
-    next()
   } catch (err) {
-    if (err instanceof AppError) return next(err)
-    next(new AppError('Unauthorized', 401))
+    return next(asAuthError(err))
   }
+
+  // Outside the try, so that an error raised by a route downstream cannot travel back
+  // through this catch and be relabelled a problem with the caller's sign-in.
+  ;(req as ProfessorRequest).professor = professor
+  next()
 }
 
 /**
@@ -108,10 +145,10 @@ export function requireAnyAuth(req: Request, _res: Response, next: NextFunction)
     const auth = req.headers.authorization
     if (!auth?.startsWith('Bearer ')) throw new AppError('Unauthorized', 401)
     jwt.verify(auth.slice(7), config.jwtSecret)
-    next()
-  } catch {
-    next(new AppError('Unauthorized', 401))
+  } catch (err) {
+    return next(asAuthError(err))
   }
+  next()
 }
 
 export async function requireStudent(
@@ -119,18 +156,19 @@ export async function requireStudent(
   _res: Response,
   next: NextFunction
 ): Promise<void> {
+  let student: Student
   try {
     const token = extractToken(req)
     const payload = jwt.verify(token, config.jwtSecret) as JwtPayload
     if (payload.role !== 'student') throw new AppError('Unauthorized', 401)
 
-    const student = await prisma.student.findUnique({ where: { id: payload.sub } })
-    if (!student) throw new AppError('Unauthorized', 401)
-
-    ;(req as StudentRequest).student = student
-    next()
+    const row = await prisma.student.findUnique({ where: { id: payload.sub } })
+    if (!row) throw new AppError('Unauthorized', 401)
+    student = row
   } catch (err) {
-    if (err instanceof AppError) return next(err)
-    next(new AppError('Unauthorized', 401))
+    return next(asAuthError(err))
   }
+
+  ;(req as StudentRequest).student = student
+  next()
 }
