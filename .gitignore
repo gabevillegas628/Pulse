@@ -16,3 +16,10 @@ migrate_structures_q.sql
 # Dumps land here when backup-db.sh runs without a bucket; never in git.
 backups/
 restore/
+
+# The key that decrypts the backups. Losing it costs a restore; committing it
+# costs everything the backups hold. Broad on purpose: no key belongs in here.
+*.key
+
+# Console screenshot, kept locally for reference.
+CloudFlareAPI.png
