@@ -27,3 +27,7 @@ restore/
 
 # Console screenshot, kept locally for reference.
 CloudFlareAPI.png
+
+# Claude Code's workspace. settings.local.json is per-machine permission state,
+# and nothing else in here has belonged to the repo either.
+.claude/
