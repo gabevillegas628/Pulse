@@ -139,3 +139,36 @@ export async function clearLoginThrottle(...credentials: string[]): Promise<void
       .map((c) => loginRateLimiter.resetKey(`acct:${c.trim().toLowerCase()}`))
   )
 }
+
+/**
+ * Throttling for joining a class by code.
+ *
+ * Guessing is not the threat this bounds. A join code is six characters from a
+ * 32-symbol alphabet, so the space is about a billion and a determined script gets
+ * nowhere; the limit exists so the route is not the one unguarded write a signed-in
+ * student can call in a loop, and so a mistyped code cannot turn into a hammer.
+ *
+ * Keyed on the student, following the rule the rest of this file was written for: a
+ * lecture hall shares one egress address, and a room of stragglers all joining in the
+ * same two minutes is the exact situation this feature exists to serve. An IP key
+ * would refuse the eleventh of them. Twenty an hour is far past honest use — the
+ * student has to be told the code by their professor to have one at all.
+ */
+export const enrollRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const student = (req as Request & { student?: { id?: unknown } }).student
+    return typeof student?.id === 'string'
+      ? `enroll:${student.id}`
+      : `enroll-ip:${ipKeyGenerator(req.ip ?? '')}`
+  },
+  handler: (req, res, _next, options) => {
+    const key = (req as Request & { rateLimit?: { key?: string } }).rateLimit?.key
+    res.locals.refusalReason = `enroll throttled (${key ?? 'unknown key'})`
+    res.status(options.statusCode).json(options.message)
+  },
+  message: { success: false, error: 'Too many join attempts. Please try again later.' },
+})

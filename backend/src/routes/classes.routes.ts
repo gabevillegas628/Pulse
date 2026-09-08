@@ -434,6 +434,42 @@ router.patch('/:id/enrollments/:studentId/section', async (req: Request, res: Re
   }
 })
 
+/**
+ * Remove a student from a class.
+ *
+ * Until students could join by code there was no way to be in the wrong class: an
+ * enrolment could only be created by answering a question, and answering the wrong
+ * professor's question is not a thing that happens by accident. A code handed to the
+ * wrong person is, so the door needs a way back out — and the only removal that
+ * existed was the admin deleting the student's whole account.
+ *
+ * Responses are deliberately left alone. They hang off the question, not the
+ * enrolment, so a student removed and re-added walks back in with their history
+ * intact — and a mistaken removal costs nobody a semester of answers.
+ */
+router.delete('/:id/enrollments/:studentId', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+    const classId = p(req.params.id)
+    const studentId = p(req.params.studentId)
+
+    const cls = await prisma.class.findFirst({ where: { id: classId, ...ownedClass(professor) } })
+    if (!cls) throw new AppError('Class not found', 404)
+
+    const enrollment = await prisma.enrollment.findUnique({
+      where: { studentId_classId: { studentId, classId } },
+    })
+    if (!enrollment) throw new AppError('That student is not in this class', 404)
+
+    await prisma.enrollment.delete({
+      where: { studentId_classId: { studentId, classId } },
+    })
+    res.json({ success: true, data: { removed: true } })
+  } catch (err) {
+    next(err)
+  }
+})
+
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor

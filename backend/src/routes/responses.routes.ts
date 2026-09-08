@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../db/index.js'
 import { AppError, isUniqueViolation } from '../middleware/error.middleware.js'
 import { requireStudent, StudentRequest } from '../middleware/auth.middleware.js'
+import { enrollRateLimiter } from '../middleware/login-throttle.js'
 import { getIo } from '../socket.js'
 import { themesEnabled, scheduleThemeWork } from '../services/themes.service.js'
 
@@ -883,14 +884,39 @@ router.get('/student/upcoming-assignments', requireStudent, async (req: Request,
 })
 
 // Student: enroll in a class (or section) by joinCode
-router.post('/student/enroll', requireStudent, async (req: Request, res: Response, next: NextFunction) => {
+//
+// This is the straggler's door. Everyone else is enrolled as a side effect of
+// answering their first question, which needs a professor to be showing a code —
+// no use to someone who made an account at home a week into term.
+router.post('/student/enroll', requireStudent, enrollRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { joinCode } = z.object({ joinCode: z.string().min(1) }).parse(req.body)
+    // Codes are generated uppercase from an alphabet with no I, O, 0 or 1, and the
+    // lookup is exact. A student reading one off a slide types what they see, which
+    // includes lowercase and a trailing space pasted from an email; none of that is a
+    // different code, so none of it should be a "not found".
+    const { joinCode } = z
+      .object({ joinCode: z.string().min(1) })
+      .transform((b) => ({ joinCode: b.joinCode.trim().toUpperCase() }))
+      .parse(req.body)
     const student = (req as StudentRequest).student
 
     // Try class join code first, then section join code
-    const cls = await prisma.class.findUnique({ where: { joinCode } })
+    const cls = await prisma.class.findUnique({
+      where: { joinCode },
+      include: { _count: { select: { sections: true } } },
+    })
     if (cls) {
+      // A class with sections runs some of its questions at one section at a time, and
+      // the open-run check reads `sectionId === null || sectionId === mine`. Joining by
+      // the class code leaves the section null, which passes here and then silently
+      // fails in the lecture hall: enrolled, listed, and refused by every targeted run.
+      // Better to refuse the code than to hand out that particular disappointment.
+      if (cls._count.sections > 0) {
+        throw new AppError(
+          'That code is for the whole class. This class is split into sections — ask your professor for your section\'s join code.',
+          409
+        )
+      }
       const enrollment = await prisma.enrollment.upsert({
         where: { studentId_classId: { studentId: student.id, classId: cls.id } },
         create: { studentId: student.id, classId: cls.id },

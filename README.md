@@ -45,11 +45,25 @@ See `backend/.env.example` for all required variables. Key ones:
 
 ## Usage
 
-1. Professor registers at `/professor/register`, creates a class, shares the join code with students
-2. Students register at `/student/register` and join the class with the join code
-3. Professor creates a session (title + questions) — a QR code and 4-digit access code are generated
-4. Students scan the QR or enter the code to submit responses
-5. Professor watches responses live, closes the session, exports CSV
+1. Professor registers at `/register?role=professor` and creates a class
+2. Professor creates a session (title + questions) — a QR code and 4-digit access code are generated
+3. Students scan the QR or enter the 4-digit code, register if they haven't, and answer. Answering enrolls them — there is no separate registration step
+4. Professor watches responses live, closes the session, exports CSV
+
+### Stragglers
+
+A student who makes an account outside class has no question code to scan, so answering
+cannot enroll them. For them the class has a **join code** — six characters, on the class
+page and the dashboard card — and `/student` shows nothing but a box to type it into until
+they are in a class.
+
+Once a class has sections, hand out the **section** join code rather than the class one.
+Joining by the class code leaves a student unassigned, and section-targeted runs refuse
+unassigned students; the server rejects the class code for a sectioned class for that
+reason. Sections and their codes are on the class page.
+
+Professors can remove a student from a class on the Roster tab. Answers are kept, so a
+student removed by mistake gets their history back by rejoining.
 
 ## Deployment
 

@@ -180,14 +180,14 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {role === 'student' && (
-          <div className="mt-5 text-center">
-            <p className="text-sm text-muted">
-              Have a 4-digit question code?{' '}
-              <Link to="/student/enter-code" className="text-signal">Enter it here</Link>
-            </p>
-          </div>
-        )}
+        {/*
+          No code prompt here, deliberately. Sitting under "New? Create account" it read
+          as a registration step — create an account, then enter your code to join — and
+          that is the misreading the whole straggler problem grew out of. A student who
+          scanned a QR is carrying ?next= through login and never needed the link; a
+          student who did not has no code yet, and the join form on /student is where
+          they should land.
+        */}
       </div>
     </div>
   )

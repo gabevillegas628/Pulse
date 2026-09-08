@@ -94,6 +94,8 @@ export default function ClassPage() {
   const [dupError, setDupError] = useState('')
   const [dupLoading, setDupLoading] = useState(false)
   const [resetTarget, setResetTarget] = useState<Student | null>(null)
+  const [removeTarget, setRemoveTarget] = useState<Student | null>(null)
+  const [removeError, setRemoveError] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [resetError, setResetError] = useState('')
   const [resetSuccess, setResetSuccess] = useState(false)
@@ -185,6 +187,19 @@ export default function ClassPage() {
     await api.patch(`/classes/${classId}/enrollments/${studentId}/section`, { sectionId })
     qc.invalidateQueries({ queryKey: ['roster', classId] })
   }
+
+  const removeMutation = useMutation({
+    mutationFn: (studentId: string) => api.delete(`/classes/${classId}/enrollments/${studentId}`),
+    onSuccess: () => {
+      // The roster shrank, and so did the enrolment count the class header and the
+      // participation denominators are drawn from.
+      qc.invalidateQueries({ queryKey: ['roster', classId] })
+      qc.invalidateQueries({ queryKey: ['class', classId] })
+      setRemoveTarget(null)
+      setRemoveError('')
+    },
+    onError: (e: unknown) => setRemoveError(apiError(e, 'Could not remove — try again')),
+  })
 
   const refreshTextbookMutation = useMutation({
     mutationFn: () => api.delete('/textbook/cache'),
@@ -342,6 +357,16 @@ export default function ClassPage() {
             <div className="flex items-center gap-2 mt-2">
               <span className="text-xs text-muted">Join code</span>
               <CodeChip>{data?.joinCode}</CodeChip>
+              {/*
+                Once a class has sections the class-wide code stops working for
+                students: joining with it leaves them unassigned, and an unassigned
+                student is refused by every section-targeted run. The server rejects
+                it for that reason, so the page has to stop offering it as the thing
+                to hand out.
+              */}
+              {sections.length > 0 && (
+                <span className="text-xs text-warn">Give students their section code instead</span>
+              )}
             </div>
 
             {/* Sections */}
@@ -351,8 +376,11 @@ export default function ClassPage() {
                 <span className="text-xs text-muted">No sections</span>
               ) : (
                 sections.map((s) => (
-                  <span key={s.id} className="text-xs bg-surface-2 px-2 py-0.5 rounded-sm font-medium text-ink-2">
-                    {s.name} <span className="font-mono text-muted">{s.joinCode}</span>
+                  <span key={s.id} className="text-xs bg-surface-2 px-2 py-0.5 rounded-sm font-medium text-ink-2 inline-flex items-center gap-1">
+                    {s.name}
+                    <CodeChip className="text-xs bg-transparent text-muted px-0 py-0 hover:bg-transparent hover:text-ink-2">
+                      {s.joinCode}
+                    </CodeChip>
                   </span>
                 ))
               )}
@@ -754,7 +782,6 @@ export default function ClassPage() {
                           {e.student.netId}
                         </td>
                         <td className="px-5 py-3.5 text-ink-2">{e.student.email}</td>
-                        <td className="px-5 py-3.5 text-muted">{e.student.email}</td>
                         {sections.length > 0 && (
                           <td className="px-5 py-3.5" onClick={(ev) => ev.stopPropagation()}>
                             <select
@@ -777,18 +804,26 @@ export default function ClassPage() {
                           )}
                         </td>
                         <td className="px-5 py-3.5 text-right" onClick={(ev) => ev.stopPropagation()}>
-                          <button
-                            onClick={() => openReset(e.student)}
-                            className="flex items-center gap-1.5 text-xs text-muted hover:text-signal ml-auto transition-colors"
-                          >
-                            <KeyRound size={13} /> Reset password
-                          </button>
+                          <div className="flex items-center justify-end gap-3">
+                            <button
+                              onClick={() => openReset(e.student)}
+                              className="flex items-center gap-1.5 text-xs text-muted hover:text-signal transition-colors"
+                            >
+                              <KeyRound size={13} /> Reset password
+                            </button>
+                            <button
+                              onClick={() => { setRemoveError(''); setRemoveTarget(e.student) }}
+                              className="flex items-center gap-1.5 text-xs text-muted hover:text-red-500 transition-colors"
+                            >
+                              <Trash2 size={13} /> Remove
+                            </button>
+                          </div>
                         </td>
                       </tr>
 
                       {isExpanded && (
                         <tr key={`${e.student.id}-detail`} className="border-t border-hairline bg-surface-2">
-                          <td colSpan={sections.length > 0 ? 6 : 5} className="px-5 py-4">
+                          <td colSpan={sections.length > 0 ? 5 : 4} className="px-5 py-4">
                             {!activity ? (
                               <p className="text-xs text-muted">Loading…</p>
                             ) : activity.length === 0 ? (
@@ -1020,6 +1055,36 @@ export default function ClassPage() {
                 </div>
               </>
             )}
+          </Card>
+        </div>
+      )}
+
+      {removeTarget && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+          <Card flat className="w-full max-w-sm p-6 shadow-pop">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold text-ink">Remove from class</h2>
+              <button onClick={() => setRemoveTarget(null)} className="text-muted hover:text-ink-2 transition-colors"><X size={18} /></button>
+            </div>
+            <p className="text-sm text-muted mb-2">
+              Remove <span className="font-medium text-ink">{removeTarget.netId}</span> from this class?
+              They'll drop off the roster and out of your participation numbers.
+            </p>
+            <p className="text-sm text-muted mb-5">
+              Their answers are kept. If they rejoin with the join code, their history comes back with them.
+            </p>
+            {removeError && <p className="text-red-500 text-xs mb-3">{removeError}</p>}
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setRemoveTarget(null)} className="px-4 py-2 text-sm text-muted hover:text-ink transition-colors">Cancel</button>
+              <Button
+                variant="primary"
+                className="bg-red-500 hover:bg-red-600"
+                onClick={() => removeMutation.mutate(removeTarget.id)}
+                disabled={removeMutation.isPending}
+              >
+                {removeMutation.isPending ? 'Removing…' : 'Remove'}
+              </Button>
+            </div>
           </Card>
         </div>
       )}

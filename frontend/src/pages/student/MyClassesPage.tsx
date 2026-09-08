@@ -9,6 +9,7 @@ import LiveDot from '@/components/ui/LiveDot'
 import Empty from '@/components/ui/Empty'
 import { BookOpen, LogOut, KeyRound, Clock } from 'lucide-react'
 import PasswordChangeModal from '@/components/PasswordChangeModal'
+import JoinClassForm from '@/components/JoinClassForm'
 import type { UpcomingAssignment } from 'shared'
 
 interface ClassInfo {
@@ -28,6 +29,8 @@ export default function MyClassesPage() {
   const { student, logout } = useStudentAuth()
   const navigate = useNavigate()
   const [showPwModal, setShowPwModal] = useState(false)
+  const [showJoin, setShowJoin] = useState(false)
+  const [joinedNotice, setJoinedNotice] = useState('')
 
   const { data, isLoading } = useQuery<Enrollment[]>({
     queryKey: ['student-classes'],
@@ -47,6 +50,7 @@ export default function MyClassesPage() {
   const upcoming = upcomingData?.assignments ?? []
   const liveEnrollments = data?.filter((e) => e.class.sessions.length > 0) ?? []
   const hasLive = liveEnrollments.length > 0
+  const hasNoClasses = !isLoading && data?.length === 0
 
   // Count due assignments per class for per-card badge
   const dueCountByClass: Record<string, number> = {}
@@ -82,85 +86,117 @@ export default function MyClassesPage() {
         </div>
       </div>
 
-      {/* Live now — primary CTA when session is open */}
-      {hasLive && (
-        <div className="mb-5 space-y-2">
-          {liveEnrollments.map((e) => (
-            <div
-              key={e.class.id}
-              className="bg-signal-soft border border-signal/20 rounded-[14px] p-5 flex items-center justify-between gap-4"
-            >
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <LiveDot />
-                  <span className="text-xs font-bold text-signal uppercase tracking-wide">Live now</span>
-                </div>
-                <p className="font-semibold text-ink truncate">{e.class.name}</p>
-                <p className="text-xs text-muted mt-0.5">{e.class.sessions[0].title}</p>
-              </div>
-              <Link
-                to="/student/enter-code"
-                className="shrink-0 inline-flex items-center gap-2 bg-signal text-white px-4 py-2 rounded-sm text-sm font-bold hover:bg-[var(--signal-bright)] transition-colors"
-              >
-                Answer now
-              </Link>
-            </div>
-          ))}
+      {/*
+        Kept above the branch below: joining flips that branch, so a notice rendered
+        inside the empty state would be unmounted by the very thing it is reporting.
+      */}
+      {joinedNotice && (
+        <div className="mb-5 bg-good-soft border border-good/20 rounded-[14px] px-4 py-3 text-center">
+          <p className="text-sm font-medium text-good">{joinedNotice}</p>
         </div>
       )}
 
-      {/* Code entry — primary when no live, secondary when live */}
-      {hasLive ? (
-        <button
-          onClick={() => navigate('/student/enter-code')}
-          className="w-full text-sm text-muted hover:text-ink text-center py-2 mb-5 transition-colors"
-        >
-          Enter a question code manually
-        </button>
-      ) : (
-        <button
-          onClick={() => navigate('/student/enter-code')}
-          className="w-full bg-signal text-white rounded-[14px] p-5 text-left mb-6 hover:bg-[var(--signal-bright)] transition-colors"
-        >
-          <p className="text-lg font-semibold mb-0.5">Enter question code</p>
-          <p className="text-white/70 text-sm">Enter the 4-digit code your professor displays</p>
-        </button>
-      )}
+      {/*
+        A student in no classes has exactly one useful move, and a question code is
+        not it — there is no class for a code to belong to, and offering one is what
+        taught stragglers there was a code that would register them. So this state is
+        the join form and nothing else: no question code, no empty class list.
 
-      {/* Due soon strip */}
-      {upcoming.length > 0 && (
-        <div className="mb-5 space-y-2">
-          {upcoming.map((a) => {
-            const pct = a.questionCount > 0 ? Math.round((a.submittedCount / a.questionCount) * 100) : 0
-            return (
-              <Link
-                key={a.id}
-                to={`/student/assignments/${a.id}`}
-                className="flex items-center justify-between bg-warn-soft border border-warn/20 rounded-[14px] px-4 py-3 hover:shadow-card transition-shadow"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <Clock size={13} className="text-warn shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-ink truncate">{a.title}</p>
-                    <p className="text-xs text-muted">{a.className}</p>
-                  </div>
-                </div>
-                <div className="shrink-0 text-right ml-3">
-                  <p className="text-xs font-medium text-warn">{formatDeadline(a.deadline)}</p>
-                  <p className="text-xs text-muted font-mono">{pct}% done</p>
-                </div>
-              </Link>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Class list */}
+        Loading is its own branch rather than folded into the class list below,
+        because the branch is chosen before the answer is known: a straggler would
+        otherwise watch the question-code button paint and then be taken away again.
+      */}
       {isLoading ? (
         <Empty icon={BookOpen} message="Loading classes…" />
-      ) : data?.length === 0 ? (
-        <Empty icon={BookOpen} message="No classes yet — you'll be enrolled when you answer your first question." />
+      ) : hasNoClasses ? (
+        <div className="bg-surface rounded-[14px] shadow-card border border-hairline p-8 text-center">
+          <h2 className="text-xl font-bold text-ink mb-1.5">Join your class</h2>
+          <p className="text-sm text-muted mb-7">
+            Ask your professor for the join code for your class. It's six characters,
+            like <span className="font-mono text-ink-2">ABC123</span>.
+          </p>
+          <JoinClassForm
+            variant="hero"
+            onJoined={(name) => setJoinedNotice(`You're in — ${name}`)}
+          />
+        </div>
       ) : (
+        <>
+
+        {/* Live now — primary CTA when session is open */}
+        {hasLive && (
+          <div className="mb-5 space-y-2">
+            {liveEnrollments.map((e) => (
+              <div
+                key={e.class.id}
+                className="bg-signal-soft border border-signal/20 rounded-[14px] p-5 flex items-center justify-between gap-4"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <LiveDot />
+                    <span className="text-xs font-bold text-signal uppercase tracking-wide">Live now</span>
+                  </div>
+                  <p className="font-semibold text-ink truncate">{e.class.name}</p>
+                  <p className="text-xs text-muted mt-0.5">{e.class.sessions[0].title}</p>
+                </div>
+                <Link
+                  to="/student/enter-code"
+                  className="shrink-0 inline-flex items-center gap-2 bg-signal text-white px-4 py-2 rounded-sm text-sm font-bold hover:bg-[var(--signal-bright)] transition-colors"
+                >
+                  Answer now
+                </Link>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Code entry — primary when no live, secondary when live */}
+        {hasLive ? (
+          <button
+            onClick={() => navigate('/student/enter-code')}
+            className="w-full text-sm text-muted hover:text-ink text-center py-2 mb-5 transition-colors"
+          >
+            Enter a question code manually
+          </button>
+        ) : (
+          <button
+            onClick={() => navigate('/student/enter-code')}
+            className="w-full bg-signal text-white rounded-[14px] p-5 text-left mb-6 hover:bg-[var(--signal-bright)] transition-colors"
+          >
+            <p className="text-lg font-semibold mb-0.5">Enter question code</p>
+            <p className="text-white/70 text-sm">Enter the 4-digit code your professor displays</p>
+          </button>
+        )}
+
+        {/* Due soon strip */}
+        {upcoming.length > 0 && (
+          <div className="mb-5 space-y-2">
+            {upcoming.map((a) => {
+              const pct = a.questionCount > 0 ? Math.round((a.submittedCount / a.questionCount) * 100) : 0
+              return (
+                <Link
+                  key={a.id}
+                  to={`/student/assignments/${a.id}`}
+                  className="flex items-center justify-between bg-warn-soft border border-warn/20 rounded-[14px] px-4 py-3 hover:shadow-card transition-shadow"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Clock size={13} className="text-warn shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-ink truncate">{a.title}</p>
+                      <p className="text-xs text-muted">{a.className}</p>
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right ml-3">
+                    <p className="text-xs font-medium text-warn">{formatDeadline(a.deadline)}</p>
+                    <p className="text-xs text-muted font-mono">{pct}% done</p>
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
+        )}
+
+        {/* Class list — loading and empty are both handled by the branch above */}
         <div className="space-y-3">
           {data?.map((enrollment) => {
             const { class: cls, section } = enrollment
@@ -191,6 +227,32 @@ export default function MyClassesPage() {
             )
           })}
         </div>
+
+        {/*
+          Adding a second class is a real thing — a student taking two courses that both
+          use Pulse — but it is rare next to answering a question, so it sits under the
+          list rather than above it, closed until asked for.
+        */}
+        <div className="mt-5 pt-4 border-t border-hairline">
+          {showJoin ? (
+            <div className="space-y-2">
+              <p className="text-xs text-muted text-center">Enter the join code from your professor</p>
+              <JoinClassForm
+                variant="compact"
+                onJoined={(name) => { setJoinedNotice(`You're in — ${name}`); setShowJoin(false) }}
+              />
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowJoin(true)}
+              className="w-full text-xs text-muted hover:text-ink text-center py-1 transition-colors"
+            >
+              Join another class
+            </button>
+          )}
+        </div>
+
+        </>
       )}
 
       <PasswordChangeModal
