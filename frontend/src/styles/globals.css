@@ -137,6 +137,18 @@
   100% { opacity: 0; }
 }
 
+/*
+ * Overflow dots on the numeric chart. A column that fills its lane keeps growing as the
+ * room answers, and the dots past the top scatter above it instead of packing tighter and
+ * tighter into a solid stripe. The drift is what makes that read as spill rather than as
+ * a rendering fault — small, slow, and out of step between neighbours, since a cloud that
+ * moves as one body looks like the whole chart sliding.
+ */
+@keyframes dot-drift {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-3px); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   /* Delay as well as duration: a staggered entrance zeroes its animation but keeps its
      offset otherwise, so the later rows still sit invisible waiting for a turn that now
@@ -151,6 +163,9 @@
   .clock-drain, .clock-drain-cool, .clock-reset { animation: none !important; }
   .clock-drain, .clock-drain-cool { transform: scaleX(1); opacity: 1; }
   .clock-reset { opacity: 0; }
+  /* Same trap again: an infinite drift with its duration zeroed jitters instead of
+     stopping. Switched off and left where it was placed. */
+  .dot-drift { animation: none !important; }
 }
 
 .rise-in  { animation: rise-in 0.42s cubic-bezier(.2,.7,.2,1) both; }
@@ -163,6 +178,7 @@
 .count-pop { animation: count-pop .5s cubic-bezier(.2,.7,.2,1) both; }
 .bar-grow  { animation: bar-grow .7s cubic-bezier(.2,.7,.2,1) both; transform-origin: left center; }
 .pip-in    { animation: pip-in .42s cubic-bezier(.2,.7,.2,1) both; }
+.dot-drift { animation: dot-drift 4.2s ease-in-out infinite; }
 /* Duration and delay come from the server's deadline, so they are set inline. */
 .clock-drain { animation: clock-drain linear both; transform-origin: left center; }
 /* Both on one element. Two rules each setting the `animation` shorthand would not stack —
