@@ -33,6 +33,7 @@
  *   npx tsx scripts/rehearse.ts --code 4821 --speed 4       # 4x faster, for a quick check
  *   npx tsx scripts/rehearse.ts --code 4821 --preview       # generate answers, submit nothing
  *   npx tsx scripts/rehearse.ts --code 4821 --cleanup       # remove the fake class afterwards
+ *   npx tsx scripts/rehearse.ts --code 4821 --answers real.json   # replay a recorded class
  *
  * Prefer the direct form over `npm run`. PowerShell drops the `--` separator, so npm
  * reads the flags as its own config and swallows them — `--dry-run` and `--force` are
@@ -46,6 +47,7 @@
  */
 
 import 'dotenv/config'
+import { readFileSync } from 'node:fs'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import Anthropic from '@anthropic-ai/sdk'
@@ -87,6 +89,8 @@ const positional = process.argv.slice(2).find((a) => /^\d{3,6}$/.test(a))
 const CODE = arg('code') ?? positional
 
 const STUDENTS = Number(arg('students') ?? 30)
+/** JSON file of answers to replay instead of generating any. Sizes the cohort itself. */
+const ANSWERS_FILE = arg('answers')
 const SPEED = Number(arg('speed') ?? 1)
 const CLEANUP = flag('cleanup')
 // `--dry-run` and `--force` are npm's own flags and never survive `npm run`. The real
@@ -554,7 +558,7 @@ async function cleanup(questionId: string | null) {
 
 async function main() {
   if (!CODE && !CLEANUP) {
-    console.error('Usage: npx tsx scripts/rehearse.ts --code <4-digit code> [--students 30] [--speed 1] [--preview] [--cleanup]')
+    console.error('Usage: npx tsx scripts/rehearse.ts --code <4-digit code> [--students 30] [--speed 1] [--answers file.json] [--preview] [--cleanup]')
     console.error('')
     console.error('Run it directly rather than through `npm run`: PowerShell drops the `--`')
     console.error('separator, so npm reads the flags as its own config and swallows them.')
@@ -631,7 +635,20 @@ async function main() {
   await preflight(CODE!)
   console.log('  preflight: a student can submit')
 
-  const answers = await buildAnswers(question, STUDENTS)
+  // A recorded class, replayed. Answers a real room gives are shaped nothing like the ones
+  // generated below — a room lands on the same digits over and over, where the generator
+  // spreads continuous noise across four significant figures — so a display driven only by
+  // this script has never met its actual input. Takes either a bare JSON array of strings
+  // or the `{ answers: [...] }` shape a question dump has, and sizes the cohort to it.
+  const replay = ANSWERS_FILE
+    ? (() => {
+        const raw = JSON.parse(readFileSync(ANSWERS_FILE, 'utf8'))
+        const list: string[] = Array.isArray(raw) ? raw : raw.answers
+        if (!Array.isArray(list) || list.length === 0) throw new Error(`no answers in ${ANSWERS_FILE}`)
+        return list.map((text) => ({ text: String(text), kind: 'replayed' }))
+      })()
+    : null
+  const answers = replay ?? (await buildAnswers(question, STUDENTS))
   const spread = answers.reduce<Record<string, number>>((acc, a) => {
     acc[a.kind] = (acc[a.kind] ?? 0) + 1
     return acc
