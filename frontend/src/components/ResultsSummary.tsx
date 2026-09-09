@@ -1,5 +1,6 @@
 import { Check } from 'lucide-react'
 import type { QuestionWithResponses } from 'shared'
+import NumericDots from '@/components/NumericDots'
 
 /**
  * Counts and distributions for every question type. Aggregate only — it renders totals
@@ -44,7 +45,7 @@ const T = {
 } as const
 
 export default function ResultsSummary({ question, variant = 'panel' }: Props) {
-  const { type, options, responses, correctAnswer } = question
+  const { type, options, responses, correctAnswer, tolerance, unit } = question
   const total = responses.length
   if (total === 0) return null
 
@@ -352,6 +353,23 @@ export default function ResultsSummary({ question, variant = 'panel' }: Props) {
           </p>
         )}
         <p className="text-muted font-mono" style={{ fontSize: t.note }}>{total} response{total !== 1 ? 's' : ''}</p>
+      </div>
+    )
+  }
+
+  if (type === 'NUMERIC') {
+    // Dots rather than bars, and the reasoning is in NumericDots: a capped bar list
+    // cannot show a whole class, and frequency ordering lets one shared mistake outrank
+    // a correct answer the room spelled several ways.
+    return (
+      <div className={card}>
+        <NumericDots
+          responses={responses}
+          correctAnswer={correctAnswer}
+          tolerance={tolerance}
+          unit={unit}
+          variant={variant}
+        />
       </div>
     )
   }

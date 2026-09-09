@@ -10,6 +10,7 @@ import { p } from '../utils/params.js'
 import { customAlphabet } from 'nanoid'
 import { readThemeSetsForRun } from '../services/themes.service.js'
 import { autoCloseEnabled, clockState } from '../services/clock.service.js'
+import { withinTolerance } from '../utils/scoring.js'
 
 const nanoidDigits = customAlphabet('0123456789', 4)
 
@@ -358,6 +359,13 @@ router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
             options: true,
             order: true,
             correctAnswer: true,
+            // Both read for NUMERIC grouping; only `unit` travels. `tolerance` decides,
+            // alongside the key, which answers count as the same — so it stays here and
+            // the grouping it produces is shipped as a flag instead. `unit` does go out:
+            // every response is converted into the key's unit before grouping, and it is
+            // printed on the student's own answer form anyway.
+            tolerance: true,
+            unit: true,
             liveThemes: true,
             autoClose: true,
             responses: {
@@ -397,9 +405,12 @@ router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
       const timed = autoCloseEnabled(q, session.class)
       const clock = timed ? clockState(run.id, q.id) : null
       const deadline = clock?.closesAt ?? null
-      // A timed question with no clock yet has not been answered, so it is open.
-      const stillOpen = timed && (deadline === null || deadline > now)
-      const { correctAnswer, ...questionRest } = q
+      // A timed question with no clock yet has not been answered, so it is open. An
+      // untimed question never closes, so it is never *not* open — without the first
+      // clause the key shipped from the very first answer and sat on the projector for
+      // the whole question, which is the leak the stripping below exists to prevent.
+      const stillOpen = !timed || deadline === null || deadline > now
+      const { correctAnswer, tolerance, ...questionRest } = q
       return {
         ...questionRest,
         // Withheld while the question can still be answered. A student who has not
@@ -422,7 +433,18 @@ router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
         // responseText: ResultsSummary buckets choices and numbers by it.
         responses: isFreeText
           ? q.responses.map(({ responseText: _drop, ...rest }) => rest)
-          : q.responses,
+          // NUMERIC answers scatter: a room that agrees still writes 2.87, 2.9 and 2.872,
+          // so the one group that matters most arrives as its widest spread. The margin
+          // that decides which of them count as the same answer is the professor's, and
+          // it is only knowable next to the key — which this route withholds. So the
+          // grouping is derived here and shipped as a flag, and the projector can draw
+          // one column without ever learning the value it forms around.
+          : q.type === 'NUMERIC'
+            ? q.responses.map((r) => ({
+                ...r,
+                inKeyGroup: withinTolerance(r.responseText, correctAnswer, tolerance, q.unit),
+              }))
+            : q.responses,
         // null means theming is off for this question, not that it has no categories yet.
         themes: isFreeText ? themesByQuestion.get(q.id) ?? null : null,
       }

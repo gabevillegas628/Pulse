@@ -1,10 +1,54 @@
 import { unit as mathUnit } from 'mathjs'
 import type { ResponseWithStudent } from 'shared'
 
-function parseValueUnit(s: string): [number, string] {
-  const m = s.trim().match(/^([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s*(.*)$/)
+const NUM_RE = /^([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s*(.*)$/
+
+export function parseValueUnit(s: string): [number, string] {
+  const m = s.trim().match(NUM_RE)
   if (!m) return [NaN, '']
   return [parseFloat(m[1]), m[2].trim()]
+}
+
+/**
+ * Significant figures in a number as the student wrote it. Leading zeros never count;
+ * trailing zeros count only when a decimal point is present. So "0.0042" is two and
+ * "2100" is two, but "4.20" is three.
+ */
+function sigFigs(literal: string): number {
+  const mantissa = literal.replace(/^[+-]/, '').split(/[eE]/)[0]
+  const hasPoint = mantissa.includes('.')
+  let digits = mantissa.replace('.', '').replace(/^0+/, '')
+  if (!hasPoint) digits = digits.replace(/0+$/, '')
+  return digits.length || 1
+}
+
+export type NormalizedNumeric =
+  | { kind: 'value'; value: number; sigFigs: number }
+  | { kind: 'nounit' }
+  | { kind: 'unreadable' }
+
+/**
+ * A numeric answer converted into `keyUnit`, with the precision it was written to.
+ *
+ * An empty `keyUnit` means the question is unitless and the value stands as written.
+ * Anything unreadable as a number, or carrying a unit that will not convert, comes back
+ * as its own kind rather than being dropped — a caller bucketing responses has to be
+ * able to account for every one of them, or its bars stop summing to the total.
+ */
+export function normalizeNumeric(text: string, keyUnit: string): NormalizedNumeric {
+  const m = text.trim().match(NUM_RE)
+  if (!m) return { kind: 'unreadable' }
+  const value = parseFloat(m[1])
+  if (isNaN(value)) return { kind: 'unreadable' }
+  const written = sigFigs(m[1])
+  const unitStr = m[2].trim()
+  if (!keyUnit) return { kind: 'value', value, sigFigs: written }
+  if (!unitStr) return { kind: 'nounit' }
+  try {
+    return { kind: 'value', value: mathUnit(value, unitStr).toNumber(keyUnit), sigFigs: written }
+  } catch {
+    return { kind: 'unreadable' }
+  }
 }
 
 type ScoredQuestion = {

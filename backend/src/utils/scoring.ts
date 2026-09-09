@@ -6,6 +6,36 @@ function parseValueUnit(s: string): [number, string] {
   return [parseFloat(m[1]), m[2].trim()]
 }
 
+/**
+ * Whether a numeric answer falls inside the professor's own margin.
+ *
+ * Extracted so the projector can be told which answers group together without being told
+ * what they group around: /present strips `correctAnswer` while a question can still be
+ * answered, so the grouping has to be derived here and shipped as a flag.
+ */
+export function withinTolerance(
+  responseText: string,
+  correctAnswer: string | null,
+  tolerance: number | null,
+  unit: string | null
+): boolean {
+  if (!correctAnswer) return false
+  const [correctVal, correctUnitStr] = parseValueUnit(correctAnswer)
+  if (isNaN(correctVal)) return false
+  const answerKeyUnit = correctUnitStr || unit || ''
+  const [studentVal, studentUnitStr] = parseValueUnit(responseText)
+  if (isNaN(studentVal)) return false
+  const tol = tolerance ?? 0
+  if (!answerKeyUnit) return Math.abs(studentVal - correctVal) <= tol
+  if (!studentUnitStr) return false
+  try {
+    const converted = mathUnit(studentVal, studentUnitStr).toNumber(answerKeyUnit)
+    return Math.abs(converted - correctVal) <= tol
+  } catch {
+    return false
+  }
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface QuestionGradeInput {
@@ -71,20 +101,7 @@ function scoreResponse(
 
   if (qType === 'NUMERIC') {
     if (!correctAnswer) return 1.0
-    const [correctVal, correctUnitStr] = parseValueUnit(correctAnswer)
-    const answerKeyUnit = correctUnitStr || unit || ''
-    const [studentVal, studentUnitStr] = parseValueUnit(response.responseText)
-    if (isNaN(studentVal)) return 0
-    if (!answerKeyUnit) {
-      return Math.abs(studentVal - correctVal) <= (tolerance ?? 0) ? 1.0 : 0.0
-    }
-    if (!studentUnitStr) return 0
-    try {
-      const converted = mathUnit(studentVal, studentUnitStr).toNumber(answerKeyUnit)
-      return Math.abs(converted - correctVal) <= (tolerance ?? 0) ? 1.0 : 0.0
-    } catch {
-      return 0
-    }
+    return withinTolerance(response.responseText, correctAnswer, tolerance ?? null, unit ?? null) ? 1.0 : 0.0
   }
 
   if (qType === 'MULTI_SELECT') {
