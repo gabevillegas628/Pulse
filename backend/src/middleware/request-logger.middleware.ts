@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import { logger } from '../utils/logger.js'
+import { eventLoopLagMs } from '../utils/event-loop.js'
 
 /**
  * Structured access logging for the requests worth reading later.
@@ -33,6 +34,10 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
       path: req.originalUrl.split('?')[0],
       status: res.statusCode,
       ms: Math.round(ms),
+      // Whether this request was slow on its own account or was queued behind a blocked
+      // main thread. A high `lagMs` on an endpoint that does nothing — a static file, a
+      // 304 — is the signature the 9 Sep stampede had to be reconstructed from.
+      lagMs: eventLoopLagMs(),
       // Set by the error middleware, or by a limiter that answered the request itself.
       // A status without it is not diagnostic: three different 409s read identically.
       ...(res.locals.refusalReason ? { reason: res.locals.refusalReason as string } : {}),
