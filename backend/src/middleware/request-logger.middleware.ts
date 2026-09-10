@@ -41,6 +41,10 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
       // Set by the error middleware, or by a limiter that answered the request itself.
       // A status without it is not diagnostic: three different 409s read identically.
       ...(res.locals.refusalReason ? { reason: res.locals.refusalReason as string } : {}),
+      // Which auth check refused it. `reason` is the client-facing message and is a bare
+      // "Unauthorized" for all four of them, which is correct for the caller and useless
+      // here. Set by auth.middleware.ts; absent on everything that is not an auth refusal.
+      ...(res.locals.authFailure ? { authFailure: res.locals.authFailure as string } : {}),
       ...actorOf(req),
     }
 

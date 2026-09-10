@@ -57,6 +57,20 @@ export function errorMiddleware(
     return
   }
 
+  // Body parser refusals — malformed JSON, or a body over the size limit. These arrive
+  // as plain Errors carrying a `type`, so the catch-all below answered 500 and reported
+  // an exception for what is entirely the caller's mistake. Noisy anywhere; on an
+  // unauthenticated endpoint like /api/client-diag it is an open invitation to generate
+  // error reports on demand.
+  const parseFailure = (err as { type?: string }).type
+  if (parseFailure === 'entity.parse.failed' || parseFailure === 'entity.too.large') {
+    const tooLarge = parseFailure === 'entity.too.large'
+    const reason = tooLarge ? 'Request body too large' : 'Malformed request body'
+    res.locals.refusalReason = reason
+    res.status(tooLarge ? 413 : 400).json({ success: false, error: reason })
+    return
+  }
+
   // Backstop for every check-then-create in the codebase. Routes that can say
   // something better catch P2002 themselves and throw a specific AppError; this
   // is here so that the ones that don't still refuse honestly instead of

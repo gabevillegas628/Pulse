@@ -25,7 +25,7 @@ export function ProfessorAuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const token = getProfessorToken()
     if (!token) { setIsLoading(false); return }
-    api.get('/auth/professor/me')
+    api.get('/auth/professor/me', { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => setProfessor(r.data.data.professor))
       // Only on a real rejection. This runs at every mount, the projector's included, and
       // a network blip at startup must not throw away a sign-in that is still good.
@@ -52,12 +52,26 @@ export function ProfessorAuthProvider({ children }: { children: ReactNode }) {
     setSessionExpired(false)
   }
 
+  /**
+   * Raise the prompt, but keep the token.
+   *
+   * Deleting it here was the amplifier that turned every spurious 401 into a real
+   * sign-out. Nothing could put it back — `resolveSessionExpired` only takes the prompt
+   * down — so a token with hours of life left was gone for good over one bad response.
+   * Worse, `professor` stays set, so the app went on believing it was signed in while every
+   * request afterwards went out with no Authorization header at all: signed out on the
+   * wire, signed in in the UI, and no way back but a retyped password.
+   *
+   * Keeping it costs a repeat 401 if the token really is dead, which the prompt is
+   * already on screen for. `login()` overwrites it on the way back in, and a renewal
+   * landing on another surface can now genuinely rescue it.
+   */
   function triggerSessionExpired() {
-    setProfessorToken(null)
     setSessionExpired(true)
   }
 
   function clearSessionExpired() {
+    setProfessorToken(null)
     setProfessor(null)
     setSessionExpired(false)
   }

@@ -18,6 +18,7 @@
     "test:e2e:image": "tsx scripts/e2e-question-image.ts",
     "test:smoke:themes": "tsx scripts/smoke-themes.ts",
     "test:smoke:socket": "tsx scripts/smoke-socket-auth.ts",
+    "test:smoke:diag": "tsx scripts/smoke-diag.ts",
     "test:smoke:admin": "tsx scripts/smoke-admin.ts",
     "test:smoke:autoclose": "tsx scripts/smoke-autoclose.ts",
     "test:smoke:reset": "tsx scripts/smoke-password-reset.ts",

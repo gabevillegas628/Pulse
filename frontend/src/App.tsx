@@ -29,6 +29,28 @@ import StudentClassPage from '@/pages/student/StudentClassPage'
 import AssignmentPage from '@/pages/student/AssignmentPage'
 import StudentTextbookPage from '@/pages/student/StudentTextbookPage'
 
+/**
+ * Where "/" sends you.
+ *
+ * This used to be a flat redirect to /student, so a signed-in professor opening
+ * pulseclassroom.com in a new tab was routed to the student app, bounced off
+ * StudentProtected, and landed on the login page with a perfectly valid professor token
+ * still sitting in localStorage. Signing in again was the only obvious move, which read
+ * as "my session did not carry over" — and trained a professor to treat re-authenticating
+ * as routine. That is most of why a genuinely dead session went unnoticed for an hour on
+ * 9 Sep: the app had no way left to say anything unusual had happened.
+ *
+ * Waiting on both providers costs nothing the route guards below do not already cost.
+ */
+function RootRedirect() {
+  const professor = useProfessorAuth()
+  const student = useStudentAuth()
+  if (professor.isLoading || student.isLoading) return null
+  if (professor.isAuthenticated) return <Navigate to="/professor" replace />
+  if (student.isAuthenticated) return <Navigate to="/student" replace />
+  return <Navigate to="/login" replace />
+}
+
 function ProfessorProtected({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useProfessorAuth()
   if (isLoading) return null
@@ -101,7 +123,7 @@ export default function App() {
         />
       )}
       <Routes>
-        <Route path="/" element={<Navigate to="/student" replace />} />
+        <Route path="/" element={<RootRedirect />} />
 
         {/* Unified auth */}
         <Route path="/login" element={<LoginPage />} />

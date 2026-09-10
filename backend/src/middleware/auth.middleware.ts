@@ -55,6 +55,20 @@ function renewIfHalfSpent(res: Response, payload: JwtPayload): void {
 }
 
 /**
+ * Record which check refused a request, for the log only.
+ *
+ * Every refusal below answers the caller the same bare "Unauthorized", because telling an
+ * unauthenticated caller *which* check failed is a gift to anyone probing. The log is under
+ * no such constraint and has every reason to be specific: "no authorization header" and
+ * "jwt expired" are different incidents with different causes, and an evening was once spent
+ * trying to tell them apart from a one-millisecond difference in `ms` that turned out not to
+ * discriminate them at all.
+ */
+function noteAuthFailure(res: Response, why: string): void {
+  res.locals.authFailure = why
+}
+
+/**
  * The error to refuse a request with, keeping "not signed in" apart from "we broke".
  *
  * These middlewares used to answer 401 for anything that threw, which reads as a safe
@@ -74,9 +88,19 @@ function renewIfHalfSpent(res: Response, payload: JwtPayload): void {
  * error middleware as itself: logged, reported, and answered 500. Honest to the client,
  * and visible to us rather than disguised as somebody's expired session.
  */
-function asAuthError(err: unknown): unknown {
+function asAuthError(err: unknown, res: Response): unknown {
   if (err instanceof AppError) return err
-  if (err instanceof jwt.JsonWebTokenError) return new AppError('Unauthorized', 401)
+  if (err instanceof jwt.JsonWebTokenError) {
+    noteAuthFailure(
+      res,
+      err instanceof jwt.TokenExpiredError
+        ? 'jwt expired'
+        : err instanceof jwt.NotBeforeError
+          ? 'jwt not yet valid'
+          : 'jwt invalid'
+    )
+    return new AppError('Unauthorized', 401)
+  }
   return err
 }
 
@@ -88,9 +112,12 @@ export interface StudentRequest extends Request {
   student: Student
 }
 
-function extractToken(req: Request): string {
+function extractToken(req: Request, res: Response): string {
   const auth = req.headers.authorization
-  if (!auth?.startsWith('Bearer ')) throw new AppError('Unauthorized', 401)
+  if (!auth?.startsWith('Bearer ')) {
+    noteAuthFailure(res, auth ? 'authorization header is not bearer' : 'no authorization header')
+    throw new AppError('Unauthorized', 401)
+  }
   return auth.slice(7)
 }
 
@@ -101,21 +128,27 @@ export async function requireProfessor(
 ): Promise<void> {
   let professor: Professor
   try {
-    const token = extractToken(req)
+    const token = extractToken(req, res)
     const payload = jwt.verify(token, config.jwtSecret) as JwtPayload
-    if (payload.role !== 'professor') throw new AppError('Unauthorized', 401)
+    if (payload.role !== 'professor') {
+      noteAuthFailure(res, `role is ${payload.role ?? 'absent'}, not professor`)
+      throw new AppError('Unauthorized', 401)
+    }
 
     const row = await prisma.professor.findUnique({ where: { id: payload.sub } })
     // Deactivation is enforced here, not by revoking tokens: the row is re-read on
     // every request, so a deactivated professor's outstanding tokens die on their
     // next use, renewal included, without anyone keeping a list of them.
-    if (!row || row.deactivatedAt) throw new AppError('Unauthorized', 401)
+    if (!row || row.deactivatedAt) {
+      noteAuthFailure(res, row ? 'professor deactivated' : 'professor row missing')
+      throw new AppError('Unauthorized', 401)
+    }
     professor = row
 
     // After the lookup, so a token whose professor no longer exists is not handed a new one.
     renewIfHalfSpent(res, payload)
   } catch (err) {
-    return next(asAuthError(err))
+    return next(asAuthError(err, res))
   }
 
   // Outside the try, so that an error raised by a route downstream cannot travel back
@@ -140,33 +173,37 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction): v
   })
 }
 
-export function requireAnyAuth(req: Request, _res: Response, next: NextFunction): void {
+export function requireAnyAuth(req: Request, res: Response, next: NextFunction): void {
   try {
-    const auth = req.headers.authorization
-    if (!auth?.startsWith('Bearer ')) throw new AppError('Unauthorized', 401)
-    jwt.verify(auth.slice(7), config.jwtSecret)
+    jwt.verify(extractToken(req, res), config.jwtSecret)
   } catch (err) {
-    return next(asAuthError(err))
+    return next(asAuthError(err, res))
   }
   next()
 }
 
 export async function requireStudent(
   req: Request,
-  _res: Response,
+  res: Response,
   next: NextFunction
 ): Promise<void> {
   let student: Student
   try {
-    const token = extractToken(req)
+    const token = extractToken(req, res)
     const payload = jwt.verify(token, config.jwtSecret) as JwtPayload
-    if (payload.role !== 'student') throw new AppError('Unauthorized', 401)
+    if (payload.role !== 'student') {
+      noteAuthFailure(res, `role is ${payload.role ?? 'absent'}, not student`)
+      throw new AppError('Unauthorized', 401)
+    }
 
     const row = await prisma.student.findUnique({ where: { id: payload.sub } })
-    if (!row) throw new AppError('Unauthorized', 401)
+    if (!row) {
+      noteAuthFailure(res, 'student row missing')
+      throw new AppError('Unauthorized', 401)
+    }
     student = row
   } catch (err) {
-    return next(asAuthError(err))
+    return next(asAuthError(err, res))
   }
 
   ;(req as StudentRequest).student = student

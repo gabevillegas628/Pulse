@@ -31,7 +31,12 @@ export default function SessionExpiredModal({ open, role, identifier, onLogin, o
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
+    // z-[100] rather than the z-50 every other overlay uses. This one is rendered above
+    // <Routes>, so at equal stacking it loses to any dialog a page opens — which is exactly
+    // what happened on 9 Sep: the app raised this prompt the moment the session died and
+    // painted it underneath an open edit-question modal, where it sat unseen for ninety
+    // minutes. A notice that the session is gone has to outrank whatever it interrupts.
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] px-4">
       <div className="bg-surface rounded-[14px] shadow-pop border border-hairline w-full max-w-sm p-6">
         <h2 className="text-base font-semibold text-ink mb-1">Session expired</h2>
         <p className="text-sm text-muted mb-5">

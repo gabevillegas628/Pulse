@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { noteTokenWrite, noteTokenClear } from '@/lib/tokenWatchdog'
 
 export const api = axios.create({ baseURL: '/api' })
 
@@ -31,9 +32,17 @@ function readAuthToken(): string | null {
 function storeRenewedToken(token: string): void {
   if (localStorage.getItem(PROFESSOR_KEY)) localStorage.setItem(PROFESSOR_KEY, token)
   else if (localStorage.getItem(ADDIN_PROFESSOR_KEY)) localStorage.setItem(ADDIN_PROFESSOR_KEY, token)
+  else return
+  noteTokenWrite(token)
 }
 
 api.interceptors.request.use((config) => {
+  // An Authorization the caller set explicitly wins. The fallback below is a guess from
+  // storage precedence, and it guesses wrong in the one case that matters: a student-only
+  // route called while a professor token is also in storage is sent the professor's token,
+  // is correctly refused for the wrong role, and the client reads that 401 as the
+  // professor's own session ending. Callers that know which identity they mean say so.
+  if (config.headers.Authorization) return config
   const token = readAuthToken()
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
@@ -62,7 +71,12 @@ api.interceptors.response.use(
     // Nothing else takes the expired flag down. Without this the "Session expired" prompt
     // outlives the problem it was reporting: an add-in object whose sibling signed back in,
     // or whose token was renewed, would keep the dialog up while its polls quietly worked.
-    if (authExpired) {
+    //
+    // Only a response to a request that actually carried a token says anything about auth,
+    // though. /api/textbook/render requires none and answers 200 to anyone, so treating
+    // every 2xx as recovery lets an unauthenticated success dismiss a prompt that is still
+    // true — on the surface a professor is most likely to be reading at the time.
+    if (authExpired && res.config?.headers?.Authorization) {
       authExpired = false
       onAuthRecovered?.()
     }
@@ -81,6 +95,7 @@ api.interceptors.response.use(
       if (!isLoginRoute && onAuthExpired) {
         onAuthExpired()
       } else if (!isLoginRoute) {
+        noteTokenClear()
         localStorage.removeItem(PROFESSOR_KEY)
         localStorage.removeItem(STUDENT_KEY)
         window.location.href = '/login'
@@ -93,8 +108,10 @@ api.interceptors.response.use(
 export function setProfessorToken(token: string | null): void {
   if (token) {
     localStorage.setItem(PROFESSOR_KEY, token)
+    noteTokenWrite(token)
     return
   }
+  noteTokenClear()
   localStorage.removeItem(PROFESSOR_KEY)
   // The add-in key goes too. Leaving it meant getProfessorToken() kept handing a token
   // already known to be dead to the socket, which then failed every reconnect attempt with
