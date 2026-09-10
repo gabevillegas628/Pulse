@@ -1,6 +1,6 @@
 import type { Prisma } from '@prisma/client'
 import { Router, Request, Response, NextFunction } from 'express'
-import bcrypt from 'bcryptjs'
+import { hash as hashPassword } from '../utils/password.js'
 import { z } from 'zod'
 import { prisma } from '../db/index.js'
 import { AppError } from '../middleware/error.middleware.js'
@@ -125,7 +125,7 @@ router.post('/professors', async (req: Request, res: Response, next: NextFunctio
     })
     if (existing) throw new AppError('Email already in use', 409)
 
-    const passwordHash = await bcrypt.hash(body.password, 12)
+    const passwordHash = await hashPassword(body.password)
     const professor = await prisma.professor.create({
       data: { name: body.name, email: body.email, passwordHash },
     })
@@ -323,7 +323,7 @@ router.post('/students/:id/set-password', async (req: Request, res: Response, ne
     const target = await prisma.student.findUnique({ where: { id: p(req.params.id) } })
     if (!target) throw new AppError('Student not found', 404)
 
-    const passwordHash = await bcrypt.hash(newPassword, 12)
+    const passwordHash = await hashPassword(newPassword)
     await prisma.student.update({ where: { id: target.id }, data: { passwordHash } })
     await clearLoginThrottle(target.netId, target.email)
 
@@ -397,7 +397,7 @@ router.post('/professors/:id/set-password', async (req: Request, res: Response, 
     const target = await prisma.professor.findUnique({ where: { id: p(req.params.id) } })
     if (!target) throw new AppError('Professor not found', 404)
 
-    const passwordHash = await bcrypt.hash(newPassword, 12)
+    const passwordHash = await hashPassword(newPassword)
     await prisma.professor.update({ where: { id: target.id }, data: { passwordHash } })
     // Professor login throttles on the email; a professor being reset is as
     // likely to be locked out as a student being reset.

@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
-import bcrypt from 'bcryptjs'
+import { hash as hashPassword } from '../utils/password.js'
 import { customAlphabet } from 'nanoid'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../db/index.js'
@@ -748,7 +748,7 @@ router.post('/:id/students/:studentId/reset-password', async (req: Request, res:
     })
     if (!enrollment) throw new AppError('Student not in this class', 404)
 
-    const passwordHash = await bcrypt.hash(newPassword, 12)
+    const passwordHash = await hashPassword(newPassword)
     const student = await prisma.student.update({
       where: { id: p(req.params.studentId) },
       data: { passwordHash },

@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
+    "@node-rs/bcrypt": "^1.10.8",
     "@prisma/client": "^6.3.1",
     "@types/multer": "^2.1.0",
     "bcryptjs": "^2.4.3",

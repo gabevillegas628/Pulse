@@ -31,3 +31,6 @@ CloudFlareAPI.png
 # Claude Code's workspace. settings.local.json is per-machine permission state,
 # and nothing else in here has belonged to the repo either.
 .claude/
+
+# Raw load-test run artifacts (regenerable; summaries live in the commit log)
+backend/loadtest-results/

@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express'
-import bcrypt from 'bcryptjs'
+import { hash as hashPassword, verify as verifyPassword } from '../utils/password.js'
 import jwt from 'jsonwebtoken'
 import { z } from 'zod'
 import { prisma } from '../db/index.js'
@@ -63,7 +63,7 @@ router.post('/professor/register', async (req: Request, res: Response, next: Nex
     })
     if (existing) throw new AppError('Email already in use', 409)
 
-    const passwordHash = await bcrypt.hash(body.password, 12)
+    const passwordHash = await hashPassword(body.password)
     const professor = await prisma.professor.create({
       data: { name: body.name, email: body.email, passwordHash },
     })
@@ -91,7 +91,7 @@ router.post('/professor/login', loginRateLimiter, async (req: Request, res: Resp
     })
     if (!professor) throw new AppError('Invalid credentials', 401)
 
-    const valid = await bcrypt.compare(body.password, professor.passwordHash)
+    const valid = await verifyPassword(body.password, professor.passwordHash)
     if (!valid) throw new AppError('Invalid credentials', 401)
 
     // After the password check, so whether an account is deactivated is never
@@ -122,10 +122,10 @@ router.patch('/professor/me/password', requireProfessor, async (req: Request, re
     }).parse(req.body)
 
     const professor = (req as ProfessorRequest).professor
-    const valid = await bcrypt.compare(currentPassword, professor.passwordHash)
+    const valid = await verifyPassword(currentPassword, professor.passwordHash)
     if (!valid) throw new AppError('Current password is incorrect', 401)
 
-    const passwordHash = await bcrypt.hash(newPassword, 12)
+    const passwordHash = await hashPassword(newPassword)
     await prisma.professor.update({ where: { id: professor.id }, data: { passwordHash } })
 
     res.json({ success: true, data: null })
@@ -149,7 +149,7 @@ router.post('/student/register', async (req: Request, res: Response, next: NextF
     })
     if (existing) throw new AppError('Email or NetID already in use', 409)
 
-    const passwordHash = await bcrypt.hash(body.password, 12)
+    const passwordHash = await hashPassword(body.password)
     const student = await prisma.student.create({
       data: { netId: body.netId, email: body.email, passwordHash },
     })
@@ -178,7 +178,7 @@ router.post('/student/login', loginRateLimiter, async (req: Request, res: Respon
     })
     if (!student) throw new AppError('Invalid credentials', 401)
 
-    const valid = await bcrypt.compare(body.password, student.passwordHash)
+    const valid = await verifyPassword(body.password, student.passwordHash)
     if (!valid) throw new AppError('Invalid credentials', 401)
 
     const token = jwt.sign({ sub: student.id, role: 'student' }, config.jwtSecret, {
@@ -205,10 +205,10 @@ router.patch('/student/me/password', requireStudent, async (req: Request, res: R
     }).parse(req.body)
 
     const student = (req as StudentRequest).student
-    const valid = await bcrypt.compare(currentPassword, student.passwordHash)
+    const valid = await verifyPassword(currentPassword, student.passwordHash)
     if (!valid) throw new AppError('Current password is incorrect', 401)
 
-    const passwordHash = await bcrypt.hash(newPassword, 12)
+    const passwordHash = await hashPassword(newPassword)
     await prisma.student.update({ where: { id: student.id }, data: { passwordHash } })
 
     res.json({ success: true, data: null })

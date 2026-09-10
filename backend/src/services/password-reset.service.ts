@@ -1,5 +1,5 @@
 import crypto from 'crypto'
-import bcrypt from 'bcryptjs'
+import { hash as hashPassword } from '../utils/password.js'
 import { prisma } from '../db/index.js'
 import { config } from '../config/index.js'
 import { logger } from '../utils/logger.js'
@@ -126,7 +126,7 @@ export async function verifyResetToken(token: string): Promise<{ netId: string }
 /** Spend a link: set the new password, retire every other link for that student. */
 export async function redeemResetToken(token: string, newPassword: string): Promise<void> {
   const row = await findLiveToken(token)
-  const passwordHash = await bcrypt.hash(newPassword, 12)
+  const passwordHash = await hashPassword(newPassword)
   const now = new Date()
 
   // One transaction, so a password can never change without its link being spent.
