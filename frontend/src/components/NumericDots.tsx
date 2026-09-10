@@ -40,19 +40,13 @@ interface Props {
 const T = {
   panel: {
     maxStack: 132, minR: 2, maxR: 5,
-    label: '0.8125rem', count: '0.75rem', note: '0.625rem', dock: '0.625rem',
-    gap: 34, labelGap: 56, labelDrop: 22, edge: 30,
+    note: '0.625rem', dock: '0.625rem', gap: 34,
   },
   stage: {
     maxStack: 300, minR: 3, maxR: 5,
-    // The value labels are what a room actually reads off this chart, so they are sized
-    // like a heading rather than a caption. `labelDrop` clears the axis line: at this size
-    // a baseline 22px under it put the ascenders back through the rule.
-    label: 'clamp(14px, 2.1vw, 36px)',
-    count: 'clamp(12px, 1.7vw, 28px)',
     note: 'clamp(9px, 1.2vw, 20px)',
     dock: 'clamp(9px, 1.15vw, 19px)',
-    gap: 64, labelGap: 124, labelDrop: 36, edge: 64,
+    gap: 64,
   },
 } as const
 
@@ -234,8 +228,21 @@ export default function NumericDots({
   // hiding, and the labels stay exact.
   const approximate = keyGroup.length > 0
 
+  // Label metrics come off the box actually being drawn in, not off vw, so the spacing
+  // rule below can be stated in multiples of the text it is spacing. The two used to be
+  // independent, and a fixed 124px gap — sized for 36px type on a projector — blocked
+  // seven columns either side once the font clamped down to 14px in a narrower window.
+  // The value labels are what a room reads off this chart, so they are sized like a
+  // heading rather than a caption.
+  const labelPx = variant === 'stage' ? Math.min(36, Math.max(14, W * 0.021)) : 13
+  const countPx = variant === 'stage' ? Math.min(28, Math.max(12, W * 0.017)) : 12
+  /** Roughly the width of the longest label anyone writes, plus air. */
+  const labelGap = labelPx * 3.8
+  /** `labelDrop` clears the axis line — a baseline too close put ascenders through it. */
+  const labelDrop = labelPx + 8
+
   /** Half a label's width, near enough: inside this of either edge, a label anchors inwards. */
-  const EDGE = t.edge
+  const EDGE = labelPx * 1.9
 
   // Labelled where there is room, commonest first, so the biggest groups win the space. A
   // merged column can still be labelled, but only by a value that speaks for it — naming
@@ -243,14 +250,20 @@ export default function NumericDots({
   // it, which is the failure the rounded bars had.
   const labelled = new Set<number>()
   const usedX: number[] = []
-  for (const { c, i } of cols.map((c, i) => ({ c, i })).sort((a, b) => b.c.count - a.c.count)) {
+  // The key group is placed before anything else, however tall the rest are. Ordering by
+  // count alone let the biggest column suppress it as a neighbour, which on a well-answered
+  // question silently drops the one column the professor most wants named.
+  const byPriority = cols.map((c, i) => ({ c, i })).sort(
+    (a, b) => Number(b.c.allKey) - Number(a.c.allKey) || b.c.count - a.c.count
+  )
+  for (const { c, i } of byPriority) {
     // The key group is a deliberate grouping rather than an accident of layout, so it
     // is always worth labelling however little of it wrote the modal value. Everything
     // else has to be spoken for by its label.
     if (c.count < 2) continue
     if (!c.allKey && c.labelCount * 2 < c.count) continue
     const x = xOf(i)
-    if (usedX.some((u) => Math.abs(u - x) < t.labelGap)) continue
+    if (usedX.some((u) => Math.abs(u - x) < labelGap)) continue
     usedX.push(x)
     labelled.add(i)
   }
@@ -334,14 +347,14 @@ export default function NumericDots({
               {labelled.has(i) && (
                 <>
                   <text x={lx} y={topY - 6} textAnchor={anchor}
-                        fill={correct ? 'var(--good)' : 'var(--ink)'} style={{ fontSize: t.count }}>
+                        fill={correct ? 'var(--good)' : 'var(--ink)'} style={{ fontSize: countPx }}>
                     {c.count}
                   </text>
                   {/* The key group is many values standing as one, so its label is
                       marked approximate. Without that, a column of 89 sitting under the
                       one answer that happened to repeat reads as 89 students writing it. */}
-                  <text x={lx} y={base + t.labelDrop} textAnchor={anchor}
-                        fill={correct ? 'var(--good)' : 'var(--ink-2)'} style={{ fontSize: t.label }}>
+                  <text x={lx} y={base + labelDrop} textAnchor={anchor}
+                        fill={correct ? 'var(--good)' : 'var(--ink-2)'} style={{ fontSize: labelPx }}>
                     {approximate ? `≈${fmt(c.label)}` : fmt(c.label)}
                   </text>
                 </>
