@@ -55,6 +55,8 @@ export interface Class {
   liveThemesDefault: boolean
   /** Default for auto-closing questions once answers stop arriving; questions may override it. */
   autoCloseDefault: boolean
+  /** Default for grading free text on effort rather than understanding; questions may override it. */
+  effortGradingDefault: boolean
   createdAt: string
   updatedAt: string
 }
@@ -102,6 +104,12 @@ export interface Question {
    * null inherits the class default; true/false override it. Applies to every type.
    */
   autoClose: boolean | null
+  /**
+   * Grade this question's free text on effort rather than understanding: a genuine
+   * attempt earns full credit however wrong it is, and only a non-answer loses it.
+   * null inherits the class default; true/false override it. FREE_TEXT only.
+   */
+  effortGrading: boolean | null
 }
 
 /** One class meeting â the event entity for IN_CLASS sessions */
@@ -150,6 +158,8 @@ export interface Response {
   wordCount: number
   isFlagged: boolean
   aiScore: number | null
+  /** The grader's one-line justification for aiScore; null once a professor overrides by hand. */
+  aiReason: string | null
   submittedAt: string
 }
 
@@ -268,7 +278,7 @@ export interface QuestionWithResponses extends Question {
 export interface SessionDetail extends Session {
   questions: QuestionWithResponses[]
   groups: QuestionGroup[]
-  class: Pick<Class, 'id' | 'name' | 'liveThemesDefault' | 'autoCloseDefault'>
+  class: Pick<Class, 'id' | 'name' | 'liveThemesDefault' | 'autoCloseDefault' | 'effortGradingDefault'>
   runs: SessionRun[]
   enrolledCount: number
 }

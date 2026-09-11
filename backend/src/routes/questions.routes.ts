@@ -54,7 +54,7 @@ async function getAssignment(assignmentId: string, viewer: Viewer) {
 router.post('/sessions/:id/questions', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
-    const { title, text, type, options, groupId, correctAnswer, tolerance, unit, imageUrl, liveThemes, autoClose } = z.object({
+    const { title, text, type, options, groupId, correctAnswer, tolerance, unit, imageUrl, liveThemes, autoClose, effortGrading } = z.object({
       title: z.string().max(120).optional(),
       text: z.string().min(1),
       type: z.enum(['FREE_TEXT', 'MULTIPLE_CHOICE', 'RATING', 'YES_NO', 'NUMERIC', 'MULTI_SELECT', 'ORDERING', 'STRUCTURE']),
@@ -69,6 +69,8 @@ router.post('/sessions/:id/questions', requireProfessor, async (req: Request, re
       liveThemes: z.boolean().nullable().optional(),
       // null (or absent) inherits the class default. Applies to every question type.
       autoClose: z.boolean().nullable().optional(),
+      // null (or absent) inherits the class default. FREE_TEXT only.
+      effortGrading: z.boolean().nullable().optional(),
     }).parse(req.body)
 
     const session = await getSession(p(req.params.id), professor)
@@ -110,6 +112,9 @@ router.post('/sessions/:id/questions', requireProfessor, async (req: Request, re
         // No type restriction, unlike liveThemes: the answer key is most worth
         // protecting on exactly the objective types.
         autoClose: autoClose ?? null,
+        // Free text is the only type the AI grader runs on, so it is the only type
+        // where a grading stance means anything.
+        effortGrading: type === 'FREE_TEXT' ? (effortGrading ?? null) : null,
       },
     })
 
@@ -248,6 +253,8 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
       liveThemes: z.boolean().nullable().optional(),
       // null inherits the class default; true/false override it. Any question type.
       autoClose: z.boolean().nullable().optional(),
+      // null inherits the class default; true/false override it. FREE_TEXT only.
+      effortGrading: z.boolean().nullable().optional(),
     }).parse(req.body)
 
     const question = await prisma.question.findFirst({
@@ -373,6 +380,15 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
       // liveThemes: a question turning out harder than expected is exactly when a
       // professor needs to switch the countdown off without ending the run.
       updateData.autoClose = body.autoClose
+    }
+
+    if (body.effortGrading !== undefined) {
+      if (question.type !== 'FREE_TEXT')
+        throw new AppError('Effort grading only applies to free text questions', 400)
+      // Changeable after grading has already run: seeing the scores is often what
+      // tells a professor they picked the wrong stance. Switching it does not regrade
+      // on its own — they re-run "AI grade all", which overwrites every score.
+      updateData.effortGrading = body.effortGrading
     }
 
     const updated = await prisma.question.update({ where: { id: question.id }, data: updateData })

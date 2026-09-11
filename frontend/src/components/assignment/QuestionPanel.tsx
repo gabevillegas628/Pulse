@@ -23,6 +23,8 @@ interface Props {
   setRubricDraft: React.Dispatch<React.SetStateAction<Record<string, string>>>
   gradeMutation: GradeMutationType
   setCorrectAnswerMutation: ReturnType<typeof useMutation<unknown, unknown, { questionId: string; correctAnswer: string | null }>>
+  effortGradingMutation: ReturnType<typeof useMutation<unknown, unknown, { questionId: string; effortGrading: boolean | null }>>
+  classEffortDefault: boolean
   overrideScoreMutation: ReturnType<typeof useMutation<unknown, unknown, { questionId: string; responseId: string; aiScore: number }>>
   summarizeMutation: ReturnType<typeof useMutation<SummaryCategory[], unknown, string>>
   summary: SummaryCategory[] | null
@@ -36,6 +38,7 @@ export default function QuestionPanel({
   gradeReasons, gradeResult, rubricDraft, setRubricDraft,
   gradeMutation, setCorrectAnswerMutation, overrideScoreMutation,
   summarizeMutation, summary, summaryQuestionId, setSummary, setSummaryQuestionId,
+  effortGradingMutation, classEffortDefault,
 }: Props) {
   const qc = useQueryClient()
   const isDraft = sessionStatus === SessionStatus.DRAFT
@@ -89,6 +92,7 @@ export default function QuestionPanel({
           gradeMutation={gradeMutation} setCorrectAnswerMutation={setCorrectAnswerMutation}
           summarizeMutation={summarizeMutation} summary={summary}
           summaryQuestionId={summaryQuestionId} setSummary={setSummary} setSummaryQuestionId={setSummaryQuestionId}
+          effortGradingMutation={effortGradingMutation} classEffortDefault={classEffortDefault}
         />
       )}
 

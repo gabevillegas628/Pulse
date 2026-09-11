@@ -125,6 +125,12 @@ export default function ClassPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['class', classId] }),
   })
 
+  const effortGradingDefaultMutation = useMutation({
+    mutationFn: (effortGradingDefault: boolean) =>
+      api.patch(`/classes/${classId}`, { effortGradingDefault }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['class', classId] }),
+  })
+
   const { data: rosterData } = useQuery({
     queryKey: ['roster', classId],
     queryFn: () => api.get(`/classes/${classId}/enrollments`).then((r) => r.data.data.enrollments),
@@ -497,6 +503,40 @@ export default function ClassPage() {
             <span
               className={`block w-3.5 h-3.5 rounded-full bg-white transition-transform ${
                 data.autoCloseDefault ? 'translate-x-[18px]' : 'translate-x-[3px]'
+              }`}
+            />
+          </button>
+        </div>
+      )}
+
+      {/* Class-wide grading stance for free text. Individual questions override it. */}
+      {tab === 'sessions' && data && (
+        <div className="flex items-start justify-between gap-4 border border-hairline rounded-[14px] px-4 py-3 mb-4">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-ink flex items-center gap-1.5">
+              <Sparkles size={13} className="text-signal" />
+              Grade free text on effort
+            </p>
+            <p className="text-xs text-muted mt-0.5 leading-snug">
+              A genuine attempt earns full credit however wrong it is; half credit for
+              &ldquo;idk&rdquo; and one-word answers; none for keysmash or an answer to a
+              different question. Off, the AI grades on understanding instead. Any question
+              can override it.
+            </p>
+          </div>
+          <button
+            onClick={() => effortGradingDefaultMutation.mutate(!data.effortGradingDefault)}
+            disabled={effortGradingDefaultMutation.isPending}
+            role="switch"
+            aria-checked={!!data.effortGradingDefault}
+            aria-label="Grade free text on effort by default"
+            className={`shrink-0 mt-0.5 w-9 h-5 rounded-full transition-colors disabled:opacity-50 ${
+              data.effortGradingDefault ? 'bg-signal' : 'bg-surface-2 border border-hairline'
+            }`}
+          >
+            <span
+              className={`block w-3.5 h-3.5 rounded-full bg-white transition-transform ${
+                data.effortGradingDefault ? 'translate-x-[18px]' : 'translate-x-[3px]'
               }`}
             />
           </button>

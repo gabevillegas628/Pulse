@@ -35,7 +35,7 @@ type Tab = 'sessions' | 'homework' | 'textbook' | 'gradebook'
 const CLASS_TABS = [
   { key: 'sessions',  label: 'Live Sessions' },
   { key: 'homework',  label: 'Homework' },
-  { key: 'textbook',  label: 'Textbook' },
+  { key: 'textbook',  label: 'Study Guides' },
   { key: 'gradebook', label: 'Gradebook' },
 ] as const
 

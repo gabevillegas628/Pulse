@@ -119,7 +119,15 @@ router.get('/sessions/:id', requireProfessor, async (req: Request, res: Response
     const session = await prisma.session.findFirst({
       where: { id: p(req.params.id), ...ownedSession(professor) },
       include: {
-        class: { select: { id: true, name: true, liveThemesDefault: true, _count: { select: { enrollments: true } } } },
+        // autoCloseDefault was promised by SessionDetail but never selected, so the
+        // "Class default (on/off)" label on the session page always read "off".
+        class: {
+          select: {
+            id: true, name: true,
+            liveThemesDefault: true, autoCloseDefault: true, effortGradingDefault: true,
+            _count: { select: { enrollments: true } },
+          },
+        },
         groups: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] },
         runs: {
           orderBy: { openedAt: 'desc' },

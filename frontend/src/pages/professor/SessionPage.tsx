@@ -211,6 +211,8 @@ export default function SessionPage() {
   })
 
   const [gradeReasons, setGradeReasons] = useState<Record<string, string>>({})
+  /** Question id whose response list is filtered to scores below full credit, or null. */
+  const [reviewOnly, setReviewOnly] = useState<string | null>(null)
   const [gradingState, setGradingState] = useState<Record<string, { graded: number; total: number }>>({})
   const [gradeResult, setGradeResult] = useState<Record<string, { failedCount: number }>>({})
 
@@ -244,6 +246,12 @@ export default function SessionPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['session', sessionId] }),
   })
 
+  const effortGradingMutation = useMutation({
+    mutationFn: ({ questionId, effortGrading }: { questionId: string; effortGrading: boolean | null }) =>
+      api.patch(`/sessions/${sessionId}/questions/${questionId}`, { effortGrading }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['session', sessionId] }),
+  })
+
   const reopenMutation = useMutation({
     mutationFn: (questionId: string) =>
       api.post(`/sessions/${sessionId}/questions/${questionId}/reopen`),
@@ -259,10 +267,12 @@ export default function SessionPage() {
           ...prev,
           questions: prev.questions.map((q) => {
             if (q.id !== questionId) return q
-            return { ...q, responses: q.responses.map((r) => r.id === responseId ? { ...r, aiScore } : r) }
+            // aiReason described the AI's score, not this one — the server clears it too.
+            return { ...q, responses: q.responses.map((r) => r.id === responseId ? { ...r, aiScore, aiReason: null } : r) }
           }),
         }
       })
+      setGradeReasons((prev) => { const next = { ...prev }; delete next[responseId]; return next })
     },
   })
 
@@ -283,10 +293,11 @@ export default function SessionPage() {
           ...prev,
           questions: prev.questions.map((q) => {
             if (q.id !== questionId) return q
-            return { ...q, responses: q.responses.map(r => ({ ...r, aiScore: 1.0 })) }
+            return { ...q, responses: q.responses.map(r => ({ ...r, aiScore: 1.0, aiReason: null })) }
           }),
         }
       })
+      setGradeReasons({})
     },
   })
 
@@ -388,7 +399,7 @@ export default function SessionPage() {
                 ...q,
                 responses: q.responses.map((r) => {
                   const g = batchGrades.find((g) => g.id === r.id)
-                  return g ? { ...r, aiScore: g.aiScore } : r
+                  return g ? { ...r, aiScore: g.aiScore, aiReason: g.reason } : r
                 }),
               }
             }),
@@ -839,11 +850,54 @@ export default function SessionPage() {
               )}
             </div>
 
-            {/* Rubric hint — FREE_TEXT, after at least one run */}
+            {/* Grading stance + rubric hint — FREE_TEXT, after at least one run */}
             {(hasBeenRun || data.status === SessionStatus.ARCHIVED) &&
-              activeQuestion.type === 'FREE_TEXT' && (
+              activeQuestion.type === 'FREE_TEXT' && (() => {
+              const effortOn = activeQuestion.effortGrading ?? data.class.effortGradingDefault
+              return (
               <div className="mt-3 pt-3 border-t border-hairline">
-                <p className="text-xs text-muted font-medium mb-1.5">What were you looking for? <span className="font-normal">(optional — helps AI grade more accurately)</span></p>
+                <div className="flex items-start justify-between gap-4 mb-2.5">
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted font-medium mb-0.5">
+                      <Sparkles size={11} className="inline mb-0.5 mr-1 text-signal" />
+                      What the AI grades on
+                    </p>
+                    <p className="text-[11px] text-muted leading-snug">
+                      {effortOn
+                        ? 'Effort — a real attempt earns full credit however wrong it is. Only non-answers lose marks.'
+                        : 'Understanding — answers are judged against what you were looking for.'}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 rounded-sm border border-hairline overflow-hidden">
+                    {([
+                      { v: null, label: `Class default${data.class.effortGradingDefault ? ' (effort)' : ' (understanding)'}` },
+                      { v: false, label: 'Understanding' },
+                      { v: true, label: 'Effort' },
+                    ] as const).map(({ v, label }) => {
+                      const selected = (activeQuestion.effortGrading ?? null) === v
+                      return (
+                        <button
+                          key={String(v)}
+                          onClick={() => effortGradingMutation.mutate({ questionId: activeQuestion.id, effortGrading: v })}
+                          disabled={effortGradingMutation.isPending}
+                          className={`px-2.5 py-1 text-[11px] font-medium transition-colors disabled:opacity-50 ${
+                            selected ? 'bg-signal-soft text-signal' : 'text-muted hover:text-ink'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+                {effortGradingMutation.isError && (
+                  <p className="text-xs text-red-500 mb-2">Could not change that — try again.</p>
+                )}
+                <p className="text-xs text-muted font-medium mb-1.5">
+                  {effortOn
+                    ? <>What is this question about? <span className="font-normal">(optional — context only, students are not scored against it)</span></>
+                    : <>What were you looking for? <span className="font-normal">(optional — helps AI grade more accurately)</span></>}
+                </p>
                 <div className="flex gap-2">
                   <input
                     value={rubricDraft[activeQuestion.id] ?? activeQuestion.correctAnswer ?? ''}
@@ -858,7 +912,8 @@ export default function SessionPage() {
                   />
                 </div>
               </div>
-            )}
+              )
+            })()}
 
             {/* Mark correct answer — MCQ / YES_NO, after at least one run */}
             {(hasBeenRun || data.status === SessionStatus.ARCHIVED) &&
@@ -1096,12 +1151,50 @@ export default function SessionPage() {
             </div>
           )}
 
+          {/* Review filter — the scores a professor actually has to look at are the
+              ones that aren't full credit, and under effort grading a low score is an
+              accusation, so it should be one click to see only those. */}
+          {(() => {
+            const needsReview = activeQuestion.responses.filter((r) => {
+              const s = calcResponseScore(activeQuestion, r)
+              return s !== null && s < 1.0
+            })
+            if (needsReview.length === 0) return null
+            const on = reviewOnly === activeQuestion.id
+            return (
+              <div className="flex items-center gap-2 mb-3">
+                <button
+                  onClick={() => setReviewOnly(on ? null : activeQuestion.id)}
+                  className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-sm border transition-colors ${
+                    on
+                      ? 'bg-warn-soft border-warn/30 text-warn'
+                      : 'bg-surface border-hairline text-muted hover:text-ink'
+                  }`}
+                >
+                  <Flag size={11} />
+                  {on ? 'Showing needs review' : `Needs review (${needsReview.length})`}
+                </button>
+                {on && (
+                  <span className="text-[11px] text-muted">
+                    {needsReview.length} of {activeQuestion.responses.length} scored below full credit
+                  </span>
+                )}
+              </div>
+            )
+          })()}
+
           {/* Response list */}
           {activeQuestion.responses.length === 0 ? (
             <Empty message="No responses yet" />
           ) : (
             <div className="space-y-3">
-              {activeQuestion.responses.map((r) => (
+              {activeQuestion.responses
+                .filter((r) => {
+                  if (reviewOnly !== activeQuestion.id) return true
+                  const s = calcResponseScore(activeQuestion, r)
+                  return s !== null && s < 1.0
+                })
+                .map((r) => (
                 <div
                   key={r.id}
                   className={`border rounded-[14px] p-4 ${r.isFlagged ? 'border-warn/20 bg-warn-soft' : 'bg-surface border-hairline'}`}
@@ -1129,7 +1222,9 @@ export default function SessionPage() {
                           : score === 0.5
                           ? 'bg-warn-soft text-warn border-warn/20'
                           : 'bg-red-100 text-red-600 border-red-200'
-                        const title = gradeReasons[r.id] || 'Click to cycle score'
+                        // The socket reason is fresher than the stored one during a run;
+                        // the stored one is what survives a reload.
+                        const title = gradeReasons[r.id] || r.aiReason || 'Click to cycle score'
                         return (
                           <button
                             title={title}
@@ -1147,6 +1242,18 @@ export default function SessionPage() {
                     </div>
                   </div>
                   <p className="text-ink-2 text-sm leading-relaxed">{r.responseText}</p>
+                  {(() => {
+                    // Why it lost credit, spelled out rather than hidden in a tooltip —
+                    // this is the line a professor repeats to the student who asks.
+                    const score = calcResponseScore(activeQuestion, r)
+                    const why = gradeReasons[r.id] || r.aiReason
+                    if (!why || score === null || score >= 1.0) return null
+                    return (
+                      <p className="mt-2 pt-2 border-t border-hairline text-[11px] text-muted leading-snug">
+                        <span className="font-medium">AI:</span> {why}
+                      </p>
+                    )
+                  })()}
                 </div>
               ))}
             </div>

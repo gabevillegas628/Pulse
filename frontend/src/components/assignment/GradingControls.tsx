@@ -22,11 +22,15 @@ interface Props {
   summaryQuestionId: string | null
   setSummary: (s: SummaryCategory[] | null) => void
   setSummaryQuestionId: (id: string | null) => void
+  effortGradingMutation: ReturnType<typeof useMutation<unknown, unknown, { questionId: string; effortGrading: boolean | null }>>
+  /** The class-wide stance a question inherits when its own override is null. */
+  classEffortDefault: boolean
 }
 
 export default function GradingControls({
   q, rubricDraft, setRubricDraft, gradeResult, gradeMutation, setCorrectAnswerMutation,
   summarizeMutation, summary, summaryQuestionId, setSummary, setSummaryQuestionId,
+  effortGradingMutation, classEffortDefault,
 }: Props) {
   const [editingStructure, setEditingStructure] = useState(false)
   const ketcherRef = useRef<Ketcher | null>(null)
@@ -156,8 +160,33 @@ export default function GradingControls({
         const ungradedCount = q.responses.filter((r) => r.aiScore === null).length
         const isThisGrading = gradeMutation.isPending && gradeMutation.variables?.questionId === q.id
         const result = gradeResult[q.id]
+        const effortOn = q.effortGrading ?? classEffortDefault
         return (
           <>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted">Grade on:</span>
+              <div className="flex rounded-sm border border-hairline overflow-hidden">
+                {([
+                  { v: null, label: `Class (${classEffortDefault ? 'effort' : 'understanding'})` },
+                  { v: false, label: 'Understanding' },
+                  { v: true, label: 'Effort' },
+                ] as const).map(({ v, label }) => {
+                  const selected = (q.effortGrading ?? null) === v
+                  return (
+                    <button
+                      key={String(v)}
+                      onClick={() => effortGradingMutation.mutate({ questionId: q.id, effortGrading: v })}
+                      disabled={effortGradingMutation.isPending}
+                      className={`px-2 py-1 text-[11px] font-medium transition-colors disabled:opacity-50 ${
+                        selected ? 'bg-signal-soft text-signal' : 'text-muted hover:text-ink'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
             <input
               value={rubricDraft[q.id] ?? q.correctAnswer ?? ''}
               onChange={(e) => setRubricDraft((prev) => ({ ...prev, [q.id]: e.target.value }))}
@@ -166,7 +195,7 @@ export default function GradingControls({
                 if (val !== undefined)
                   setCorrectAnswerMutation.mutate({ questionId: q.id, correctAnswer: val || null })
               }}
-              placeholder="Reference answer (optional, used by AI grader)"
+              placeholder={effortOn ? 'What the question is about (context only)' : 'Reference answer (optional, used by AI grader)'}
               className="text-xs border border-hairline rounded px-2.5 py-1.5 text-ink-2 bg-surface focus:outline-none focus:ring-1 focus:ring-signal w-56"
             />
             <div className="flex flex-col gap-1">

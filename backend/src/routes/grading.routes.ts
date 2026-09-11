@@ -23,25 +23,57 @@ type ResponseRow = { id: string; studentId: string; responseText: string; aiScor
 
 // ─── Core grading helpers ─────────────────────────────────────────────────────
 
-async function gradeBatch(
+/**
+ * The two stances a professor can grade free text with.
+ *
+ * `understanding` is the original behaviour: did the answer engage with the right
+ * concept. `effort` asks a different question entirely — did the student actually
+ * attempt this, in which case being wrong costs nothing. The distinction exists
+ * because professors were writing "give credit for trying" into the reference-answer
+ * field, where the grader read it as content to match against rather than as policy.
+ */
+export function buildGradingPrompt(
+  mode: 'understanding' | 'effort',
   questionText: string,
   correctAnswer: string | null,
-  responses: ResponseRow[]
-): Promise<GradeResult[]> {
-  const responseList = responses.map((r, i) => `[${i}] ${r.responseText}`).join('\n')
-  const n = responses.length
+  responseList: string,
+  n: number
+): string {
+  const tail = `
+IMPORTANT: You MUST return exactly ${n} objects — one for every index from 0 to ${n - 1}. Do not skip any.
+Return a JSON array only, no other text:
+[{"index": 0, "score": "full_credit" | "partial_credit" | "no_credit", "reason": "one short sentence"}, ...]`
+
+  if (mode === 'effort') {
+    // The reference answer still earns its place here: it is how the grader tells a
+    // real attempt at THIS question from a fluent paragraph about something else.
+    const topicLine = correctAnswer
+      ? `\nWhat the question is about (context only — students are NOT graded on matching this): "${correctAnswer}"\n`
+      : ''
+
+    return `You are grading student responses to a classroom question ON EFFORT. The professor is not assessing whether students got it right. You are judging one thing: did this student genuinely attempt the question?
+
+A wrong answer, a confused answer, and a misconception all earn FULL credit as long as the student really tried. Do not deduct for incorrectness, poor grammar, or brevity that still carries a real thought.
+${topicLine}
+Question: "${questionText}"
+
+Student responses (${n} total, indexed 0 to ${n - 1}):
+${responseList}
+
+Grade each response:
+- full_credit: a real attempt at this question. The student engaged with what was asked and put a genuine thought down, however wrong, incomplete, or clumsily worded. Confidently incorrect answers belong here.
+- partial_credit: token effort. Something was typed, but it carries almost no thought: "idk" / "not sure" / "I don't know" (honest, but not an attempt), a bare word or two with no reasoning, or pure hedging with no content of its own.
+- no_credit: not an attempt at all. Keyboard mashing ("abcde", "asdf", "aaaa"), gibberish, punctuation or filler alone, the question restated back with nothing added, text copied from the prompt, or an on-topic-sounding answer to a completely different question.
+
+Judge effort by whether the text responds to THIS question. A fluent, well-written paragraph that does not actually address what was asked is no_credit, not full_credit. Length is not effort: one sincere sentence beats a padded paragraph.
+${tail}`
+  }
+
   const rubricLine = correctAnswer
     ? `\nReference answer (what the professor was looking for): "${correctAnswer}"\n`
     : ''
 
-  const msg = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 4096,
-    temperature: 0,
-    messages: [
-      {
-        role: 'user',
-        content: `You are grading student responses to a classroom question for participation credit. Judge whether each student engaged with the right concept — not whether they stated it perfectly.
+  return `You are grading student responses to a classroom question for participation credit. Judge whether each student engaged with the right concept — not whether they stated it perfectly.
 ${rubricLine}
 Question: "${questionText}"
 
@@ -52,10 +84,26 @@ Grade each response:
 - full_credit: makes sense — the student engaged with the relevant concept, even if their wording or details aren't perfect
 - partial_credit: almost there — clearly trying but vague, confused, or only partly on the right track
 - no_credit: didn't engage — off-topic, trivial (e.g. "it's bad for you"), restating the question, "idk", single word, or no real thought
+${tail}`
+}
 
-IMPORTANT: You MUST return exactly ${n} objects — one for every index from 0 to ${n - 1}. Do not skip any.
-Return a JSON array only, no other text:
-[{"index": 0, "score": "full_credit" | "partial_credit" | "no_credit", "reason": "one short sentence"}, ...]`,
+async function gradeBatch(
+  questionText: string,
+  correctAnswer: string | null,
+  responses: ResponseRow[],
+  mode: 'understanding' | 'effort'
+): Promise<GradeResult[]> {
+  const responseList = responses.map((r, i) => `[${i}] ${r.responseText}`).join('\n')
+  const n = responses.length
+
+  const msg = await anthropic.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 4096,
+    temperature: 0,
+    messages: [
+      {
+        role: 'user',
+        content: buildGradingPrompt(mode, questionText, correctAnswer, responseList, n),
       },
     ],
   })
@@ -73,7 +121,10 @@ Return a JSON array only, no other text:
       const score = g?.score ?? 'full_credit'
       const reason = g?.reason ?? 'Not individually graded'
       const aiScore = score === 'no_credit' ? 0 : score === 'partial_credit' ? 0.5 : 1.0
-      await prisma.response.update({ where: { id: resp.id }, data: { aiScore } })
+      // Store the reason alongside the score: anything short of full credit gets
+      // questioned eventually, and the socket event that used to carry it does not
+      // survive a page reload.
+      await prisma.response.update({ where: { id: resp.id }, data: { aiScore, aiReason: reason } })
       return { id: resp.id, studentId: resp.studentId, aiScore, reason }
     })
   )
@@ -85,7 +136,8 @@ async function runAiGradingAsync(
   questionText: string,
   correctAnswer: string | null,
   responses: ResponseRow[],
-  socketRoom: string
+  socketRoom: string,
+  mode: 'understanding' | 'effort'
 ) {
   const total = responses.length
   let processed = 0
@@ -94,7 +146,7 @@ async function runAiGradingAsync(
   for (let i = 0; i < total; i += BATCH_SIZE) {
     const batch = responses.slice(i, i + BATCH_SIZE)
     try {
-      const batchGrades = await gradeBatch(questionText, correctAnswer, batch)
+      const batchGrades = await gradeBatch(questionText, correctAnswer, batch, mode)
       processed += batch.length
       getIo().to(socketRoom).emit('grade_progress', { questionId, graded: processed, total, batchGrades })
     } catch (err) {
@@ -112,7 +164,8 @@ async function runAiGradingAsync(
 async function runAiGradingSync(
   questionText: string,
   correctAnswer: string | null,
-  responses: ResponseRow[]
+  responses: ResponseRow[],
+  mode: 'understanding' | 'effort'
 ): Promise<{ grades: GradeResult[]; failedCount: number }> {
   const grades: GradeResult[] = []
   let failedCount = 0
@@ -120,7 +173,7 @@ async function runAiGradingSync(
   for (let i = 0; i < responses.length; i += BATCH_SIZE) {
     const batch = responses.slice(i, i + BATCH_SIZE)
     try {
-      grades.push(...await gradeBatch(questionText, correctAnswer, batch))
+      grades.push(...await gradeBatch(questionText, correctAnswer, batch, mode))
     } catch {
       failedCount += batch.length
     }
@@ -187,7 +240,12 @@ router.post('/sessions/:sessionId/questions/:questionId/grade', requireProfessor
         ...ownedSessionQuestion(professor),
       },
       include: {
-        session: { include: { runs: { where: { status: { in: ['CLOSED', 'ARCHIVED'] } } } } },
+        session: {
+          include: {
+            runs: { where: { status: { in: ['CLOSED', 'ARCHIVED'] } } },
+            class: { select: { effortGradingDefault: true } },
+          },
+        },
         responses: { include: { student: { select: { id: true, netId: true } } } },
       },
     })
@@ -195,6 +253,10 @@ router.post('/sessions/:sessionId/questions/:questionId/grade', requireProfessor
     if (question.type !== 'FREE_TEXT') throw new AppError('AI grading only applies to FREE_TEXT questions', 400)
     if (question.session!.runs.length === 0)
       throw new AppError('Session must have at least one closed run before grading', 400)
+
+    const gradingMode = (question.effortGrading ?? question.session!.class.effortGradingDefault)
+      ? 'effort' as const
+      : 'understanding' as const
 
     const responses = mode === 'ungraded'
       ? question.responses.filter((r) => r.aiScore === null)
@@ -205,7 +267,7 @@ router.post('/sessions/:sessionId/questions/:questionId/grade', requireProfessor
     const socketRoom = `${question.sessionId}:professor`
     res.status(202).json({ success: true, data: { total: responses.length } })
 
-    runAiGradingAsync(question.id, question.text, question.correctAnswer, responses, socketRoom)
+    runAiGradingAsync(question.id, question.text, question.correctAnswer, responses, socketRoom, gradingMode)
       .catch(() => {
         getIo().to(socketRoom).emit('grade_complete', { questionId: question.id, failedCount: responses.length })
       })
@@ -231,7 +293,8 @@ router.patch('/sessions/:sessionId/questions/:questionId/responses/:responseId',
 
     const response = await prisma.response.update({
       where: { id: p(req.params.responseId) },
-      data: { aiScore },
+      // Clear the AI reason: it justified the grader's score, not the one just set by hand.
+      data: { aiScore, aiReason: null },
     })
     res.json({ success: true, data: { response } })
   } catch (err) {
@@ -319,7 +382,7 @@ router.post('/assignments/:assignmentId/questions/:questionId/grade', requirePro
         ...ownedAssignmentQuestion(professor),
       },
       include: {
-        assignment: true,
+        assignment: { include: { class: { select: { effortGradingDefault: true } } } },
         responses: { include: { student: { select: { id: true, netId: true } } } },
       },
     })
@@ -329,7 +392,11 @@ router.post('/assignments/:assignmentId/questions/:questionId/grade', requirePro
       throw new AppError('Assignment must be closed before grading', 400)
     if (question.responses.length === 0) throw new AppError('No responses to grade', 400)
 
-    const { grades, failedCount } = await runAiGradingSync(question.text, question.correctAnswer, question.responses)
+    const mode = (question.effortGrading ?? question.assignment!.class.effortGradingDefault)
+      ? 'effort' as const
+      : 'understanding' as const
+
+    const { grades, failedCount } = await runAiGradingSync(question.text, question.correctAnswer, question.responses, mode)
     res.json({ success: true, data: { grades, failedCount } })
   } catch (err) {
     next(err)
@@ -353,7 +420,8 @@ router.patch('/assignments/:assignmentId/questions/:questionId/responses/:respon
 
     const response = await prisma.response.update({
       where: { id: p(req.params.responseId) },
-      data: { aiScore },
+      // Clear the AI reason: it justified the grader's score, not the one just set by hand.
+      data: { aiScore, aiReason: null },
     })
     res.json({ success: true, data: { response } })
   } catch (err) {

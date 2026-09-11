@@ -83,6 +83,10 @@ model Class {
   // Default for auto-closing questions once answers stop arriving. Per-question
   // `autoClose` overrides it; off by default so no lecture starts refusing answers unasked.
   autoCloseDefault  Boolean        @default(false)
+  // Default for grading free text on effort instead of understanding. Per-question
+  // `effortGrading` overrides it. A course tends to take one stance or the other for
+  // the whole term, which is why this lives on the class and not only on questions.
+  effortGradingDefault Boolean     @default(false)
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
   sessions          Session[]
@@ -258,6 +262,10 @@ model Question {
   // null = inherit Class.autoCloseDefault. Unlike liveThemes this applies to every
   // question type â the answer key is most worth protecting on the objective ones.
   autoClose     Boolean?
+  // null = inherit Class.effortGradingDefault. FREE_TEXT only; ignored for other types.
+  // Switches the AI grader from "did they understand it" to "did they really try",
+  // so a wrong-but-genuine answer earns full credit and a keysmash does not.
+  effortGrading Boolean?
   responses     Response[]
   themeSets     ThemeSet[]
 
@@ -278,6 +286,12 @@ model Response {
   wordCount    Int
   isFlagged    Boolean        @default(false)
   aiScore      Float?
+  // The grader's one-line justification for aiScore. Persisted because a score below
+  // full credit is contestable — under effort grading it reads as "you didn't really
+  // try" — and a professor asked about it a week later needs the reason to still exist.
+  // Cleared whenever a professor overrides the score by hand: it described the AI's
+  // number, not theirs.
+  aiReason     String?
   isDraft      Boolean        @default(true)
   submittedAt  DateTime       @default(now())
   theme        ResponseTheme?

@@ -206,6 +206,12 @@ export default function AssignmentDetailPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['assignment', assignmentId] }),
   })
 
+  const effortGradingMutation = useMutation({
+    mutationFn: ({ questionId, effortGrading }: { questionId: string; effortGrading: boolean | null }) =>
+      api.patch(`/assignments/${assignmentId}/questions/${questionId}`, { effortGrading }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['assignment', assignmentId] }),
+  })
+
   const overrideScoreMutation = useMutation({
     mutationFn: ({ questionId, responseId, aiScore }: { questionId: string; responseId: string; aiScore: number }) =>
       api.patch(`/assignments/${assignmentId}/questions/${questionId}/responses/${responseId}`, { aiScore }),
@@ -386,6 +392,7 @@ export default function AssignmentDetailPage() {
     gradeReasons, gradeResult, rubricDraft, setRubricDraft,
     gradeMutation, setCorrectAnswerMutation, overrideScoreMutation,
     summarizeMutation, summary, summaryQuestionId, setSummary, setSummaryQuestionId,
+    effortGradingMutation, classEffortDefault: data.class.effortGradingDefault,
   }
 
   return (

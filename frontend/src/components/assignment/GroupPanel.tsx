@@ -23,6 +23,7 @@ function PartCard({
   gradeReasons, gradeResult, rubricDraft, setRubricDraft,
   gradeMutation, setCorrectAnswerMutation, overrideScoreMutation,
   summarizeMutation, summary, summaryQuestionId, setSummary, setSummaryQuestionId,
+  effortGradingMutation, classEffortDefault,
 }: {
   q: QWithGroup
   partIdx: number
@@ -36,6 +37,8 @@ function PartCard({
   setRubricDraft: React.Dispatch<React.SetStateAction<Record<string, string>>>
   gradeMutation: GradeMutationType
   setCorrectAnswerMutation: ReturnType<typeof useMutation<unknown, unknown, { questionId: string; correctAnswer: string | null }>>
+  effortGradingMutation: ReturnType<typeof useMutation<unknown, unknown, { questionId: string; effortGrading: boolean | null }>>
+  classEffortDefault: boolean
   overrideScoreMutation: ReturnType<typeof useMutation<unknown, unknown, { questionId: string; responseId: string; aiScore: number }>>
   summarizeMutation: ReturnType<typeof useMutation<SummaryCategory[], unknown, string>>
   summary: SummaryCategory[] | null
@@ -105,6 +108,7 @@ function PartCard({
           gradeMutation={gradeMutation} setCorrectAnswerMutation={setCorrectAnswerMutation}
           summarizeMutation={summarizeMutation} summary={summary}
           summaryQuestionId={summaryQuestionId} setSummary={setSummary} setSummaryQuestionId={setSummaryQuestionId}
+          effortGradingMutation={effortGradingMutation} classEffortDefault={classEffortDefault}
         />
       )}
       <ResponseList q={q} isGradable={isGradable} gradeReasons={gradeReasons} overrideScoreMutation={overrideScoreMutation} />
@@ -132,6 +136,8 @@ interface Props {
   summaryQuestionId: string | null
   setSummary: (s: SummaryCategory[] | null) => void
   setSummaryQuestionId: (id: string | null) => void
+  effortGradingMutation: ReturnType<typeof useMutation<unknown, unknown, { questionId: string; effortGrading: boolean | null }>>
+  classEffortDefault: boolean
 }
 
 export default function GroupPanel({
@@ -139,6 +145,7 @@ export default function GroupPanel({
   gradeReasons, gradeResult, rubricDraft, setRubricDraft,
   gradeMutation, setCorrectAnswerMutation, overrideScoreMutation,
   summarizeMutation, summary, summaryQuestionId, setSummary, setSummaryQuestionId,
+  effortGradingMutation, classEffortDefault,
 }: Props) {
   const qc = useQueryClient()
   const [titleDraft, setTitleDraft] = useState(group.title)
@@ -224,6 +231,7 @@ export default function GroupPanel({
     gradeReasons, gradeResult, rubricDraft, setRubricDraft,
     gradeMutation, setCorrectAnswerMutation, overrideScoreMutation,
     summarizeMutation, summary, summaryQuestionId, setSummary, setSummaryQuestionId,
+    effortGradingMutation, classEffortDefault,
   }
 
   return (

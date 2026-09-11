@@ -30,6 +30,10 @@ const createClassSchema = z.object({
   // Default for auto-closing questions in this class once answers stop arriving.
   // Individual questions can override it; off unless the professor turns it on.
   autoCloseDefault: z.boolean().optional(),
+  // Default grading stance for free text in this class: effort rather than
+  // understanding. Individual questions can override it; off keeps the original
+  // behaviour, where the reference answer is what scores are measured against.
+  effortGradingDefault: z.boolean().optional(),
 })
 
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {

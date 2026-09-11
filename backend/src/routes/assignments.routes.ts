@@ -97,7 +97,7 @@ router.get('/assignments/:id', requireProfessor, async (req: Request, res: Respo
     const assignment = await prisma.assignment.findFirst({
       where: { id: p(req.params.id), ...ownedAssignment(professor) },
       include: {
-        class: { select: { id: true, name: true, _count: { select: { enrollments: true } } } },
+        class: { select: { id: true, name: true, effortGradingDefault: true, _count: { select: { enrollments: true } } } },
         groups: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] },
         questions: {
           orderBy: { order: 'asc' },
