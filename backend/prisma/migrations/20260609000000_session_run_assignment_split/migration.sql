@@ -5,7 +5,7 @@
 --   Assignment (homework)
 -- ============================================================
 
-BEGIN;
+-- (BEGIN/COMMIT removed: Prisma wraps each migration in its own transaction)
 
 -- ────────────────────────────────────────────────────────────
 -- STEP 1: New tables and nullable columns
@@ -184,4 +184,4 @@ CREATE INDEX "QuestionGroup_assignmentId_idx" ON "QuestionGroup"("assignmentId")
 CREATE INDEX "Response_runId_idx"             ON "Response"("runId");
 CREATE INDEX "Response_studentId_idx"         ON "Response"("studentId");
 
-COMMIT;
+
