@@ -113,11 +113,24 @@ button.primary {
   font-weight: 700;
 }
 
-/* Closing is the one action here that takes something away from a room full of
-   students, so it does not wear the same colour as Insert. */
-button.primary.danger {
-  background: var(--error);
-  border-color: var(--error);
+/* The run button is coloured by the state it is reporting, not by the action it
+   performs: green means answers are being accepted right now, and the default
+   signal orange means they are not. Office add-ins suppress window.confirm, so this
+   colour is the only warning before a click closes a live session — it has to be
+   readable at a glance from the lectern. */
+button.primary.live {
+  background: var(--good);
+  border-color: var(--good);
+}
+
+/* Re-bind confirms in place, because Office add-ins suppress window.confirm. The armed
+   state has to look unlike the resting button it replaces — it rewrites every binding
+   in the deck on the next click. */
+button.armed {
+  background: var(--warn);
+  border-color: var(--warn);
+  color: #fff;
+  font-weight: 700;
 }
 
 button.link {

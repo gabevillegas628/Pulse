@@ -14,6 +14,7 @@ import {
   verifyCodes,
   type ClassSummary,
   type QuestionSummary,
+  type RebindProposal,
   type SectionSummary,
   type SessionSummary,
   type VerifyResult,
@@ -113,6 +114,7 @@ function signIn() {
 }
 
 function showSignedOut() {
+  disarmRebind()
   show('signed-out', true)
   show('signed-in', false)
 }
@@ -210,6 +212,7 @@ async function loadQuestions(): Promise<void> {
 }
 
 async function onClassChange() {
+  disarmRebind('Class changed — nothing was re-bound.')
   try {
     await loadSessions()
     await loadSections()
@@ -341,7 +344,10 @@ function renderRunControl() {
   }
 
   button.disabled = archived
-  button.className = run ? 'primary danger' : 'primary'
+  // Green reports the state, not the action: the button says "Close session" while it
+  // is green, because green means the room can answer right now. With no confirm step
+  // available, this is the only thing standing between a reflex click and a closed run.
+  button.className = run ? 'primary live' : 'primary'
   button.textContent = archived
     ? 'Archived in Pulse'
     : run
@@ -364,15 +370,6 @@ async function onRunToggle() {
 
   try {
     if (run) {
-      // The one action here that takes something away from a room mid-answer, and the
-      // button sits directly under a dropdown people click by reflex. Worth the click.
-      const ok = window.confirm(
-        `Close "${session.title}"?\n\nStudents can no longer answer until you reopen it.`
-      )
-      if (!ok) {
-        setStatus('run-status', 'Left open.', 'muted')
-        return
-      }
       setStatus('run-status', 'Closing…', 'muted')
       await closeRun(session.id, run.id)
       setStatus('run-status', 'Closed — no more answers accepted.', 'muted')
@@ -631,9 +628,44 @@ async function onRefreshAll() {
  * After duplicating a class for a new term, re-point the whole deck in one step.
  * The backend proposes a mapping by session title + question order; this confirms it,
  * then adopts each old code onto its new question so no image needs replacing.
+ *
+ * Confirmation happens in the pane rather than in a dialog. Office add-ins suppress
+ * window.confirm, so the dialog this used to raise never appeared and its return value
+ * read as "cancelled" — re-bind built a mapping, said "Cancelled", and moved nothing.
+ * The first click now arms the button and prints what it would do; the second commits
+ * exactly the proposal shown, which is the part a professor needs to agree to.
  */
+
+let armedRebind: { toClassId: string; proposal: RebindProposal } | null = null
+
+/** Returns whether anything was actually disarmed, so callers can stay quiet if not. */
+function disarmRebind(message?: string): boolean {
+  if (!armedRebind) return false
+  armedRebind = null
+  const button = $('rebind-btn') as HTMLButtonElement
+  button.textContent = 'Re-bind deck to selected class'
+  button.className = ''
+  if (message) setStatus('rebind-status', message, 'muted')
+  return true
+}
+
 async function onRebind() {
   const toClassId = ($('class-select') as HTMLSelectElement).value
+
+  // Second click — commit the proposal already on screen.
+  if (armedRebind) {
+    // Changing the class disarms, so this should be unreachable. It stays because the
+    // failure it guards against is re-pointing a whole deck at the wrong class.
+    if (armedRebind.toClassId !== toClassId) {
+      disarmRebind('Class changed — press again to rebuild the mapping.')
+      return
+    }
+    const { proposal } = armedRebind
+    disarmRebind()
+    await commitRebind(proposal, toClassId)
+    return
+  }
+
   if (!deckClassId) {
     setStatus('rebind-status', 'This deck has no Pulse questions to re-bind yet.', 'warn')
     return
@@ -646,17 +678,30 @@ async function onRebind() {
   setStatus('rebind-status', 'Building mapping…', 'muted')
   try {
     const proposal = await proposeRebind(deckClassId, toClassId)
-    const ok = window.confirm(
-      `Re-bind this deck from "${proposal.from.name}" to "${proposal.to.name}"?\n\n` +
-        `${proposal.matched} question${proposal.matched !== 1 ? 's' : ''} matched, ` +
-        `${proposal.unmatched} unmatched.\n\n` +
-        `Matched slides keep their current QR image.`
+    armedRebind = { toClassId, proposal }
+    const button = $('rebind-btn') as HTMLButtonElement
+    button.textContent = 'Press again to re-bind'
+    button.className = 'armed'
+    setStatus(
+      'rebind-status',
+      `${proposal.from.name} → ${proposal.to.name} — ` +
+        `${proposal.matched} matched, ${proposal.unmatched} unmatched. ` +
+        `Matched slides keep their QR image.`,
+      'warn'
     )
-    if (!ok) {
-      setStatus('rebind-status', 'Cancelled', 'muted')
-      return
-    }
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) return showSignedOut()
+    disarmRebind()
+    setStatus('rebind-status', errText(err), 'error')
+  }
+}
 
+/** Apply exactly the proposal the professor just agreed to. */
+async function commitRebind(proposal: RebindProposal, toClassId: string) {
+  const button = $('rebind-btn') as HTMLButtonElement
+  button.disabled = true
+  setStatus('rebind-status', 'Re-binding…', 'muted')
+  try {
     const shapes = await scanDeck()
     const byCode = new Map(proposal.mappings.map((m) => [m.fromCode, m]))
     let moved = 0
@@ -684,7 +729,10 @@ async function onRebind() {
     if (failures.length) $('verify-detail').textContent = failures.join('\n')
     await runVerify()
   } catch (err) {
+    if (err instanceof ApiError && err.status === 401) return showSignedOut()
     setStatus('rebind-status', errText(err), 'error')
+  } finally {
+    button.disabled = false
   }
 }
 

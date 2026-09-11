@@ -151,11 +151,13 @@ export const getQuestionQr = (questionId: string) =>
     `/addin/questions/${questionId}/qr`
   )
 
+export interface RebindProposal {
+  from: { id: string; name: string }
+  to: { id: string; name: string }
+  mappings: RebindMapping[]
+  matched: number
+  unmatched: number
+}
+
 export const proposeRebind = (fromClassId: string, toClassId: string) =>
-  post<{
-    from: { id: string; name: string }
-    to: { id: string; name: string }
-    mappings: RebindMapping[]
-    matched: number
-    unmatched: number
-  }>('/addin/rebind', { fromClassId, toClassId })
+  post<RebindProposal>('/addin/rebind', { fromClassId, toClassId })
