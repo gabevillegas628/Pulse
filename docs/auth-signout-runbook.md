@@ -1,12 +1,22 @@
 # Runbook: a professor gets signed out unexpectedly
 
-The long-running "my session died for no reason" bug. Caught live on 9 Sep 2026, investigated
-against production logs for an evening, and **still not root-caused**. Four contributing
-defects were fixed in `d7270b8`, and two instruments were added so the next occurrence
-diagnoses itself.
+The long-running "my session died for no reason" bug.
 
-Read this before touching any code. Three earlier attempts (`5a9fc9a`, `a8db8a6`, `f6fee8a`)
-each fixed a plausible *trigger*, shipped, and did not hold. Do not add a fourth story.
+**Root cause found, 11 Sep 2026: the token simply expired.** The instrumentation added the
+day before answered on its first real occurrence — `authFailure: "jwt expired"` on
+`GET /api/admin/professors`. A token was sent and was past its `exp`. `renewIfHalfSpent`
+only renewed past the halfway mark, which left a twelve-hour hole: work an evening, sleep,
+return the next morning, and no request falls between hours 12 and 24, so nothing renews
+and the token dies on schedule. Fixed in `5d72dbb` — renewal is now on token *age*, an
+hour, so an active sign-in is never far from fresh while an idle one still expires.
+
+Four contributing defects that made it invisible were fixed in `d7270b8`; they are listed
+at the bottom because each one hid the signal rather than causing it.
+
+**Keep this runbook anyway.** Three earlier attempts (`5a9fc9a`, `a8db8a6`, `f6fee8a`) each
+fixed a plausible *trigger*, shipped, and did not hold, and the evidence trail below is what
+finally worked. If a sign-in dies again, start at step 1 rather than assuming it is expiry
+returning.
 
 ---
 
@@ -54,6 +64,13 @@ it before forming any theory.
 | `false` | `null` | `false` | `true` | localStorage-specific eviction; IndexedDB survived. |
 | `false` | `null` | `true` | `true` | **Something removes that one key alone.** Back into the code. |
 
+The report also carries `key` — which storage key held the sign-in, `professor_token` in a
+browser or `pulse_addin_professor_token` inside Office. **Read it first.** The first version
+of the watchdog assumed the former and produced hundreds of false `token-vanished` reports
+from `/present` surfaces on 11 Sep, every one with `byApp: false` and both canaries intact.
+If you are reading reports with no `key` field at all, they predate `5d72dbb` and their
+`tokenIat`/`tokenExp` may describe a token in a key nobody was watching.
+
 The report also carries `tokenIat`, `tokenExp` and `ageSec`, recorded when the token was
 *written* so they outlive the token itself. This is what finally makes "did it just expire?"
 answerable — it was unanswerable on 9 Sep because the token was gone before anyone looked.
@@ -71,7 +88,7 @@ Every 401 now carries the specific check that refused it. The client still sees 
 | `authFailure` | Means |
 |---|---|
 | `no authorization header` | Nothing in storage at request time. This is the disappearance, not its cause — cross-check the beacon. |
-| `jwt expired` | Renewal didn't keep up. Compare `tokenIat`/`tokenExp` from the beacon, and grep for `professor token renewal failed`. |
+| `jwt expired` | **This was the 11 Sep root cause.** Renewal isn't keeping up. Compare `tokenIat`/`tokenExp` from the beacon and grep for `professor token renewal failed`. Since `5d72dbb` renewal fires on any request once a token is an hour old, so seeing this again means renewal is broken, not merely sparse. |
 | `jwt invalid` | Signature mismatch: `JWT_SECRET` changed. Confirm its *shape* in the Railway dashboard, never its value. |
 | `role is student, not professor` | The student-route token bug regressed — see defect 3 below. |
 | `professor row missing` | The row is gone from the database. |
@@ -118,11 +135,19 @@ Each of these cost real time on 9 Sep. All are settled with evidence:
 no-header 401 both log `ms: 1`. An hour went into inferring from a one-millisecond difference
 that turned out to mean nothing. `authFailure` exists precisely so nobody does that again.
 
-## The unresolved contradiction
+## The 9 Sep contradiction, resolved
 
-As of `d7270b8`: no application path deletes the token without a preceding 401, and production
-logs show **zero** 401s between `00:59:27Z` and the first failed upload at `01:59:11Z`. One of
-those two statements is false, and we do not know which. The beacon is built to say.
+At the time this looked impossible: no application path deletes the token without a preceding
+401, yet production logs showed **zero** 401s between `00:59:27Z` and the first failed upload
+at `01:59:11Z`. Expiry resolves it exactly, and it turns out 9 Sep and 11 Sep are the same
+bug an evening apart.
+
+Nothing needed to delete the token, because nothing was wrong until the first authenticated
+request *after* it lapsed. The professor `/me` at `00:59:27Z` succeeded, so the token was
+still good then; it expired somewhere in the following hour; the upload at `01:59:11Z` was
+the first thing to ask and was refused. `triggerSessionExpired()` then deleted it, which is
+why every later upload carried no header at all, and the prompt it raised was painted under
+the open edit-question dialog, which is why nobody saw it for ninety minutes.
 
 ## The four defects that were fixed, and why none was the cause
 
