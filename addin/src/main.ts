@@ -1,16 +1,20 @@
 import {
   ApiError,
   adoptCode,
+  closeRun,
   getQuestionQr,
   getSession,
   getToken,
   listClasses,
+  listSections,
   listSessions,
+  openRun,
   proposeRebind,
   setToken,
   verifyCodes,
   type ClassSummary,
   type QuestionSummary,
+  type SectionSummary,
   type SessionSummary,
   type VerifyResult,
 } from './api'
@@ -32,6 +36,7 @@ const show = (id: string, visible: boolean) => $(id).classList.toggle('hidden', 
 
 let classes: ClassSummary[] = []
 let sessions: SessionSummary[] = []
+let sections: SectionSummary[] = []
 let questions: QuestionSummary[] = []
 let deckClassId: string | null = null
 
@@ -66,6 +71,7 @@ function wireEvents() {
   })
   $('class-select').addEventListener('change', onClassChange)
   $('session-select').addEventListener('change', onSessionChange)
+  $('run-btn').addEventListener('click', () => void onRunToggle())
   $('picker-reload').addEventListener('click', () => void onPickerReload())
   $('insert-btn').addEventListener('click', onInsert)
   $('verify-btn').addEventListener('click', () => void runVerify())
@@ -118,7 +124,9 @@ async function showSignedIn() {
     deckClassId = await getDeckClassId()
     await loadClasses()
     await loadSessions()
+    await loadSections()
     await loadQuestions()
+    renderRunControl()
     await runVerify()
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) return showSignedOut()
@@ -166,6 +174,24 @@ async function loadSessions(): Promise<void> {
   if (sessions.some((s) => s.id === previous)) select.value = previous
 }
 
+/**
+ * Sections only ever matter when a class has more than one — with a single section the
+ * web app opens against all of them without asking, and so does this.
+ */
+async function loadSections(): Promise<void> {
+  const classId = ($('class-select') as HTMLSelectElement).value
+  const select = $('section-select') as HTMLSelectElement
+  if (!classId) {
+    sections = []
+    select.innerHTML = ''
+    return
+  }
+  sections = await listSections(classId)
+  select.innerHTML =
+    '<option value="">All sections</option>' +
+    sections.map((s) => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')
+}
+
 async function loadQuestions(): Promise<void> {
   const sessionId = ($('session-select') as HTMLSelectElement).value
   const select = $('question-select') as HTMLSelectElement
@@ -186,7 +212,9 @@ async function loadQuestions(): Promise<void> {
 async function onClassChange() {
   try {
     await loadSessions()
+    await loadSections()
     await loadQuestions()
+    renderRunControl()
   } catch (err) {
     setStatus('insert-status', errText(err), 'error')
   }
@@ -194,6 +222,8 @@ async function onClassChange() {
 
 async function onSessionChange() {
   try {
+    setStatus('run-status', '', 'muted')
+    renderRunControl()
     await loadQuestions()
   } catch (err) {
     setStatus('insert-status', errText(err), 'error')
@@ -220,7 +250,10 @@ async function onPickerReload(): Promise<void> {
   try {
     await loadClasses()
     await loadSessions()
+    await loadSections()
     await loadQuestions()
+    // Reload is also how a session opened in the browser catches up here.
+    renderRunControl()
 
     // Only meaningful when we are still looking at the same session as before.
     const sessionAfter = ($('session-select') as HTMLSelectElement).value
@@ -253,6 +286,120 @@ function questionLabel(q: QuestionSummary): string {
   const title = q.title?.trim()
   if (title) return title
   return q.text.length > 50 ? `${q.text.slice(0, 50).trimEnd()}…` : q.text
+}
+
+// ─── Run ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Open and close the session without leaving PowerPoint.
+ *
+ * This is deliberately a bookend, not a live control: PowerPoint hides task panes
+ * during Slide Show, so the pane is reachable before you present and after you stop,
+ * and never in between. That matches how a lecture actually runs — open, present,
+ * close — and it is one alt-tab to the browser saved at each end.
+ */
+
+function selectedSession(): SessionSummary | null {
+  const id = ($('session-select') as HTMLSelectElement).value
+  return sessions.find((s) => s.id === id) ?? null
+}
+
+function openRunOf(session: SessionSummary | null) {
+  return session?.runs?.find((r) => r.status === 'OPEN') ?? null
+}
+
+/**
+ * Paint the button, the liveness chip and the section picker from current state.
+ *
+ * Every path that can change liveness ends here rather than setting the button itself,
+ * so there is one place that decides what the control says.
+ */
+function renderRunControl() {
+  const session = selectedSession()
+  const button = $('run-btn') as HTMLButtonElement
+  const state = $('run-state')
+
+  show('run-controls', session !== null)
+  if (!session) {
+    state.textContent = ''
+    return
+  }
+
+  const run = openRunOf(session)
+  const archived = session.status === 'ARCHIVED'
+
+  // A section is chosen when opening, so the picker is pointless once a run is live —
+  // and misleading, because the live run already has one.
+  show('section-field', sections.length > 1 && !run && !archived)
+
+  if (run) {
+    state.textContent = run.section ? `● Live · ${run.section.name}` : '● Live'
+    state.className = 'run-state'
+  } else {
+    state.textContent = archived ? 'Archived' : 'Not open'
+    state.className = 'run-state idle'
+  }
+
+  button.disabled = archived
+  button.className = run ? 'primary danger' : 'primary'
+  button.textContent = archived
+    ? 'Archived in Pulse'
+    : run
+      ? 'Close session'
+      : session.runs?.length
+        ? 'Reopen session'
+        : 'Open session'
+  button.title = archived
+    ? 'Unarchive it in Pulse before running it again.'
+    : run
+      ? 'Stop accepting answers. Reopening starts a fresh run.'
+      : 'Students can answer as soon as this is open.'
+}
+
+async function onRunToggle() {
+  const session = selectedSession()
+  if (!session) return
+  const run = openRunOf(session)
+  ;($('run-btn') as HTMLButtonElement).disabled = true
+
+  try {
+    if (run) {
+      // The one action here that takes something away from a room mid-answer, and the
+      // button sits directly under a dropdown people click by reflex. Worth the click.
+      const ok = window.confirm(
+        `Close "${session.title}"?\n\nStudents can no longer answer until you reopen it.`
+      )
+      if (!ok) {
+        setStatus('run-status', 'Left open.', 'muted')
+        return
+      }
+      setStatus('run-status', 'Closing…', 'muted')
+      await closeRun(session.id, run.id)
+      setStatus('run-status', 'Closed — no more answers accepted.', 'muted')
+    } else {
+      const sectionId =
+        sections.length > 1 ? ($('section-select') as HTMLSelectElement).value || null : null
+      setStatus('run-status', 'Opening…', 'muted')
+      await openRun(session.id, sectionId)
+      const name = sectionId ? sections.find((s) => s.id === sectionId)?.name : null
+      setStatus('run-status', name ? `Live — section ${name}.` : 'Live — students can answer now.', 'ok')
+    }
+    await loadSessions()
+    await runVerify()
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) return showSignedOut()
+    // 409 is the pane and Pulse disagreeing about what is open — nearly always because
+    // the session was opened in the browser. Re-reading is the fix, not a retry.
+    if (err instanceof ApiError && err.status === 409) {
+      setStatus('run-status', 'Already open in Pulse — refreshed.', 'warn')
+      await loadSessions().catch(() => {})
+    } else {
+      setStatus('run-status', errText(err), 'error')
+    }
+  } finally {
+    // Settles the button from current state, so an archived session stays disabled.
+    renderRunControl()
+  }
 }
 
 // ─── Insert ───────────────────────────────────────────────────────────────────

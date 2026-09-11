@@ -27,12 +27,25 @@
           <select id="class-select"></select>
         </div>
 
+        <div class="field">
+          <div class="field-head">
+            <label for="session-select">Session</label>
+            <span id="run-state" class="run-state"></span>
+          </div>
+          <select id="session-select"></select>
+        </div>
+
+        <div id="run-controls" class="hidden">
+          <div id="section-field" class="field hidden">
+            <label for="section-select">Section</label>
+            <select id="section-select"></select>
+          </div>
+          <button id="run-btn" class="primary">Open session</button>
+          <p id="run-status" class="status"></p>
+        </div>
+
         <details open>
           <summary>Add a question to this slide</summary>
-          <div class="field">
-            <label for="session-select">Session</label>
-            <select id="session-select"></select>
-          </div>
           <div class="field">
             <div class="field-head">
               <label for="question-select">Question</label>

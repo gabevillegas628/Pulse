@@ -113,12 +113,36 @@ button.primary {
   font-weight: 700;
 }
 
+/* Closing is the one action here that takes something away from a room full of
+   students, so it does not wear the same colour as Insert. */
+button.primary.danger {
+  background: var(--error);
+  border-color: var(--error);
+}
+
 button.link {
   border: none;
   background: none;
   color: var(--muted);
   padding: 0;
   text-decoration: underline;
+}
+
+/* Sits on the Session label line, so liveness reads next to the thing it describes. */
+.run-state {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--good);
+  white-space: nowrap;
+}
+
+.run-state.idle {
+  font-weight: 500;
+  color: var(--muted);
+}
+
+#run-controls {
+  margin-bottom: 10px;
 }
 
 .actions {

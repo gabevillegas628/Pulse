@@ -47,6 +47,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 const get = <T>(path: string) => request<T>(path)
 const post = <T>(path: string, body: unknown) =>
   request<T>(path, { method: 'POST', body: JSON.stringify(body) })
+const patch = <T>(path: string, body: unknown) =>
+  request<T>(path, { method: 'PATCH', body: JSON.stringify(body) })
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -56,11 +58,28 @@ export interface ClassSummary {
   description: string | null
 }
 
+export interface SectionSummary {
+  id: string
+  name: string
+}
+
+export interface SessionRunSummary {
+  id: string
+  status: string
+  sectionId: string | null
+  openedAt: string
+  closedAt: string | null
+  section: { name: string } | null
+}
+
 export interface SessionSummary {
   id: string
   title: string
   status: string
   isLive: boolean
+  // Already on the wire from GET /classes/:id/sessions — declared here so the pane can
+  // find the OPEN run to close without a second round trip.
+  runs: SessionRunSummary[]
   _count: { questions: number }
 }
 
@@ -100,6 +119,21 @@ export const listClasses = () =>
 
 export const listSessions = (classId: string) =>
   get<{ sessions: SessionSummary[] }>(`/classes/${classId}/sessions`).then((d) => d.sessions)
+
+export const listSections = (classId: string) =>
+  get<{ sections: SectionSummary[] }>(`/classes/${classId}/sections`).then((d) => d.sections)
+
+/**
+ * Open and close a run — the same two endpoints the web session page drives.
+ *
+ * Nothing add-in specific: the pane holds an ordinary professor token, so it can call
+ * these directly. A null sectionId means all sections, matching the web default.
+ */
+export const openRun = (sessionId: string, sectionId: string | null) =>
+  post<{ run: SessionRunSummary }>(`/sessions/${sessionId}/runs`, sectionId ? { sectionId } : {})
+
+export const closeRun = (sessionId: string, runId: string) =>
+  patch<{ run: SessionRunSummary }>(`/sessions/${sessionId}/runs/${runId}`, { status: 'CLOSED' })
 
 export const getSession = (sessionId: string) =>
   get<{ session: { id: string; title: string; questions: QuestionSummary[] } }>(
