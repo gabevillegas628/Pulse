@@ -30,10 +30,16 @@ function readAuthToken(): string | null {
  * expiring. Re-running the read precedence names the key that was actually sent.
  */
 function storeRenewedToken(token: string): void {
-  if (localStorage.getItem(PROFESSOR_KEY)) localStorage.setItem(PROFESSOR_KEY, token)
-  else if (localStorage.getItem(ADDIN_PROFESSOR_KEY)) localStorage.setItem(ADDIN_PROFESSOR_KEY, token)
-  else return
-  noteTokenWrite(token)
+  const key = localStorage.getItem(PROFESSOR_KEY)
+    ? PROFESSOR_KEY
+    : localStorage.getItem(ADDIN_PROFESSOR_KEY)
+      ? ADDIN_PROFESSOR_KEY
+      : null
+  if (!key) return
+  localStorage.setItem(key, token)
+  // Naming the key matters to the watchdog: a renewal on an add-in surface lands in the
+  // add-in key, and a write it cannot place is a write it will misread as a disappearance.
+  noteTokenWrite(key, token)
 }
 
 api.interceptors.request.use((config) => {
@@ -108,7 +114,7 @@ api.interceptors.response.use(
 export function setProfessorToken(token: string | null): void {
   if (token) {
     localStorage.setItem(PROFESSOR_KEY, token)
-    noteTokenWrite(token)
+    noteTokenWrite(PROFESSOR_KEY, token)
     return
   }
   noteTokenClear()

@@ -21,7 +21,15 @@ interface JwtPayload {
 export const RENEWED_TOKEN_HEADER = 'X-Pulse-Token'
 
 /**
- * Replace a professor token that is past halfway through its life.
+ * How much age a professor token may carry before the next request replaces it.
+ *
+ * One hour, so an actively used sign-in is never more than an hour from fresh, at a cost of
+ * one HMAC signature per hour of use.
+ */
+const RENEW_AFTER_SEC = 60 * 60
+
+/**
+ * Replace a professor token that has been carrying a session for a while.
  *
  * Without this a token is a cliff: minted at sign-in, dead exactly `jwtExpiresIn` later
  * whatever is happening at the time. A PowerPoint deck left open across a day hits that
@@ -37,10 +45,20 @@ export const RENEWED_TOKEN_HEADER = 'X-Pulse-Token'
  * refresh call to schedule, nothing to fail on its own, and no moment where the projector
  * is between tokens.
  */
-function renewIfHalfSpent(res: Response, payload: JwtPayload): void {
+function renewIfStale(res: Response, payload: JwtPayload): void {
   if (payload.iat == null || payload.exp == null) return
-  const halfway = payload.iat + (payload.exp - payload.iat) / 2
-  if (Date.now() / 1000 < halfway) return
+  // On age, not on halfway. Halfway left a twelve-hour hole: a professor who works an
+  // evening, sleeps, and comes back the next morning makes no request at all between hours
+  // 12 and 24, so nothing renews and the token dies on schedule — in practice within
+  // minutes of them sitting back down. That is the 11 Sep sign-out, and
+  // `authFailure: "jwt expired"` on /api/admin/professors is how it was finally read.
+  //
+  // The security property is unchanged, because it never depended on the halfway mark: a
+  // session nobody touches for a whole window still expires, since nothing was there to
+  // renew it. The floor keeps this correct if the window is ever shortened below two hours.
+  const lifetimeSec = payload.exp - payload.iat
+  const ageSec = Date.now() / 1000 - payload.iat
+  if (ageSec < Math.min(RENEW_AFTER_SEC, lifetimeSec / 2)) return
   try {
     const fresh = jwt.sign({ sub: payload.sub, role: 'professor' }, config.jwtSecret, {
       expiresIn: config.jwtExpiresIn as unknown as number, // StringValue cast, as at sign-in
@@ -146,7 +164,7 @@ export async function requireProfessor(
     professor = row
 
     // After the lookup, so a token whose professor no longer exists is not handed a new one.
-    renewIfHalfSpent(res, payload)
+    renewIfStale(res, payload)
   } catch (err) {
     return next(asAuthError(err, res))
   }

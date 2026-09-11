@@ -30,6 +30,9 @@ const bodySchema = z.object({
   event: z.enum(['boot', 'token-written', 'token-cleared', 'token-vanished']),
   at: z.string().max(40),
   path: z.string().max(200),
+  // Which storage key held the sign-in: a browser tab and an Office surface are otherwise
+  // indistinguishable in a report, and that ambiguity cost a day of false alarms.
+  key: z.string().max(64).nullable(),
   // Attribution: which of the three possible actors removed the key.
   byApp: z.boolean(),
   appStack: z.string().max(1200).nullable(),

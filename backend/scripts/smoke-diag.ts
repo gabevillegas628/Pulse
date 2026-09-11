@@ -26,6 +26,7 @@ const valid = {
   event: 'token-vanished',
   at: new Date().toISOString(),
   path: '/professor/sessions/abc',
+  key: 'professor_token',
   byApp: false,
   appStack: null,
   byOtherTab: null,
