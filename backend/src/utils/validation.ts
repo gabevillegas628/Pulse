@@ -4,11 +4,27 @@ import { z } from 'zod'
  * Every account belongs to the university, whether it registers itself with the
  * invite code or is created for someone by an admin. One definition, so the two
  * doors can't drift apart on what counts as a Rutgers address.
+ *
+ * Lowercased on the way in, for the same reason a NetID is: the case a student
+ * happened to type is not part of who they are, and storing it means every lookup
+ * has to remember to ignore it. They all do today — registration, both sign-ins and
+ * the reset all match with `mode: 'insensitive'` — but that is four places agreeing
+ * by hand, and a student asking why `Zas57` did not get their reset email is what it
+ * costs to re-confirm that they still agree. Normalising here makes the question
+ * unaskable.
+ *
+ * It also fixes a smaller thing outright: the domain check below is case-sensitive,
+ * so before this an address typed as `abc123@RUTGERS.EDU` was turned away at
+ * registration as though it were not a Rutgers address at all.
  */
-export const rutgersEmail = z.string().trim().email().refine(
-  (v) => v.split('@')[1]?.endsWith('rutgers.edu'),
-  { message: 'Must be a rutgers.edu email address' }
-)
+export const rutgersEmail = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .email()
+  .refine((v) => v.split('@')[1]?.endsWith('rutgers.edu'), {
+    message: 'Must be a rutgers.edu email address',
+  })
 
 /**
  * A NetID: letters then digits, nothing else.

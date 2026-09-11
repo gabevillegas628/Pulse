@@ -46,9 +46,18 @@ export default function ForgotPasswordPage() {
               <p className="text-sm text-muted mb-1">
                 If that account exists, a reset link is on its way to its Rutgers email.
               </p>
+              {/*
+                Names the typo explicitly, because this screen cannot. The route answers
+                the same way for an account that exists and one that does not, so a
+                student who mistyped their NetID is told a link is on its way and then
+                waits for mail nobody sent — and reads the silence as the site being
+                broken. Naming the one cause they can check themselves is the only
+                thing this page is allowed to say about it.
+              */}
               <p className="text-sm text-muted">
-                The link expires in an hour. If nothing arrives, check your spam folder — or ask
-                your professor to reset it from the class roster.
+                The link expires in an hour. If nothing arrives in a few minutes, check your spam
+                folder, then check that you used the NetID you sign in with — a typo there looks
+                exactly like this. Your professor can also reset it from the class roster.
               </p>
               <Link to="/login" className="text-sm text-signal font-medium mt-6 inline-block">
                 Back to sign in
