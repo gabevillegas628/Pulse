@@ -7,7 +7,7 @@ import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
 import Empty from '@/components/ui/Empty'
-import { Archive, Check, ChevronLeft, Copy, Download, Flag, MoreHorizontal, Pencil, PictureInPicture2, X } from 'lucide-react'
+import { Archive, Check, ChevronLeft, Copy, Download, MoreHorizontal, Pencil, PictureInPicture2, X } from 'lucide-react'
 import { io } from 'socket.io-client'
 import type { SessionDetail, QuestionWithResponses, ResponseWithStudent, ThemeSet } from 'shared'
 import { SessionStatus } from 'shared'
@@ -17,14 +17,13 @@ import { apiError } from '@/lib/errors'
 import QuestionSettings from '@/components/session/QuestionSettings'
 import AnswerKey from '@/components/session/AnswerKey'
 import GradingToolbar, { type ResponseFilter } from '@/components/session/GradingToolbar'
-import ScoreBadge from '@/components/session/ScoreBadge'
 import ThemesPanel from '@/components/session/ThemesPanel'
 import QuestionDialog from '@/components/session/QuestionDialog'
 import QuestionSidebar, { questionLabel } from '@/components/session/QuestionSidebar'
+import ResponseTable from '@/components/session/ResponseTable'
 import ConfirmDialog, { type DialogRequest } from '@/components/ui/ConfirmDialog'
 import Popover from '@/components/ui/Popover'
 import { downloadCsv } from '@/lib/downloadCsv'
-import { calcResponseScore } from '@/lib/scoring'
 import { questionTypeLabel } from '@/lib/questionTypes'
 import { copyQrCardToClipboard } from 'shared'
 
@@ -665,75 +664,23 @@ export default function SessionPage() {
           />
 
 
-          {/* Response list */}
+          {/* The responses, as a table. Sorted worst-score-first, because those are the
+              ones a person has to look at. */}
           {activeQuestion.responses.length === 0 ? (
             <Empty message="No responses yet" />
           ) : (
-            <div className="space-y-3">
-              {activeQuestion.responses
-                .filter((r) => {
-                  if (activeFilter === 'short') return r.isFlagged
-                  if (activeFilter === 'review') {
-                    const s = calcResponseScore(activeQuestion, r)
-                    return s !== null && s < 1.0
-                  }
-                  return true
-                })
-                .map((r) => (
-                <div
-                  key={r.id}
-                  className={`border rounded-[14px] p-4 ${r.isFlagged ? 'border-warn/20 bg-warn-soft' : 'bg-surface border-hairline'}`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-ink">{r.student.netId}</span>
-                    <div className="flex items-center gap-2">
-                      {r.isFlagged && (
-                        <span className="flex items-center gap-1 text-xs text-warn bg-warn-soft px-2 py-0.5 rounded-full border border-warn/20">
-                          <Flag size={10} /> Short
-                        </span>
-                      )}
-                      {activeQuestion.type === 'FREE_TEXT' && (
-                        <span className="text-xs text-muted font-mono">{r.wordCount}w</span>
-                      )}
-                      <span className="text-xs text-hairline-strong font-mono">
-                        {new Date(r.submittedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                      {(() => {
-                        const score = calcResponseScore(activeQuestion, r)
-                        if (score === null) return null
-                        // The socket reason is fresher than the stored one during a run;
-                        // the stored one is what survives a reload.
-                        return (
-                          <ScoreBadge
-                            score={score}
-                            reason={gradeReasons[r.id] || r.aiReason}
-                            pending={overrideScoreMutation.isPending}
-                            onChange={(aiScore) => overrideScoreMutation.mutate({
-                              questionId: activeQuestion.id,
-                              responseId: r.id,
-                              aiScore,
-                            })}
-                          />
-                        )
-                      })()}
-                    </div>
-                  </div>
-                  <p className="text-ink-2 text-sm leading-relaxed">{r.responseText}</p>
-                  {(() => {
-                    // Why it lost credit, spelled out rather than hidden in a tooltip —
-                    // this is the line a professor repeats to the student who asks.
-                    const score = calcResponseScore(activeQuestion, r)
-                    const why = gradeReasons[r.id] || r.aiReason
-                    if (!why || score === null || score >= 1.0) return null
-                    return (
-                      <p className="mt-2 pt-2 border-t border-hairline text-[11px] text-muted leading-snug">
-                        <span className="font-medium">AI:</span> {why}
-                      </p>
-                    )
-                  })()}
-                </div>
-              ))}
-            </div>
+            <ResponseTable
+              key={activeQuestion.id}
+              question={activeQuestion}
+              gradeReasons={gradeReasons}
+              filter={activeFilter}
+              isScorePending={overrideScoreMutation.isPending}
+              onScoreChange={(responseId, aiScore) => overrideScoreMutation.mutate({
+                questionId: activeQuestion.id,
+                responseId,
+                aiScore,
+              })}
+            />
           )}
         </div>
           )}

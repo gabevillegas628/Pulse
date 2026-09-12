@@ -536,6 +536,74 @@ for free text — and the component still serves its other three surfaces.
 
 ---
 
+## Zone 8 — The response list
+
+### UX-27 — Hundreds of cards, unsortable and unsearchable
+- [x] **Status** — done 2026-09-12
+
+Raised by the author: the list is a straight stack of cards, potentially hundreds of them,
+so much data it may as well not be there, and mostly wasted space.
+
+Each card spent roughly 90px carrying an eighteen-word answer plus four pieces of metadata
+at competing sizes — netId, a short-answer flag, a word count, a timestamp and a score —
+with the answer, the only part that matters, styled no differently from the chrome around
+it. Fixed at newest-first, with no sort, no search, and 200 borders of visual noise.
+
+**A table, with one qualification: answer length varies by type**, which is the third time
+that has decided a design here. Multiple choice, yes/no, rating and numeric answers are a
+single token and tabulate perfectly. Free text averages eighteen words and *is* the thing
+being read, so a truncated column would hide the content on the one type where the list is
+the point. Structures are a rendered molecule.
+
+So: one table, with the answer column clamped to two lines and expandable in place for the
+long types. Structured types get one row each and become scannable; free text drops from
+~90px to two lines and opens on click.
+
+**What the table bought that density did not:**
+
+- **Sortable columns**, defaulting to **score ascending** on the author's call. The old fixed
+  newest-first was never the order anyone graded in. Unscored rows sort with the zeros —
+  ascending means "what still needs me", and nothing-yet belongs with the worst.
+- **A search box** over netId and answer text. Finding one student among 200 was a Ctrl+F job.
+- **Sortable time**, de-emphasised rather than given equal billing.
+
+**Two fields were dropped rather than given columns.** The per-row word count is a proxy for
+effort that the `Short` flag already marks at the extreme, and it earned no column. The AI
+reason line cost ~30px on every partially-scored row and now appears in the expanded row
+only — `ScoreBadge` already shows it in its picker.
+
+**Three latent display bugs surfaced once answers shared a column**, all of them showing the
+stored value rather than the answer:
+
+- `MULTI_SELECT` rendered its raw JSON array — `["Option A","Option C"]`.
+- `ORDERING` likewise, where the order is the answer — now joined with arrows.
+- `STRUCTURE` rendered the InChI string it is compared by. The assignment side has always
+  rendered structures properly; this page never did. Now rendered with
+  `StructureRenderer` when a row is expanded — not per row, since that would be one Indigo
+  request per response.
+
+**Decision:** Done as `components/session/ResponseTable.tsx`.
+
+**No virtualisation**, deliberately. Eight hundred rows is roughly four thousand DOM nodes:
+noticeable, not broken. Sorting and search address the actual complaint more cheaply, and
+adding a windowing dependency to a page this redesign has just finished simplifying is the
+kind of speculative complexity that created the mess. Measure first.
+
+**Two bugs of my own, caught before committing.** `SortHeader` was defined inside the render
+body, so it took a new identity every render and React remounted the header cells on each
+sort — dropping focus from the button just used. And the table was wrapped in
+`overflow-x-auto` inside a card with `overflow-hidden`, either of which clips an absolutely
+positioned descendant: the score picker would have been cut off on the lower rows, making
+exactly those rows ungradeable. Both containers are gone — the answer column wraps, so
+nothing needed to scroll — and the zebra striping went with them, since row borders already
+separate the rows and its square corners would have shown past the card's radius.
+
+Portalling the picker is the durable answer if `ScoreBadge` ever lands somewhere that must
+clip. It needs anchored positioning that survives scrolling, so it is not worth buying until
+something needs it.
+
+---
+
 ## Cross-cutting debt this redesign should sweep up
 
 ### UX-21 — Two parallel implementations have drifted
@@ -861,6 +929,21 @@ load-bearing in three places — the sidebar's drag handler translates around it
 `deleteQuestionMutation` nudges it with `Math.max(0, t - 1)`, and `pipActiveTab` is a second
 index tracking a different question. Moving to an id simplifies all three, and UX-1 is the
 natural moment.
+
+### Slice 8 — the response table, 2026-09-12
+
+New: `session/ResponseTable.tsx`. `SessionPage.tsx` 843 → 790 lines, and it no longer
+imports `calcResponseScore`, `ScoreBadge` or `Flag` — every part of the response list now
+lives in the table.
+
+**The pattern worth naming, since it has now decided three designs:** on this page, *answer
+length varies by question type*, and that single fact has settled the distribution block
+(Zone 7), the answer key (UX-13) and now the response list. Any future design that treats
+the eight types as interchangeable will be wrong in the same way.
+
+**Next obvious call site:** `assignment/ResponseList.tsx` is the same job on the other page,
+58 lines, still a card stack that cycles scores on click with the exact-match label bug
+`ScoreBadge` fixed. Sharing this table would close the largest remaining piece of UX-21.
 
 ### Still open
 
