@@ -9,6 +9,12 @@ Pulse exists because there was no way to actually run it that way. This semester
 time the design and the tooling have both been present, which is why the observations below
 are worth writing down rather than shrugging at.*
 
+*Revised the same day, after checking `classroom_response_tool_handoff.md`: **this semester was a
+full redesign, not the adoption of one tool.** Four variables moved at once. A cost-based
+explanation for the enrolment anomaly was raised, looked like the best fit available, and was then
+refuted — it is kept in §3 because the refutation is the useful part. The conclusions in §2 are
+unchanged; those in §3 are weaker than the first draft claimed. See **§0**.*
+
 ---
 
 ## The two observations
@@ -23,6 +29,29 @@ week two. The expectation this semester was *worse* churn, not better, because a
 now required to participate.
 
 Both are anecdotal. This document is mostly about which parts survive scrutiny and which don't.
+
+---
+
+## 0. This was a redesign, not a change
+
+Written last, and placed first because it reframes everything below. The initial reading of the
+semester was "the only variable that changed is Pulse." That is not close to true. Counting from
+[`classroom_response_tool_handoff.md:123`](../classroom_response_tool_handoff.md#L123) and the
+paragraph around it, at least four things moved at once:
+
+1. **Pulse** — in-class engagement-graded openers, the subject of this document.
+2. **Three chapters cut** from the end of the semester.
+3. **Publisher adaptive quizzes (~15% of grade) replaced** by the in-class opener. Not deleted —
+   the grade weight was transferred.
+4. **Exam format shifted** toward fewer MCQ and heavier FRQ weighting, with more time per question.
+
+A fifth is pending: an open-source textbook being written to replace the required access code.
+
+None of this is a criticism — redesigns move many things, and this one was deliberate. But it
+means **no single-variable attribution is available for anything measured at the course level**
+(enrolment, grades, DFW). The participation finding in §2 is unaffected, because it is a
+within-lecture behavioural measure that none of the other three touch. Everything in §3 is
+affected.
 
 ---
 
@@ -121,11 +150,26 @@ immediately backfilled by adds. Those are completely different stories — one i
 other is demand. **The number to ask the registrar for is gross drops per section, not net
 seats.** This is the cheapest thing on the list and it may dissolve the anomaly outright.
 
-**One variable changed that was noticed.** Undergraduate enrolment is up nationally (+1.2%,
-+1.4% at public four-years). Locally: section counts, a competing section removed, an instructor
-leaving, prereq or degree-plan changes, a cohort bump. The cleanest single control is **peer
-sections of the same course this semester** — if theirs are also unusually full, it's
-institutional.
+**Four variables changed, not one.** See §0. Undergraduate enrolment is also up nationally
+(+1.2%, +1.4% at public four-years), and locally any of section counts, a competing section
+removed, an instructor leaving, prereq or degree-plan changes or a cohort bump would do it. The
+cleanest single control is **peer sections of the same course this semester** — if theirs are
+also unusually full, it's institutional.
+
+**A cost hypothesis was raised and killed, and the refutation is worth keeping.** Replacing the
+publisher adaptive quizzes looked like it might have removed a paid access-code requirement, which
+would have been the best-fitting explanation available: materials cost drives drops in exactly the
+week-one-to-two window that engagement-loyalty could not explain, and the base rates are large
+([FLVC 2022](https://www.flbog.edu/wp-content/uploads/2023/03/Student-Textbook-Survey-Infographic.pdf):
+44% took fewer courses, 38% skipped a specific course, 53% didn't buy required texts).
+
+**It is wrong.** The access code is still required — the open textbook that would replace it is
+unfinished. Cost did not change, so cost cannot explain a change in behaviour.
+
+Worse for the anomaly: students now pay the same fee while the ~15% of the grade that used the
+courseware has moved in-class. Same cost, less use, a *worse* deal than last year — which should
+push drops **up**. The enrolment result is therefore slightly harder to explain than before this
+was checked, not easier.
 
 **The real test is the mid-semester withdrawal deadline**, not add/drop. Withdrawals there *are*
 about engagement and performance, which is where a Freeman-style DFW effect would surface if it
@@ -148,6 +192,7 @@ should be kept — it just needs aiming.
 | [Deslauriers et al. 2019, PNAS](https://www.pnas.org/doi/10.1073/pnas.1821936116) | Randomised, same content and handouts: active-learning students **learned more and felt they learned less**. |
 | [Finelli/Shekhar StRIP work](https://link.springer.com/article/10.1186/s40594-018-0102-y) — 1,051 students, 18 courses | Student resistance is significantly moderated by instructor *explanation* (purpose, course expectations, activity expectations) and facilitation. |
 | [Cullen & Oppenheimer 2024, *Science Advances*](https://www.science.org/doi/full/10.1126/sciadv.ado6759) | "Optional-mandatory" attendance: 90% opted in; those who *chose* the requirement attended **more reliably than those who were mandated**. 73–95% opt-in across five classes, ≤10% regret. |
+| [Just-in-Time Teaching](https://www.une.edu/sites/default/files/JiTT%20white%20paper_Final%20for%20Website.pdf); [Phys. Rev. PER case study](https://journals.aps.org/prper/abstract/10.1103/PhysRevPhysEducRes.12.020133) | Pre-class work raises retention, process skills and content knowledge, and narrows gender gaps. Gains on warmup-linked items exceeded those on traditional homework items. |
 
 ### The load-bearing point: this is guided practice, not discovery
 
@@ -189,6 +234,30 @@ Three chapters were cut from the end of the semester to let the rest breathe. De
 supports this directly. **One caveat worth revisiting:** cutting from the end means the calendar
 chose what to drop, not pedagogy. Worth one pass asking which three would be cut if they sat in
 the middle, and whether any are prerequisites for a downstream course.
+
+### On dropping the pre-class quizzes
+
+Recalled in conversation as "eliminated for effectively no return." The handoff doc says otherwise:
+the ~15% grade weight was **transferred** to the in-class opener, not removed. That distinction
+matters, because the instinct and the reasoning behind it point different directions.
+
+**The instinct was right; the stated reason wasn't.** Pre-class work has a genuine evidence base
+(table above). But look at what JiTT actually requires: students submit responses *and the
+instructor reads them and changes the lecture accordingly*. That loop is the mechanism. Publisher
+adaptive courseware does none of it — nobody reads the output, it doesn't alter what gets taught,
+and it is autograded compliance work students resent. What was dropped was a low-fidelity
+implementation of a good mechanism, replaced by a high-fidelity implementation of the in-class
+half. The mechanism survived; the vendor didn't.
+
+**What was actually lost: spacing.** Pre-class quizzes forced contact with the material between
+lectures. The opener is entirely massed within the lecture hour. Distributed practice is among the
+most robust findings in the literature, and some of it was given up in the trade. This is the
+second argument for the delayed re-ask in §5.
+
+**Loose end, student-facing.** The access code is still required (§3) while the graded work that
+used it is gone. Students are paying the same fee for less use and will notice. Worth checking
+whether the bundle can be unbundled now that the courseware component is dead, and worth saying
+out loud in class either way.
 
 ---
 
@@ -232,6 +301,11 @@ every axis that matters here:
   re-ask measures whether it stuck for three weeks, which is what exams actually test.
 - The measurement *is* the intervention — spaced retrieval is itself among the most robust
   findings in learning science. Revote cannot claim that.
+- **It partially replaces something the redesign gave up.** Pre-class quizzes forced contact with
+  the material *between* lectures; the opener is entirely massed inside the lecture hour, so
+  distributed practice was lost in the substitution (§4). A delayed re-ask restores some of it
+  inside class time already under your control, at no cost in student workload. This is the second
+  independent reason to build it, and it moves the item up the list.
 
 The only build needed is a way to mark two questions as a matched pair and a report of first-ask
 vs later-ask correctness per student. A nullable FK and a query. For a handful of pairs it can be
@@ -270,7 +344,8 @@ reason this section has to exist at all.
 | Check peer sections of the same course this term | The single cleanest control for institutional confounds. §3 |
 | Embed 5–10 anchor items in the next exam; tag retained vs cut chapters | Makes future exams comparable. §5 |
 | Write a priority-ordered drop list for the rest of the semester | Vibes-based pacing is fine; its failure mode is an unplanned overflow in week 13. Deciding the cut order in advance fixes that without giving up the flexibility. |
-| Re-ask 2–3 questions from earlier lectures as warm-ups | Starts generating retention data immediately, with no build at all. §5 |
+| Re-ask 2–3 questions from earlier lectures as warm-ups | Starts generating retention data immediately, with no build at all. Also restores some of the spacing lost with the pre-class quizzes. §5 |
+| Check whether the access code can be unbundled, and tell students either way | They pay the same fee for courseware that is no longer graded. Real money across 140 students, and a goodwill problem if it goes unmentioned. §4 |
 
 **One build, when wanted:**
 
@@ -287,6 +362,10 @@ reason this section has to exist at all.
 - **Opt-in attendance framing** (Cullen & Oppenheimer) for next term — would likely improve
   compliance *and* constitute a natural experiment.
 - **Which three chapters** — revisit whether the calendar picked correctly. §4
+- **The open-source textbook is the cleanest future experiment available.** The term it replaces
+  the access code, cost changes — and if everything else is deliberately held still that term,
+  *only* cost changes. After a redesign that moved four variables at once, one term with a single
+  moving variable is worth protecting on purpose. Do not ship it alongside another round of changes.
 - `railway.toml` sets `watchPatterns` to match every path, which means a docs-only commit to `main` triggers a full
   build, migrate and restart. Narrowing the pattern to exclude `docs/` and `*.md` would make
   documentation commits free. Unrelated to the above; noted because it came up while filing this.
@@ -296,8 +375,14 @@ reason this section has to exist at all.
 ## Honest scorecard, 12 Sep 2026
 
 A **real and large attendance effect**. A **real participation-rate effect** that survives the
-bodies confound. **No learning evidence yet** — absent, not negative. The enrolment anomaly is
-**unexplained and still confounded**, and the mechanism proposed for it doesn't fit the timeline.
+bodies confound — the one finding here that is not threatened by §0, because it is measured within
+a lecture. **No learning evidence yet** — absent, not negative.
+
+The enrolment anomaly is **unexplained, and the explanation got harder rather than easier**: the
+engagement-loyalty story doesn't fit the timeline, the cost story was checked and refuted, and four
+variables changed simultaneously so nothing at the course level can be attributed to any one of
+them. The honest summary of the semester is *a redesign appears to be working*, not *Pulse works*.
+Separating those requires terms where fewer things move at once.
 
 For week three of year three, that is a reasonable place to be standing. The two things that
 would move learning from gut to data — delayed re-asks and anchor items — both start with the
