@@ -83,7 +83,7 @@ arguably belongs on main independently rather than inside a UI branch.
 
 **Decision:** TBD
 
-### AS-2 — Numeric and ordering answer keys cannot be set at all
+### AS-2 — Numeric and ordering answer keys are frozen after creation
 - [ ] **Status**
 
 `GradingControls` renders both as read-only text:
@@ -91,13 +91,25 @@ arguably belongs on main independently rather than inside a UI branch.
 - `NUMERIC` — `Answer: {q.correctAnswer ?? '—'} ± {tolerance} {unit}`, display only
 - `ORDERING` — an `<ol>` of the stored order, display only
 
-So for an assignment there is no way to set a numeric answer, its tolerance, or a correct
-sequence. Without a key, `gradeSession` awards full credit to every response
-(`scoreResponse` returns 1.0 when `correctAnswer` is null), so these questions silently
-grade as participation.
+**Corrected 2026-09-12.** An earlier version of this item said these keys could not be set
+at all. Not quite:
 
-The session page hit the same gap for `MULTI_SELECT` and `ORDERING` (UX-11) and fixed it in
-`AnswerKey`. Sharing that component (AS-9) closes this as a side effect.
+| Type | At creation | After creation |
+|------|-------------|----------------|
+| `NUMERIC` | **settable** — the add panel has answer / tolerance / unit | **frozen** |
+| `ORDERING` | **auto-set** to the order the options are typed in | **frozen** |
+| `MULTI_SELECT` | never sent by the UI | settable — the checkboxes work |
+
+So they are not silently ungradeable by default: ordering always gets a key, and numeric
+gets one if the fields were filled. The failure is that there is **no way back** — skip the
+numeric fields at creation, or discover the sequence was wrong, and nothing in the UI can
+change it.
+
+**This is a frontend gap only.** The assignment `PATCH` route (`questions.routes.ts:625`)
+validates numeric and ordering keys *identically* to the session route — same
+`bypassClosedCheck` list, same per-type validation, and it accepts `tolerance` and `unit`.
+It even comments that key edits are deliberately allowed while the assignment is `OPEN`.
+Sharing `AnswerKey` (AS-9) closes this with no backend work.
 
 **Decision:** TBD
 
@@ -110,6 +122,11 @@ mutation converts the question into a multi-part group. `GroupPanel` has the
 
 So to change the wording of an ungrouped assignment question you must first convert it into a
 group. There is no edit affordance otherwise.
+
+**The route accepts `text`**, so this is a missing UI rather than a missing capability.
+Worth confirming what status gating applies to a text edit when implementing — the session
+route refuses text changes while a run is open, and the assignment equivalent will have its
+own rule.
 
 **Decision:** TBD
 
@@ -206,6 +223,11 @@ Depends on AS-6. Closes AS-2, removes the read-only displays, and replaces the M
 with the chips the session page uses. `GradingControls` is 204 lines and most of it is
 answer-key rendering, so this is where the line count goes.
 
+**Cheaper than first scoped.** The assignment `PATCH` route validates every type the same
+way the session route does and accepts `tolerance`, `unit` and `title`. The only field it
+lacks is `effortGrading` (AS-1). So this needs no backend work beyond AS-6's URL
+parameterisation.
+
 **Decision:** TBD
 
 ### AS-10 — `QuestionSettings` replaces the tri-state
@@ -292,6 +314,14 @@ Note the collision in vocabulary: `QuestionGroup.title` exists and *is* used
 something on this page — the group's — which is part of why the question's own title got
 skipped. Any fix has to name these two things distinguishably.
 
+**The routes are already there.** `POST /assignments/:id/questions` accepts `title` and the
+`PATCH` route accepts it too, with a comment that it stays editable regardless of status
+because it is professor-facing navigation metadata. The assignment add panel simply never
+sends it. Frontend-only.
+
+Confirmed by the author: `Question.title` was designed while looking only at session
+questions, so the omission here is an oversight rather than a decision.
+
 **Decision:** TBD
 
 ### AS-16 — Add-question is an inline panel, not the shared dialog
@@ -332,8 +362,19 @@ will matter most the first time this is used in anger — accommodations, illnes
 add/drop. Right now granting one means expanding a disclosure, picking from an unfiltered
 roster dropdown, and choosing a datetime.
 
-This deserves design attention rather than tidying: who has an extension, whose is about to
-lapse, and how many submissions are outstanding against which deadline.
+**The feature itself is sound — this item is purely about presentation.** Extensions are
+enforced on submission in four places in `responses.routes.ts`, each computing
+`effectiveDeadline = extension ? extension.deadline : asgn.deadline`, and the model carries
+`@@unique([assignmentId, studentId])`. There is nothing here like AS-1. Do not re-audit the
+enforcement; audit the interface.
+
+**And extensions are assignment-only by design, which is correct.** `DeadlineExtension` has
+`assignmentId` and `studentId` and no session relation. A session is a room in a moment;
+there is nothing to extend. Nothing in this plan proposes otherwise.
+
+What the page should answer, which it currently cannot: who has an extension and until when,
+whose is about to lapse, and how many submissions are outstanding against *which* deadline.
+That is a small dashboard, not a form.
 
 **Decision:** TBD
 
@@ -369,7 +410,9 @@ audience with different constraints (mobile, submission under deadline pressure,
 professor to explain a confusing control), and mixing it into a professor-page redesign is
 how plans lose focus.
 
-**Decision:** TBD — recommend a separate plan.
+**Decision (2026-09-12):** Its own redesign, not part of this plan. The author's call, and
+the right one — a different audience, different constraints, and 682 unaudited lines is not
+a footnote to a professor-page plan. A separate plan doc when it comes up.
 
 ---
 
