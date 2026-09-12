@@ -7,12 +7,11 @@ import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
 import Empty from '@/components/ui/Empty'
-import { Check, ChevronLeft, Copy, Download, Flag, Pencil, PictureInPicture2, Plus, RefreshCw, Sparkles, Trash2, X } from 'lucide-react'
+import { Check, ChevronLeft, Copy, Download, Flag, Pencil, PictureInPicture2, Plus, Trash2, X } from 'lucide-react'
 import { io } from 'socket.io-client'
 import type { SessionDetail, QuestionWithResponses, ResponseWithStudent, ThemeSet } from 'shared'
 import { SessionStatus } from 'shared'
 import ResultsSummary from '@/components/ResultsSummary'
-import ThemeBars from '@/components/ThemeBars'
 import LiveMonitorPanel from '@/components/LiveMonitorPanel'
 import { apiError } from '@/lib/errors'
 import QuestionImageField from '@/components/QuestionImageField'
@@ -20,6 +19,7 @@ import QuestionSettings from '@/components/session/QuestionSettings'
 import AnswerKey from '@/components/session/AnswerKey'
 import GradingToolbar from '@/components/session/GradingToolbar'
 import ScoreBadge from '@/components/session/ScoreBadge'
+import ThemesPanel from '@/components/session/ThemesPanel'
 import { deleteUpload } from '@/lib/uploadImage'
 import { downloadCsv } from '@/lib/downloadCsv'
 import { calcResponseScore } from '@/lib/scoring'
@@ -34,10 +34,6 @@ export default function SessionPage() {
   const [activeTab, setActiveTab] = useState(0)
   const [expandedQr, setExpandedQr] = useState<string | null>(null)
   const [expandedImage, setExpandedImage] = useState<string | null>(null)
-
-  // Themes live in the query cache, written by the fetch, the summarize mutation and the
-  // socket alike. Dismiss only collapses the panel, so that stays local.
-  const [dismissedThemesFor, setDismissedThemesFor] = useState<string | null>(null)
 
   const [copiedQrId, setCopiedQrId] = useState<string | null>(null)
   const [showSectionModal, setShowSectionModal] = useState(false)
@@ -437,11 +433,10 @@ export default function SessionPage() {
 
   const totalResponses = data.questions.reduce((sum, q) => sum + q.responses.length, 0)
   const activeQuestion = data.questions[activeTab] as QuestionWithResponses | undefined
-  // The panel shows the server's themes for the question in view, unless collapsed here.
-  const shownThemes =
-    persistedThemes && themesQuestionId === activeQuestion?.id && dismissedThemesFor !== activeQuestion?.id
-      ? persistedThemes
-      : null
+  // Themes belong to a question and a run, so only show a set that matches the question
+  // in view. Whether the panel is open is the panel's business, not the page's.
+  const themesForQuestion =
+    persistedThemes && themesQuestionId === activeQuestion?.id ? persistedThemes : null
 
   // Derive live state from runs
   const openRun = data.runs.find((r) => r.status === SessionStatus.OPEN) ?? null
@@ -758,6 +753,17 @@ export default function SessionPage() {
           {/* Responses summary chart */}
           <ResultsSummary question={activeQuestion} />
 
+          {/* Aggregate views first, then the bar that acts on the list below it. */}
+          {activeQuestion.type === 'FREE_TEXT' && activeQuestion.responses.length > 0 && (
+            <ThemesPanel
+              key={activeQuestion.id}
+              themes={themesForQuestion}
+              isSummarizing={summarizeMutation.isPending}
+              isError={summarizeMutation.isError}
+              onSummarize={() => summarizeMutation.mutate(activeQuestion.id)}
+            />
+          )}
+
           {/* Everything for grading this question, in a bar that stays put while the
               responses it acts on scroll underneath. */}
           <GradingToolbar
@@ -788,75 +794,6 @@ export default function SessionPage() {
             onToggleReview={() => setReviewOnly(reviewOnly === activeQuestion.id ? null : activeQuestion.id)}
           />
 
-          {/* AI theme summary for free text. Grading moved to the toolbar above. */}
-          {activeQuestion.type === 'FREE_TEXT' && activeQuestion.responses.length > 0 && (
-            <div className="mb-5">
-              {!shownThemes ? (
-                <button
-                  onClick={() => {
-                    setDismissedThemesFor(null)
-                    summarizeMutation.mutate(activeQuestion.id)
-                  }}
-                  disabled={summarizeMutation.isPending}
-                  className="flex items-center gap-1.5 text-sm text-signal border border-signal/20 px-3 py-2 rounded-sm hover:bg-signal-soft disabled:opacity-50 transition-colors"
-                >
-                  <Sparkles size={14} />
-                  {summarizeMutation.isPending ? 'Summarizing…' : 'Summarize responses'}
-                </button>
-              ) : (
-                <Card className="p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <p className="text-sm font-semibold text-ink-2 flex items-center gap-1.5">
-                      <Sparkles size={14} className="text-signal" /> AI Theme Summary
-                    </p>
-                    <div className="flex items-center gap-3">
-                      {/*
-                        The only correction this feature has. Re-running replaces the set
-                        outright, which is the fix when the categories miss where the class
-                        actually went — a single answer in the wrong bucket shifts a bar by
-                        one and is not worth a control. Until now this lived behind Dismiss,
-                        so the one repair anyone would reach for read as "hide this".
-                      */}
-                      <button
-                        onClick={() => {
-                          if (!window.confirm(
-                            'Re-derive the themes from scratch? The current labels and counts are replaced — if a projector is showing them, the room will see them change.'
-                          )) return
-                          summarizeMutation.mutate(activeQuestion.id)
-                        }}
-                        disabled={summarizeMutation.isPending}
-                        className="flex items-center gap-1 text-xs text-muted hover:text-signal disabled:opacity-50 transition-colors"
-                        title="Group the answers again from scratch"
-                      >
-                        <RefreshCw size={11} className={summarizeMutation.isPending ? 'animate-spin' : ''} />
-                        {summarizeMutation.isPending ? 'Regrouping…' : 'Regenerate'}
-                      </button>
-                      <button
-                        onClick={() => setDismissedThemesFor(activeQuestion.id)}
-                        className="text-xs text-muted hover:text-ink transition-colors"
-                      >
-                        Dismiss
-                      </button>
-                    </div>
-                  </div>
-                  <ThemeBars
-                    variant="panel"
-                    categories={shownThemes.categories}
-                    classified={shownThemes.classified}
-                    total={shownThemes.total}
-                    status={shownThemes.status}
-                    need={shownThemes.need}
-                  />
-                  {summarizeMutation.isError && (
-                    <p className="text-xs text-red-500 mt-3">Failed to summarize — try again.</p>
-                  )}
-                </Card>
-              )}
-              {summarizeMutation.isError && !shownThemes && (
-                <p className="text-xs text-red-500 mt-2">Failed to summarize — try again.</p>
-              )}
-            </div>
-          )}
 
           {/* Response list */}
           {activeQuestion.responses.length === 0 ? (
@@ -1102,7 +1039,7 @@ export default function SessionPage() {
             totalQuestions={data.questions.length}
             sessionTitle={data.title}
             enrolledCount={data.enrolledCount ?? 0}
-            themes={persistedThemes ?? null}
+            themes={themesForQuestion}
             themesQuestionId={themesQuestionId}
             isSummarizing={summarizeMutation.isPending}
             onSummarize={() => {

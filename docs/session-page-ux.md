@@ -358,13 +358,39 @@ under the response. They serve different moments — scanning the list, versus d
 score — so both stay.
 
 ### UX-16 — The themes panel splits configuration from result
-- [ ] **Status**
+- [x] **Status** — done 2026-09-12
 
 `:1077-1150`. It sits between the score summary and the responses, pushing responses down,
 and is configured 400px above where it renders. Better as a collapsible panel next to
 `ResultsSummary`, with its on/off control on the panel itself.
 
-**Decision:** TBD
+**Decision:** Done, and this item was much too small as written. It described a placement problem. The
+placement is fixed — `ThemesPanel` now sits between `ResultsSummary` and the grading
+toolbar, so the aggregate views group at the top and the sticky bar stays against the list
+it acts on — but the controls were the real issue.
+
+**Three controls expressed two actions, and the labels hid which ones destroy.**
+`Summarize responses` and `Regenerate` were the *same call*: `POST /summarize`, which
+`deleteMany`s the run's theme set and re-derives it from scratch
+(`themes.service.ts:271`). `Dismiss` only hid the panel locally.
+
+The trap was the interaction. A dismissed panel made `Summarize responses` reappear, and
+clicking it cleared the dismissal *and* destroyed the existing set — unconfirmed — when
+clearing the dismissal alone would have shown it again. So the destructive path reachable by
+accident was the one with no warning, while `Regenerate`, doing exactly the same thing,
+asked first and warned about the projector.
+
+Now: collapsing is a view state that touches nothing, `Summarize responses` appears only
+when no set exists for the run (the one case where it creates rather than replaces), and
+`Regenerate` is the single path that replaces a set and keeps its confirmation. `Dismiss` is
+gone as a name — it never dismissed anything.
+
+Collapse is **ephemeral and open by default**, per the author's call: no persistence, so a
+collapsed panel cannot hide incoming live themes past a navigation. `localStorage` keyed by
+question id is the whole job if it is ever wanted. The collapsed header shows the theme
+count, so a closed panel is not silent about having content.
+
+Two pieces of page state went with it: `dismissedThemesFor` and `shownThemes`.
 
 ---
 
@@ -481,6 +507,7 @@ extraction followed by one wholesale redesign.
 2. **Answer key** — UX-13, carrying UX-10, UX-11 and UX-12. ✓ done 2026-09-12
 3. **Grading** — UX-14 and UX-15. ✓ done 2026-09-12
 4. **Sweep** — UX-17 (amended), UX-18, UX-22 through UX-25, and whatever of UX-21 is left.
+   UX-16 was pulled forward ahead of this and is done.
    UX-7 and UX-9 ride along here; neither is a live feature.
 5. **Authoring versus review** — UX-1, redefined. By then each zone is a component, so it
    reduces to choosing which ones render when.
@@ -582,6 +609,20 @@ enforcing a three-value model. Anyone adding a score control elsewhere should us
 and colour. It has the identical bug and the identical discoverability problem. Not touched
 here — it is the assignment side — but it is the obvious next `ScoreBadge` call site and
 would close UX-21 a little further.
+
+### Slice 4 — themes, 2026-09-12
+
+New: `session/ThemesPanel.tsx`. `SessionPage.tsx` 1186 → 1123 lines, and `ThemeBars`,
+`RefreshCw` and `Sparkles` are no longer imported there.
+
+**The find:** two buttons with different names, different placement and different
+confirmation behaviour were the identical destructive call. Worth a general suspicion — where
+the same mutation is reachable from two controls, check that both agree about whether it is
+dangerous.
+
+The panel order on the page is now `ResultsSummary` → `ThemesPanel` → `GradingToolbar` →
+responses. Aggregates group together, and the sticky bar is adjacent to what it acts on
+rather than separated from it by a theme card.
 
 ### Still open
 
