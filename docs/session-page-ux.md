@@ -424,44 +424,69 @@ proposal was wrong. It assumed PiP was vestigial; PiP is in fact the only live v
 does not require PowerPoint, and burying the sole cross-platform live path behind `⋯` would
 be the opposite of the right call. The overflow holds **Export CSV and Archive only**.
 
+**Built 2026-09-12.** Pop out and the state action are first-class; Export CSV and Archive
+sit behind a `⋯` menu. Archive leaving that row is the substantive part — it was a one-way
+action beside Reopen, and it had no confirmation at all. It has one now, and Reopen became
+the state button on its own, collapsing two branches of the old markup into one.
+
+`Popover` gained an optional chevron and children-as-a-function receiving `close`, since a
+click inside the panel is not an outside click and a menu item that acts should also leave.
+
 ---
 
 ## Zone 6 — The sidebar is the best part of the page and under-used
 
 ### UX-18 — Show the grading label it already computes
-- [ ] **Status**
+- [x] **Status** — done 2026-09-12
 
 `:614` builds `"9 / 14 graded"` / `"not graded"` and then buries it in a `title` tooltip,
 rendering only `"14 responses"` in a colour that has to be decoded.
 
-**Decision:** Done, per the author's call on which two are the stars. **Pop out** and the session state
-action (Open / Close / Reopen) are first-class; **Export CSV** and **Archive** moved into a
-`⋯` menu.
+**Decision:** Done. The sidebar shows the summary it was already computing, instead of burying it in a
+`title` and rendering a bare response count in a colour you had to decode.
 
-Archive leaving that row is the substantive part. It sat directly beside Reopen — a one-way
-action adjacent to the common one — and Reopen is now the state button on its own, which
-also collapses two branches of the old markup into one. Archive additionally picked up a
-confirmation, since it had none.
+Shortened to fit 256px: `14 ungraded`, `9/14 graded`, `14 graded`, or plain
+`14 responses` for a type that carries no score. The colour stays as the glance; the words
+are what it meant.
 
-`Popover` gained two things to serve as a menu: an optional chevron, and children as a
-function receiving `close`, because a click inside the panel is not an outside click and an
-item that acts should also leave.
+*(This item briefly held UX-17's decision text, written here by a doc helper that searched
+past the end of UX-17's section. Corrected, and the helper now bounds itself.)*
 
 ### UX-19 — Keyboard navigation between questions
-- [ ] **Status**
+- [-] **Status** — declined 2026-09-12
 
 Up/down arrows or `1`-`9`. Helps both grading and live teaching.
 
-**Decision:** TBD
+**Decision:** Declined by the author: not necessary. Recorded rather than deleted, because the keyboard
+idea also surfaced in UX-15 as `j`/`k` navigation and was dropped there too. Twice
+considered and passed over is worth knowing before it is proposed a third time.
 
 ### UX-20 — Question reordering
-- [ ] **Status**
+- [x] **Status** — done 2026-09-12
 
 No way to reorder from the sidebar.
 
-**Decision:** TBD
+**Decision:** Done, by dragging, and **it needed no backend work at all** — worth recording, because the
+author reasonably doubted both halves of it.
 
----
+Three things were already true:
+
+- **Session and assignment questions are one table.** `Question` has nullable `sessionId`
+  and `assignmentId`, so both live in the same model with the same required `order Int`.
+- **A reorder route already existed**: `PUT /sessions/:id/questions/reorder`, taking
+  `[{ id, order }]` in a transaction, ownership-checked. Written for the assignment side and
+  never called from the session page.
+- **dnd-kit is already a dependency**, used in five places including the student ordering
+  question. So this uses the same `DndContext` / `SortableContext` / `PointerSensor` setup as
+  `AssignmentDetailPage` rather than a new approach.
+
+**Reordering is closed off while a run is open**, alongside adding and deleting. The route
+does not enforce that — it checks only ownership — but the numbering is what a professor
+says out loud, and renumbering mid-lecture makes a liar of them.
+
+**One thing the obvious implementation gets wrong:** `activeTab` is an index, so moving a
+question would leave the professor looking at a different one. The drag handler resolves the
+open question by id before the move and re-selects it afterwards.
 
 ## Zone 7 — Per-type distributions
 
@@ -526,13 +551,30 @@ Extracting shared `QuestionSettings` / `AnswerKey` / `GradingToolbar` / `Respons
 components would roughly halve `SessionPage` and stop the drift. This is the natural
 vehicle for the whole redesign rather than a separate cleanup.
 
-**Decision:** Started. Four shared pieces now exist: `components/StructureKeyField` (the structure answer
-key, previously living only inside the assignment page), `ui/Switch` (lifted from `ClassPage`, which
-hand-rolled the same markup three times), `ui/Popover` (new — the repo had only
-`<details>`), and `session/QuestionSettings`. `ui/Button` gained a `size` so the small
-inline controls share one definition rather than copying each other's classes.
+**Decision:** In progress, and the extraction is now most of the page. What exists after
+seven slices:
 
-Net −282 lines across the two pages. The assignment-side duplication is untouched.
+```
+components/session/   QuestionSettings  AnswerKey  GradingToolbar  ScoreBadge
+                      ThemesPanel  QuestionDialog  QuestionSidebar
+components/           StructureKeyField
+components/ui/        Switch  Popover  ConfirmDialog  (Button gained a size)
+lib/                  questionTypes
+```
+
+`SessionPage` is 1535 → 843 lines and holds the socket, the queries, the run controls and
+the response list; every zone around them is a component.
+
+**The assignment side is still the drift risk.** `StructureKeyField` was extracted *from*
+`GradingControls` and is shared, which proved the pattern. But `GradingControls` still has
+its own grading-stance tri-state — the exact control UX-3 replaced on the session side — and
+`assignment/ResponseList` still cycles scores on click with the same exact-match label bug
+`ScoreBadge` fixed. Those two are the obvious next call sites, and closing them would make
+the redesign a shared-component change rather than a session-page one.
+
+`GradingControls` also still uses raw `bg-white` / `border-gray-200` instead of theme
+tokens, which is a separate and smaller job.
+
 
 ### UX-22 — Add and Edit question modals are near-duplicates that diverged
 - [x] **Status** — done 2026-09-12
@@ -650,9 +692,7 @@ extraction followed by one wholesale redesign.
    UX-16 was pulled forward ahead of it. UX-9 turned out to belong to Zone 2. UX-18 moved
    into Zone 6 below.
    UX-7 and UX-9 ride along here; neither is a live feature.
-5. **Zone 6 as one unit** — UX-18, UX-19, UX-20. The author's call: the sidebar is one
-   piece of work, so its label, keyboard navigation and reordering land together rather
-   than one at a time.
+5. **Zone 6 as one unit** — UX-18 and UX-20. ✓ done 2026-09-12. UX-19 declined.
 6. **Authoring versus review** — UX-1, redefined. By then each zone is a component, so it
    reduces to choosing which ones render when.
 7. ~~**Live layout**~~ — UX-4, UX-6, UX-8, UX-9. Parked; see Zone 2. Not a step in this plan
@@ -798,6 +838,29 @@ fuller one for the picker.
 **Two findings in this pass were wrong when checked**, which is the argument for checking
 before implementing: UX-9 cited a field that does not exist, and UX-23 undercounted its own
 subject while missing an instance in a component this redesign had just written.
+
+### Slice 7 — the sidebar, 2026-09-12
+
+New: `session/QuestionSidebar.tsx`, which also takes `questionLabel` off the page.
+`SessionPage.tsx` 870 → 843 lines. Across seven slices: 1535 → 843, and `useState` 29 → 14.
+
+**The check that cost nothing and would have cost a day to skip:** the author doubted session
+questions even stored an order, and doubted drag was feasible. Both were already solved — one
+table with a required `order`, a reorder route written for the assignment side, and dnd-kit
+installed and used five times over. The whole item was one frontend call.
+
+**A correction to this document itself.** UX-18's Decision was holding UX-17's text. The
+helper used to write these entries searched for the next unanswered Decision line *after* a
+heading, with no upper bound, so an item whose Decision had already been hand-edited — UX-17,
+amended when the live view was parked — sent the write to the following item. Both are
+repaired and the helper is bounded to a single section. Worth knowing that every entry
+written between 2026-09-12's parking note and now was produced by that helper.
+
+**For whoever does UX-1:** `activeTab` being an index rather than a question id is now
+load-bearing in three places — the sidebar's drag handler translates around it,
+`deleteQuestionMutation` nudges it with `Math.max(0, t - 1)`, and `pipActiveTab` is a second
+index tracking a different question. Moving to an id simplifies all three, and UX-1 is the
+natural moment.
 
 ### Still open
 
