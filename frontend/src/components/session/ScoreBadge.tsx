@@ -121,7 +121,17 @@ export default function ScoreBadge({ score, reason, onChange, pending, disabled 
 
       {open && (
         <div
-          className="absolute right-0 top-full mt-1 z-30 w-56 bg-surface border border-hairline rounded-[14px] shadow-pop p-3"
+          className={cn(
+            'absolute right-0 top-full mt-1 z-30 bg-surface border border-hairline rounded-[14px] shadow-pop p-3',
+            // `white-space` inherits, and this badge sits in a table cell set to
+            // `whitespace-nowrap` to keep the badge itself on one line. Without resetting
+            // it here the reason below refused to wrap and ran out of the panel. Set on the
+            // panel rather than fixed in the table, so the component survives being
+            // dropped anywhere.
+            'whitespace-normal',
+            // Wider only when there is prose to read; the bare picker stays compact.
+            reason ? 'w-72' : 'w-56',
+          )}
           onMouseEnter={cancelClose}
         >
           <p className="text-[11px] font-medium text-muted uppercase tracking-wide mb-2">Score</p>
@@ -166,7 +176,7 @@ export default function ScoreBadge({ score, reason, onChange, pending, disabled 
           </div>
 
           {reason && (
-            <p className="mt-2 pt-2 border-t border-hairline text-[11px] text-muted leading-snug">
+            <p className="mt-2 pt-2 border-t border-hairline text-[11px] text-muted leading-snug break-words">
               <span className="font-medium">AI:</span> {reason}
             </p>
           )}
