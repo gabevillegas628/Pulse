@@ -10,6 +10,7 @@ import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
 import Tabs from '@/components/ui/Tabs'
 import Pill from '@/components/ui/Pill'
+import Switch from '@/components/ui/Switch'
 import CodeChip from '@/components/ui/CodeChip'
 import Empty from '@/components/ui/Empty'
 import { Plus, Trash2, X, ChevronLeft, ChevronDown, ChevronUp, ArrowUpDown, Download, KeyRound, Copy, Users, BookOpen, Settings, RefreshCw, Sparkles, TimerReset } from 'lucide-react'
@@ -445,101 +446,74 @@ export default function ClassPage() {
       />
 
       {/* Class Sessions tab */}
-      {/* Class-wide default for live AI themes. Individual questions override it. */}
+      {/* Class-wide defaults for every question in the class. Each is a starting point a
+          question can override from its own settings popover, so the "any question can
+          override" caveat is stated once here rather than three times. */}
       {tab === 'sessions' && data && (
-        <div className="flex items-start justify-between gap-4 border border-hairline rounded-[14px] px-4 py-3 mb-4">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-ink flex items-center gap-1.5">
-              <Sparkles size={13} className="text-signal" />
-              Live AI themes
-            </p>
-            <p className="text-xs text-muted mt-0.5 leading-snug">
-              Default for free-text questions in this class — group answers into themes as they
-              arrive. Any question can override it.
-            </p>
-          </div>
-          <button
-            onClick={() => liveThemesDefaultMutation.mutate(!data.liveThemesDefault)}
-            disabled={liveThemesDefaultMutation.isPending}
-            role="switch"
-            aria-checked={!!data.liveThemesDefault}
-            aria-label="Live AI themes by default"
-            className={`shrink-0 mt-0.5 w-9 h-5 rounded-full transition-colors disabled:opacity-50 ${
-              data.liveThemesDefault ? 'bg-signal' : 'bg-surface-2 border border-hairline'
-            }`}
-          >
-            <span
-              className={`block w-3.5 h-3.5 rounded-full bg-white transition-transform ${
-                data.liveThemesDefault ? 'translate-x-[18px]' : 'translate-x-[3px]'
-              }`}
-            />
-          </button>
-        </div>
-      )}
+        <div className="mb-4">
+          <p className="text-xs font-medium text-muted uppercase tracking-wide mb-2">
+            Class defaults
+            <span className="font-normal normal-case tracking-normal"> — any question can override these</span>
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="flex items-start justify-between gap-3 border border-hairline rounded-[14px] px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-ink flex items-center gap-1.5">
+                  <Sparkles size={13} className="text-signal" />
+                  Live AI themes
+                </p>
+                <p className="text-xs text-muted mt-0.5 leading-snug">
+                  Groups free-text answers into themes as they arrive.
+                </p>
+              </div>
+              <Switch
+                checked={!!data.liveThemesDefault}
+                onChange={() => liveThemesDefaultMutation.mutate(!data.liveThemesDefault)}
+                disabled={liveThemesDefaultMutation.isPending}
+                ariaLabel="Live AI themes by default"
+                className="mt-0.5"
+              />
+            </div>
 
-      {/* Class-wide default for the reset countdown. Individual questions override it. */}
-      {tab === 'sessions' && data && (
-        <div className="flex items-start justify-between gap-4 border border-hairline rounded-[14px] px-4 py-3 mb-4">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-ink flex items-center gap-1.5">
-              <TimerReset size={13} className="text-signal" />
-              Close questions automatically
-            </p>
-            <p className="text-xs text-muted mt-0.5 leading-snug">
-              Default for questions in this class — a countdown that restarts with every answer
-              and stops accepting them when it runs out. Any question can override it.
-            </p>
-          </div>
-          <button
-            onClick={() => autoCloseDefaultMutation.mutate(!data.autoCloseDefault)}
-            disabled={autoCloseDefaultMutation.isPending}
-            role="switch"
-            aria-checked={!!data.autoCloseDefault}
-            aria-label="Close questions automatically by default"
-            className={`shrink-0 mt-0.5 w-9 h-5 rounded-full transition-colors disabled:opacity-50 ${
-              data.autoCloseDefault ? 'bg-signal' : 'bg-surface-2 border border-hairline'
-            }`}
-          >
-            <span
-              className={`block w-3.5 h-3.5 rounded-full bg-white transition-transform ${
-                data.autoCloseDefault ? 'translate-x-[18px]' : 'translate-x-[3px]'
-              }`}
-            />
-          </button>
-        </div>
-      )}
+            <div className="flex items-start justify-between gap-3 border border-hairline rounded-[14px] px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-ink flex items-center gap-1.5">
+                  <TimerReset size={13} className="text-signal" />
+                  Close automatically
+                </p>
+                <p className="text-xs text-muted mt-0.5 leading-snug">
+                  A countdown restarts with each answer; the question closes when it runs out.
+                </p>
+              </div>
+              <Switch
+                checked={!!data.autoCloseDefault}
+                onChange={() => autoCloseDefaultMutation.mutate(!data.autoCloseDefault)}
+                disabled={autoCloseDefaultMutation.isPending}
+                ariaLabel="Close questions automatically by default"
+                className="mt-0.5"
+              />
+            </div>
 
-      {/* Class-wide grading stance for free text. Individual questions override it. */}
-      {tab === 'sessions' && data && (
-        <div className="flex items-start justify-between gap-4 border border-hairline rounded-[14px] px-4 py-3 mb-4">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-ink flex items-center gap-1.5">
-              <Sparkles size={13} className="text-signal" />
-              Grade free text on effort
-            </p>
-            <p className="text-xs text-muted mt-0.5 leading-snug">
-              A genuine attempt earns full credit however wrong it is; half credit for
-              &ldquo;idk&rdquo; and one-word answers; none for keysmash or an answer to a
-              different question. Off, the AI grades on understanding instead. Any question
-              can override it.
-            </p>
+            <div className="flex items-start justify-between gap-3 border border-hairline rounded-[14px] px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-ink flex items-center gap-1.5">
+                  <Sparkles size={13} className="text-signal" />
+                  Grade on effort
+                </p>
+                <p className="text-xs text-muted mt-0.5 leading-snug">
+                  A real attempt earns full credit however wrong it is; only non-answers lose
+                  marks. Off, answers are judged on understanding.
+                </p>
+              </div>
+              <Switch
+                checked={!!data.effortGradingDefault}
+                onChange={() => effortGradingDefaultMutation.mutate(!data.effortGradingDefault)}
+                disabled={effortGradingDefaultMutation.isPending}
+                ariaLabel="Grade free text on effort by default"
+                className="mt-0.5"
+              />
+            </div>
           </div>
-          <button
-            onClick={() => effortGradingDefaultMutation.mutate(!data.effortGradingDefault)}
-            disabled={effortGradingDefaultMutation.isPending}
-            role="switch"
-            aria-checked={!!data.effortGradingDefault}
-            aria-label="Grade free text on effort by default"
-            className={`shrink-0 mt-0.5 w-9 h-5 rounded-full transition-colors disabled:opacity-50 ${
-              data.effortGradingDefault ? 'bg-signal' : 'bg-surface-2 border border-hairline'
-            }`}
-          >
-            <span
-              className={`block w-3.5 h-3.5 rounded-full bg-white transition-transform ${
-                data.effortGradingDefault ? 'translate-x-[18px]' : 'translate-x-[3px]'
-              }`}
-            />
-          </button>
         </div>
       )}
 

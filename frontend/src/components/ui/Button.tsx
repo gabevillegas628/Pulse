@@ -3,13 +3,17 @@ import { cn } from '@/lib/utils'
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'ghost'
+  /** `sm` is the inline control that sits within a card rather than ending a form. */
+  size?: 'md' | 'sm'
 }
 
-export default function Button({ variant = 'ghost', className, children, ...props }: ButtonProps) {
+export default function Button({ variant = 'ghost', size = 'md', className, children, ...props }: ButtonProps) {
   return (
     <button
       className={cn(
-        'inline-flex items-center justify-center gap-1.5 rounded-sm px-4 py-2 text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
+        'inline-flex items-center justify-center gap-1.5 rounded-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
+        size === 'md' && 'px-4 py-2 text-sm font-bold',
+        size === 'sm' && 'px-2.5 py-1.5 text-xs font-medium',
         variant === 'primary' && 'bg-signal text-white hover:bg-[var(--signal-bright)]',
         variant === 'ghost'   && 'bg-surface border border-hairline-strong text-ink-2 hover:bg-surface-2',
         className,

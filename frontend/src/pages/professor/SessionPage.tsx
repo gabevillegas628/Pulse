@@ -7,7 +7,7 @@ import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
 import Empty from '@/components/ui/Empty'
-import { Check, ChevronLeft, Copy, Download, Flag, GraduationCap, Pencil, PictureInPicture2, Plus, RefreshCw, Sparkles, Trash2, X, TimerReset } from 'lucide-react'
+import { Check, ChevronLeft, Copy, Download, Flag, GraduationCap, Pencil, PictureInPicture2, Plus, RefreshCw, Sparkles, Trash2, X } from 'lucide-react'
 import { io } from 'socket.io-client'
 import type { SessionDetail, QuestionWithResponses, ResponseWithStudent, ThemeSet } from 'shared'
 import { SessionStatus } from 'shared'
@@ -16,6 +16,7 @@ import ThemeBars from '@/components/ThemeBars'
 import LiveMonitorPanel from '@/components/LiveMonitorPanel'
 import { apiError } from '@/lib/errors'
 import QuestionImageField from '@/components/QuestionImageField'
+import QuestionSettings from '@/components/session/QuestionSettings'
 import { deleteUpload } from '@/lib/uploadImage'
 import { downloadCsv } from '@/lib/downloadCsv'
 import { calcResponseScore, cycleScore } from '@/lib/scoring'
@@ -231,24 +232,6 @@ export default function SessionPage() {
         ...(tolerance !== undefined && { tolerance }),
         ...(unit !== undefined && { unit }),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['session', sessionId] }),
-  })
-
-  const liveThemesMutation = useMutation({
-    mutationFn: ({ questionId, liveThemes }: { questionId: string; liveThemes: boolean | null }) =>
-      api.patch(`/sessions/${sessionId}/questions/${questionId}`, { liveThemes }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['session', sessionId] }),
-  })
-
-  const autoCloseMutation = useMutation({
-    mutationFn: ({ questionId, autoClose }: { questionId: string; autoClose: boolean | null }) =>
-      api.patch(`/sessions/${sessionId}/questions/${questionId}`, { autoClose }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['session', sessionId] }),
-  })
-
-  const effortGradingMutation = useMutation({
-    mutationFn: ({ questionId, effortGrading }: { questionId: string; effortGrading: boolean | null }) =>
-      api.patch(`/sessions/${sessionId}/questions/${questionId}`, { effortGrading }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['session', sessionId] }),
   })
 
@@ -702,14 +685,42 @@ export default function SessionPage() {
                     className="mt-2 max-h-48 rounded-[14px] border border-hairline object-contain bg-surface cursor-zoom-in"
                   />
                 )}
-                {data.status !== SessionStatus.ARCHIVED && (
-                  <button
-                    onClick={() => openEditQuestion(activeQuestion)}
-                    className="mt-1.5 flex items-center gap-1 text-xs text-muted hover:text-signal transition-colors"
-                    title="Edit question"
-                  >
-                    <Pencil size={11} /> Edit
-                  </button>
+                {/* One row of controls for the question above: change what it asks, change
+                    how it behaves, and the single live action that acts on it. */}
+                <div className="mt-2.5 flex items-center gap-2 flex-wrap">
+                  {data.status !== SessionStatus.ARCHIVED && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => openEditQuestion(activeQuestion)}
+                      title="Edit question"
+                    >
+                      <Pencil size={12} /> Edit
+                    </Button>
+                  )}
+                  <QuestionSettings
+                    sessionId={sessionId!}
+                    question={activeQuestion}
+                    classDefaults={{
+                      liveThemes: data.class.liveThemesDefault,
+                      autoClose: data.class.autoCloseDefault,
+                      effortGrading: data.class.effortGradingDefault,
+                    }}
+                    canSetGradingStance={hasBeenRun || data.status === SessionStatus.ARCHIVED}
+                  />
+                  {isLive && (activeQuestion.autoClose ?? data.class.autoCloseDefault) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => reopenMutation.mutate(activeQuestion.id)}
+                      disabled={reopenMutation.isPending}
+                    >
+                      {reopenMutation.isSuccess && !reopenMutation.isPending ? 'Clock restarted' : 'Give them more time'}
+                    </Button>
+                  )}
+                </div>
+                {reopenMutation.isError && (
+                  <p className="text-xs text-red-500 mt-2">Could not change that — try again.</p>
                 )}
               </div>
               <div className="flex items-center gap-3 shrink-0">
@@ -760,145 +771,19 @@ export default function SessionPage() {
               </div>
             </div>
 
-            {/* Live AI themes — FREE_TEXT, settable while authoring (before any run) */}
-            {activeQuestion.type === 'FREE_TEXT' && (
-              <div className="mt-3 pt-3 border-t border-hairline">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="text-xs text-muted font-medium mb-0.5">
-                      <Sparkles size={11} className="inline mb-0.5 mr-1 text-signal" />
-                      Live AI themes
-                    </p>
-                    <p className="text-[11px] text-muted leading-snug">
-                      Group answers into themes as they arrive, without pressing anything.
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 rounded-sm border border-hairline overflow-hidden">
-                    {([
-                      { v: null, label: `Class default${data.class.liveThemesDefault ? ' (on)' : ' (off)'}` },
-                      { v: true, label: 'On' },
-                      { v: false, label: 'Off' },
-                    ] as const).map(({ v, label }) => {
-                      const selected = (activeQuestion.liveThemes ?? null) === v
-                      return (
-                        <button
-                          key={String(v)}
-                          onClick={() => liveThemesMutation.mutate({ questionId: activeQuestion.id, liveThemes: v })}
-                          disabled={liveThemesMutation.isPending}
-                          className={`px-2.5 py-1 text-[11px] font-medium transition-colors disabled:opacity-50 ${
-                            selected ? 'bg-signal-soft text-signal' : 'text-muted hover:text-ink'
-                          }`}
-                        >
-                          {label}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-                {liveThemesMutation.isError && (
-                  <p className="text-xs text-red-500 mt-2">Could not change that — try again.</p>
-                )}
-              </div>
-            )}
-
-            {/* Reset countdown — every question type, and changeable mid-run on purpose */}
-            <div className="mt-3 pt-3 border-t border-hairline">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <p className="text-xs text-muted font-medium mb-0.5">
-                    <TimerReset size={11} className="inline mb-0.5 mr-1 text-signal" />
-                    Close automatically
-                  </p>
-                  <p className="text-[11px] text-muted leading-snug">
-                    A countdown that restarts with every answer. When it runs out the question
-                    stops accepting answers and the correct one is revealed.
-                  </p>
-                </div>
-                <div className="flex shrink-0 rounded-sm border border-hairline overflow-hidden">
-                  {([
-                    { v: null, label: `Class default${data.class.autoCloseDefault ? ' (on)' : ' (off)'}` },
-                    { v: true, label: 'On' },
-                    { v: false, label: 'Off' },
-                  ] as const).map(({ v, label }) => {
-                    const selected = (activeQuestion.autoClose ?? null) === v
-                    return (
-                      <button
-                        key={String(v)}
-                        onClick={() => autoCloseMutation.mutate({ questionId: activeQuestion.id, autoClose: v })}
-                        disabled={autoCloseMutation.isPending}
-                        className={`px-2.5 py-1 text-[11px] font-medium transition-colors disabled:opacity-50 ${
-                          selected ? 'bg-signal-soft text-signal' : 'text-muted hover:text-ink'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-              {isLive && (activeQuestion.autoClose ?? data.class.autoCloseDefault) && (
-                <button
-                  onClick={() => reopenMutation.mutate(activeQuestion.id)}
-                  disabled={reopenMutation.isPending}
-                  className="mt-2 px-2.5 py-1 text-[11px] font-medium rounded-sm border border-hairline text-muted hover:text-ink transition-colors disabled:opacity-50"
-                >
-                  {reopenMutation.isSuccess && !reopenMutation.isPending ? 'Clock restarted' : 'Give them more time'}
-                </button>
-              )}
-              {(autoCloseMutation.isError || reopenMutation.isError) && (
-                <p className="text-xs text-red-500 mt-2">Could not change that — try again.</p>
-              )}
-            </div>
-
-            {/* Grading stance + rubric hint — FREE_TEXT, after at least one run */}
+            {/* Rubric hint — FREE_TEXT, after at least one run. The grading stance it used to
+                sit beneath now lives in the settings popover; the hint itself stays here
+                until the answer key is unified. */}
             {(hasBeenRun || data.status === SessionStatus.ARCHIVED) &&
               activeQuestion.type === 'FREE_TEXT' && (() => {
               const effortOn = activeQuestion.effortGrading ?? data.class.effortGradingDefault
               return (
-              <div className="mt-3 pt-3 border-t border-hairline">
-                <div className="flex items-start justify-between gap-4 mb-2.5">
-                  <div className="min-w-0">
-                    <p className="text-xs text-muted font-medium mb-0.5">
-                      <Sparkles size={11} className="inline mb-0.5 mr-1 text-signal" />
-                      What the AI grades on
-                    </p>
-                    <p className="text-[11px] text-muted leading-snug">
-                      {effortOn
-                        ? 'Effort — a real attempt earns full credit however wrong it is. Only non-answers lose marks.'
-                        : 'Understanding — answers are judged against what you were looking for.'}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 rounded-sm border border-hairline overflow-hidden">
-                    {([
-                      { v: null, label: `Class default${data.class.effortGradingDefault ? ' (effort)' : ' (understanding)'}` },
-                      { v: false, label: 'Understanding' },
-                      { v: true, label: 'Effort' },
-                    ] as const).map(({ v, label }) => {
-                      const selected = (activeQuestion.effortGrading ?? null) === v
-                      return (
-                        <button
-                          key={String(v)}
-                          onClick={() => effortGradingMutation.mutate({ questionId: activeQuestion.id, effortGrading: v })}
-                          disabled={effortGradingMutation.isPending}
-                          className={`px-2.5 py-1 text-[11px] font-medium transition-colors disabled:opacity-50 ${
-                            selected ? 'bg-signal-soft text-signal' : 'text-muted hover:text-ink'
-                          }`}
-                        >
-                          {label}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-                {effortGradingMutation.isError && (
-                  <p className="text-xs text-red-500 mb-2">Could not change that — try again.</p>
-                )}
-                <p className="text-xs text-muted font-medium mb-1.5">
-                  {effortOn
-                    ? <>What is this question about? <span className="font-normal">(optional — context only, students are not scored against it)</span></>
-                    : <>What were you looking for? <span className="font-normal">(optional — helps AI grade more accurately)</span></>}
-                </p>
-                <div className="flex gap-2">
+                <div className="mt-3 pt-3 border-t border-hairline">
+                  <p className="text-xs text-muted font-medium mb-1.5">
+                    {effortOn
+                      ? <>What is this question about? <span className="font-normal">(optional — context only, students are not scored against it)</span></>
+                      : <>What were you looking for? <span className="font-normal">(optional — helps AI grade more accurately)</span></>}
+                  </p>
                   <input
                     value={rubricDraft[activeQuestion.id] ?? activeQuestion.correctAnswer ?? ''}
                     onChange={(e) => setRubricDraft((d) => ({ ...d, [activeQuestion.id]: e.target.value }))}
@@ -908,10 +793,9 @@ export default function SessionPage() {
                       setCorrectAnswerMutation.mutate({ questionId: activeQuestion.id, correctAnswer: val || null })
                     }}
                     placeholder="e.g. dissipates the proton motive force, increases ETC flux"
-                    className="flex-1 border border-hairline rounded-sm px-3 py-1.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
+                    className="w-full border border-hairline rounded-sm px-3 py-1.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
                   />
                 </div>
-              </div>
               )
             })()}
 
