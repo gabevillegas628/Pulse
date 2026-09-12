@@ -55,28 +55,16 @@ leaves the page working. See **Order of work** at the end.
 
 ---
 
-## Prior art: the `Redesign/` folder
+## Out of scope: the `Redesign/` folder
 
-`Redesign/` (gitignored, dated June 8) holds a design system and a set of prototypes, and
-two of its files bear directly on this work.
+**Decided 2026-09-12: disregard it.** `Redesign/` holds the early pass that established
+the app design language, and it is outdated enough now that referring back to the
+prototypes means chasing a shape the app has already moved past. It is not evidence about
+what the page should be.
 
-`Redesign/session-page.jsx` prototypes this very page, and has **no settings controls at
-all** — no live-themes toggle, no auto-close, no grading stance. Those three arrived after
-the prototype and were bolted into the question header, which is why they never sat
-comfortably there. Taking them out of the primary flow restores the prototype's shape
-rather than departing from it. The prototype also already answers several questions raised
-below: a two-column grid pairing the question card with an `answered / enrolled` "the
-room" card (UX-7), themes as a standing card rather than a button (UX-16), and a single
-`Grade with AI` control in the response-list header (UX-14).
-
-`Redesign/UXPass.md` is a completed implementation record. Its Pass 5b, "Session / live
-monitor", is where `LiveMonitorPanel` and `enrolledCount` came from — so UX-6 extends a
-deliberate prior direction instead of inventing one. Treat the rest of that file as a
-record of June rather than current intent: Pass 7 marks live themes "DEFERRED
-INDEFINITELY", and they have shipped since.
-
-`Pulse Design Handoff.md` also establishes popover-for-settings — "move the width/text-size
-controls into an 'Aa' popover" — which is the precedent the question settings follow.
+What it contributed is already absorbed: the design tokens are in the app, and
+`LiveMonitorPanel` and `enrolledCount` are real code regardless of which pass produced
+them. Nothing below cites the prototypes.
 
 ---
 
@@ -201,39 +189,80 @@ is invisible.
 | `MULTI_SELECT`, `ORDERING` | nowhere | — | — |
 
 ### UX-10 — The MCQ key cannot be set before the session runs
-- [ ] **Status**
+- [x] **Status** — done 2026-09-12
 
 Backwards twice over: the answer key is authoring work, and with auto-close on, the
 correct answer is *revealed to students* when the question closes, so it has to exist
 beforehand. The `FREE_TEXT` rubric hint has the same gate and the AI grader wants it up
 front.
 
-**Decision:** TBD
+**Decision:** Done, and the finding needed correcting first. `docs/question-types.md` claimed the key
+"can only be set once the session is CLOSED", which would have put it in genuine conflict
+with auto-close revealing that key. The actual backend rule is narrower —
+`questions.routes.ts:276` refuses a key change only **while a run is open**, and exempts
+NUMERIC, ORDERING and STRUCTURE even then. So authoring-time keying was always permitted
+and only the UI forbade it. Removing the UI gate was a pure frontend change; no backend
+edit was needed, and there is no conflict with auto-close.
+
+The UI now locks the key only while a run is open, for the types the backend actually
+refuses, and says so in place rather than hiding the control.
+
+**A real bug fell out of this.** The free-text rubric hint also writes `correctAnswer`, and
+FREE_TEXT is *not* on the exempt list — so the old `hasBeenRun` gate showed the input
+during a live run (any run after the first), where saving it returned a silent 400.
+`setCorrectAnswerMutation` had no error UI, so the hint simply failed to save with no
+indication. Now locked while live, and errors surface.
 
 ### UX-11 — `MULTI_SELECT` and `ORDERING` have no answer-key UI at all
-- [ ] **Status**
+- [x] **Status** — done 2026-09-12
 
 `GradingControls` on the assignment side already handles `MULTI_SELECT`. In sessions those
 question types are silently ungradable. Closer to a bug than a layout problem.
 
-**Decision:** TBD
+**Decision:** Done, with one correction to the finding. MULTI_SELECT had no key UI in sessions and now
+has checkboxes.
+
+ORDERING was less broken than stated: its key is **auto-set at creation** to the order the
+options were written in, so ordering questions were always gradable — what was missing was
+any way to *change* that order afterwards. It now has an up/down reorder list. Plain
+buttons rather than drag-and-drop: dnd-kit is already a dependency on the student side, but
+buttons are keyboard-accessible for free and this list is rarely touched.
 
 ### UX-12 — Numeric keys are editable in two places
-- [ ] **Status**
+- [x] **Status** — done 2026-09-12
 
 The header card and the Edit modal write the same fields with no sign they are the same
 fields.
 
-**Decision:** TBD
+**Decision:** Done. The numeric key left the edit dialog, which now points at the answer key on the page
+behind it. The `eqCorrectAnswer` / `eqTolerance` / `eqUnit` state and the NUMERIC branch of
+the edit mutation went with it.
 
 ### UX-13 — One "Answer key" section, per type, in every mode
-- [ ] **Status**
+- [x] **Status** — done 2026-09-12
 
 The fix for UX-10 through UX-12 together: a single section that renders the right control
 for the question type and is available regardless of mode. Remove the key fields from the
 Add and Edit modals so there is one home.
 
-**Decision:** TBD
+**Decision:** Done as `components/session/AnswerKey.tsx`: one component rendering the right control per
+type — free-text rubric hint, chips for multiple-choice and yes/no, checkboxes for
+multi-select, an up/down list for ordering, and value/tolerance/unit for numeric. It owns
+its own mutation, so `setCorrectAnswerMutation` and four draft-state maps left
+`SessionPage`. Mounted with `key={question.id}`, so drafts are plain state seeded from
+props instead of `Record<string, string>` keyed by question.
+
+Two deliberate deviations from this item as written:
+
+- **The add-question dialog keeps its numeric fields.** The plan said to strip the key from
+  both dialogs, but at creation time the question does not exist yet, so there is no
+  `AnswerKey` to use — stripping it would force create-then-key for every numeric
+  question. The edit dialog is the one that had a redundant second home.
+- **RATING and STRUCTURE render nothing.** Rating is participation credit by design and the
+  backend 400s on a key. Structure keys *do* work server-side — both the key and the
+  student response are converted to InChI and compared — but setting one needs a molecule
+  editor, so it stays unreachable from the UI. Recorded in the notes as a gap rather than
+  half-built here.
 
 ---
 
@@ -379,7 +408,7 @@ redesigns it, in a commit that leaves the page working — instead of one wholes
 extraction followed by one wholesale redesign.
 
 1. **Settings** — UX-2, UX-3, part of UX-5 and UX-21. ✓ done 2026-09-12
-2. **Answer key** — UX-13, carrying UX-10, UX-11 and UX-12. The two near-bugs live here.
+2. **Answer key** — UX-13, carrying UX-10, UX-11 and UX-12. ✓ done 2026-09-12
 3. **Live layout** — UX-6 with UX-4, UX-7 and UX-8, on `LiveMonitorPanel` and the
    prototype's "the room" card.
 4. **Grading** — UX-14 and UX-15.
@@ -411,6 +440,23 @@ someone is actually deciding how one question gets graded.
 Two labels were also shortened to fit the narrower cards — "Close questions automatically"
 → "Close automatically", "Grade free text on effort" → "Grade on effort". They now match
 the question-level popover, at the cost of the class card no longer saying "free text".
+
+### Slice 2 — answer key, 2026-09-12
+
+New: `session/AnswerKey.tsx`. `SessionPage.tsx` 1419 → 1283 lines; `setCorrectAnswerMutation`,
+`rubricDraft`, `numericDraftAnswer`, `numericDraftTolerance`, `numericDraftUnit`,
+`eqCorrectAnswer`, `eqTolerance` and `eqUnit` are all gone, which is real progress on UX-25.
+
+**`docs/question-types.md` was stale and actively misleading**, and has been corrected in
+the same commit. It described the key gate as "can only be set once the session is CLOSED"
+for multiple-choice, yes/no and multi-select; the rule is "not while a run is open", with
+NUMERIC, ORDERING and STRUCTURE exempt. It also called the structure key unused, when both
+sides of that comparison are converted to InChI and scored.
+
+**Gap left open: structure answer keys.** Functional in the backend, unreachable from the
+UI, because setting one needs a molecule editor. Worth its own decision later — the
+alternative is admitting structure questions are manual-grade-only and dropping the
+server-side support.
 
 ### Still open
 

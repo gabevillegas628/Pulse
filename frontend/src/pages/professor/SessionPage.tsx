@@ -17,6 +17,7 @@ import LiveMonitorPanel from '@/components/LiveMonitorPanel'
 import { apiError } from '@/lib/errors'
 import QuestionImageField from '@/components/QuestionImageField'
 import QuestionSettings from '@/components/session/QuestionSettings'
+import AnswerKey from '@/components/session/AnswerKey'
 import { deleteUpload } from '@/lib/uploadImage'
 import { downloadCsv } from '@/lib/downloadCsv'
 import { calcResponseScore, cycleScore } from '@/lib/scoring'
@@ -37,8 +38,6 @@ export default function SessionPage() {
   const [dismissedThemesFor, setDismissedThemesFor] = useState<string | null>(null)
 
   const [copiedQrId, setCopiedQrId] = useState<string | null>(null)
-  const [rubricDraft, setRubricDraft] = useState<Record<string, string>>({})
-
   const [showSectionModal, setShowSectionModal] = useState(false)
 
   const [showAddQuestion, setShowAddQuestion] = useState(false)
@@ -58,14 +57,7 @@ export default function SessionPage() {
   const [eqText, setEqText] = useState('')
   const [eqOptions, setEqOptions] = useState<string[]>([])
   const [eqImageUrl, setEqImageUrl] = useState<string | null>(null)
-  const [eqCorrectAnswer, setEqCorrectAnswer] = useState('')
-  const [eqTolerance, setEqTolerance] = useState('')
-  const [eqUnit, setEqUnit] = useState('')
   const [eqError, setEqError] = useState('')
-
-  const [numericDraftAnswer, setNumericDraftAnswer] = useState<Record<string, string>>({})
-  const [numericDraftTolerance, setNumericDraftTolerance] = useState<Record<string, string>>({})
-  const [numericDraftUnit, setNumericDraftUnit] = useState<Record<string, string>>({})
 
   /**
    * Abandon the new question, and the image it never got attached to.
@@ -86,9 +78,6 @@ export default function SessionPage() {
     setEqText(q.text)
     setEqOptions((q.options as string[] | null) ?? [])
     setEqImageUrl(q.imageUrl ?? null)
-    setEqCorrectAnswer(q.correctAnswer ?? '')
-    setEqTolerance(q.tolerance != null ? String(q.tolerance) : '')
-    setEqUnit(q.unit ?? '')
     setEqError('')
     setShowEditQuestion(true)
   }
@@ -152,21 +141,12 @@ export default function SessionPage() {
         if (changed) payload.options = eqOptions.filter(o => o.trim()).map(o => o.trim())
       }
 
-      if (question.type === 'NUMERIC') {
-        const newCA = eqCorrectAnswer.trim() || null
-        if (newCA !== question.correctAnswer) payload.correctAnswer = newCA
-        const newTol = eqTolerance.trim() ? parseFloat(eqTolerance) : null
-        if (newTol !== question.tolerance) payload.tolerance = newTol
-        const newUnit = eqUnit.trim() || null
-        if (newUnit !== question.unit) payload.unit = newUnit
-      }
-
       return api.patch(`/sessions/${sessionId}/questions/${eqId}`, payload)
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['session', sessionId] })
       setShowEditQuestion(false)
-      setEqId(null); setEqTitle(''); setEqText(''); setEqOptions([]); setEqCorrectAnswer(''); setEqTolerance(''); setEqUnit(''); setEqError('')
+      setEqId(null); setEqTitle(''); setEqText(''); setEqOptions([]); setEqError('')
       setEqImageUrl(null)
     },
     onError: (e: unknown) => setEqError(apiError(e, 'Failed to save question')),
@@ -223,16 +203,6 @@ export default function SessionPage() {
     onMutate: ({ questionId }) => {
       setGradeResult((prev) => { const next = { ...prev }; delete next[questionId]; return next })
     },
-  })
-
-  const setCorrectAnswerMutation = useMutation({
-    mutationFn: ({ questionId, correctAnswer, tolerance, unit }: { questionId: string; correctAnswer?: string | null; tolerance?: number | null; unit?: string | null }) =>
-      api.patch(`/sessions/${sessionId}/questions/${questionId}`, {
-        ...(correctAnswer !== undefined && { correctAnswer }),
-        ...(tolerance !== undefined && { tolerance }),
-        ...(unit !== undefined && { unit }),
-      }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['session', sessionId] }),
   })
 
   const reopenMutation = useMutation({
@@ -771,106 +741,16 @@ export default function SessionPage() {
               </div>
             </div>
 
-            {/* Rubric hint — FREE_TEXT, after at least one run. The grading stance it used to
-                sit beneath now lives in the settings popover; the hint itself stays here
-                until the answer key is unified. */}
-            {(hasBeenRun || data.status === SessionStatus.ARCHIVED) &&
-              activeQuestion.type === 'FREE_TEXT' && (() => {
-              const effortOn = activeQuestion.effortGrading ?? data.class.effortGradingDefault
-              return (
-                <div className="mt-3 pt-3 border-t border-hairline">
-                  <p className="text-xs text-muted font-medium mb-1.5">
-                    {effortOn
-                      ? <>What is this question about? <span className="font-normal">(optional — context only, students are not scored against it)</span></>
-                      : <>What were you looking for? <span className="font-normal">(optional — helps AI grade more accurately)</span></>}
-                  </p>
-                  <input
-                    value={rubricDraft[activeQuestion.id] ?? activeQuestion.correctAnswer ?? ''}
-                    onChange={(e) => setRubricDraft((d) => ({ ...d, [activeQuestion.id]: e.target.value }))}
-                    onBlur={() => {
-                      const val = (rubricDraft[activeQuestion.id] ?? activeQuestion.correctAnswer ?? '').trim()
-                      if (val === (activeQuestion.correctAnswer ?? '')) return
-                      setCorrectAnswerMutation.mutate({ questionId: activeQuestion.id, correctAnswer: val || null })
-                    }}
-                    placeholder="e.g. dissipates the proton motive force, increases ETC flux"
-                    className="w-full border border-hairline rounded-sm px-3 py-1.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
-                  />
-                </div>
-              )
-            })()}
-
-            {/* Mark correct answer — MCQ / YES_NO, after at least one run */}
-            {(hasBeenRun || data.status === SessionStatus.ARCHIVED) &&
-              (activeQuestion.type === 'MULTIPLE_CHOICE' || activeQuestion.type === 'YES_NO') && (
-              <div className="mt-3 pt-3 border-t border-hairline">
-                <p className="text-xs text-muted font-medium mb-2">Correct answer</p>
-                <div className="flex flex-wrap gap-2">
-                  {(activeQuestion.type === 'YES_NO' ? ['Yes', 'No'] : (activeQuestion.options ?? [])).map((opt) => {
-                    const isCorrect = activeQuestion.correctAnswer === opt
-                    return (
-                      <button
-                        key={opt}
-                        onClick={() => setCorrectAnswerMutation.mutate({
-                          questionId: activeQuestion.id,
-                          correctAnswer: isCorrect ? null : opt,
-                        })}
-                        disabled={setCorrectAnswerMutation.isPending}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-sm border transition-colors ${
-                          isCorrect
-                            ? 'bg-good-soft border-good/30 text-good font-medium'
-                            : 'bg-surface border-hairline text-ink-2 hover:border-good/30 hover:text-good'
-                        }`}
-                      >
-                        {isCorrect && <Check size={12} />} {opt}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Correct answer / tolerance — NUMERIC, all statuses */}
-            {activeQuestion.type === 'NUMERIC' && (
-              <div className="mt-3 pt-3 border-t border-hairline">
-                <p className="text-xs text-muted font-medium mb-1.5">Correct answer <span className="font-normal">(used for automatic scoring)</span></p>
-                <div className="flex gap-2 flex-wrap">
-                  <input
-                    value={numericDraftAnswer[activeQuestion.id] ?? activeQuestion.correctAnswer ?? ''}
-                    onChange={(e) => setNumericDraftAnswer((d) => ({ ...d, [activeQuestion.id]: e.target.value }))}
-                    onBlur={() => {
-                      const val = (numericDraftAnswer[activeQuestion.id] ?? activeQuestion.correctAnswer ?? '').trim()
-                      if (val === (activeQuestion.correctAnswer ?? '')) return
-                      setCorrectAnswerMutation.mutate({ questionId: activeQuestion.id, correctAnswer: val || null })
-                    }}
-                    placeholder="Correct value"
-                    className="w-36 border border-hairline rounded-sm px-3 py-1.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
-                  />
-                  <input
-                    value={numericDraftTolerance[activeQuestion.id] ?? (activeQuestion.tolerance != null ? String(activeQuestion.tolerance) : '')}
-                    onChange={(e) => setNumericDraftTolerance((d) => ({ ...d, [activeQuestion.id]: e.target.value }))}
-                    onBlur={() => {
-                      const raw = (numericDraftTolerance[activeQuestion.id] ?? (activeQuestion.tolerance != null ? String(activeQuestion.tolerance) : '')).trim()
-                      const newTol = raw ? parseFloat(raw) : null
-                      if (newTol === activeQuestion.tolerance) return
-                      setCorrectAnswerMutation.mutate({ questionId: activeQuestion.id, tolerance: newTol })
-                    }}
-                    placeholder="± tolerance"
-                    className="w-28 border border-hairline rounded-sm px-3 py-1.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
-                  />
-                  <input
-                    value={numericDraftUnit[activeQuestion.id] ?? activeQuestion.unit ?? ''}
-                    onChange={(e) => setNumericDraftUnit((d) => ({ ...d, [activeQuestion.id]: e.target.value }))}
-                    onBlur={() => {
-                      const val = (numericDraftUnit[activeQuestion.id] ?? activeQuestion.unit ?? '').trim()
-                      if (val === (activeQuestion.unit ?? '')) return
-                      setCorrectAnswerMutation.mutate({ questionId: activeQuestion.id, unit: val || null })
-                    }}
-                    placeholder="Unit (optional)"
-                    className="w-32 border border-hairline rounded-sm px-3 py-1.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
-                  />
-                </div>
-              </div>
-            )}
+            {/* The answer key for whatever type this question is: one component, one
+                place, and the gate the backend actually applies rather than a stricter
+                invented one. */}
+            <AnswerKey
+              key={activeQuestion.id}
+              sessionId={sessionId!}
+              question={activeQuestion}
+              isLive={isLive}
+              effortOn={activeQuestion.effortGrading ?? data.class.effortGradingDefault}
+            />
           </div>
 
           {/* Responses summary chart */}
@@ -1288,26 +1168,10 @@ export default function SessionPage() {
                   </div>
                 )}
                 {question.type === 'NUMERIC' && (
-                  <div className="flex gap-2 flex-wrap">
-                    <input
-                      value={eqCorrectAnswer}
-                      onChange={(e) => setEqCorrectAnswer(e.target.value)}
-                      placeholder="Correct answer (optional)"
-                      className="flex-1 min-w-0 border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
-                    />
-                    <input
-                      value={eqTolerance}
-                      onChange={(e) => setEqTolerance(e.target.value)}
-                      placeholder="± tolerance"
-                      className="w-28 border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
-                    />
-                    <input
-                      value={eqUnit}
-                      onChange={(e) => setEqUnit(e.target.value)}
-                      placeholder="Unit (optional)"
-                      className="w-32 border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
-                    />
-                  </div>
+                  <p className="text-xs text-muted leading-snug">
+                    The answer, tolerance and unit are set from the answer key on the page
+                    behind this dialog, so there is only one place to look for them.
+                  </p>
                 )}
                 {eqError && <p className="text-red-500 text-xs">{eqError}</p>}
                 <div className="flex justify-end gap-3 pt-1">

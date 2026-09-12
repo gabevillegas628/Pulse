@@ -39,7 +39,7 @@ Students enter arbitrary text.
 Students pick one option from a predefined list.
 
 - **`options`** — `string[]` JSON array, the list of choices (≥2 required)
-- **`correctAnswer`** — must be one of the `options` values; can only be set once the session is CLOSED
+- **`correctAnswer`** — must be one of the `options` values; cannot be changed while a run is open (see the gate note at the end)
 - **`tolerance` / `unit`** — unused
 - **Grading** — exact string match: 1.0 if correct, 0.5 if answered but wrong, 0.0 if no response. If `correctAnswer` is null, full credit awarded to all responses.
 - **Student input** — radio button list
@@ -50,7 +50,7 @@ Students pick one option from a predefined list.
 Binary choice.
 
 - **`options`** — unused (choices are hardcoded `["Yes", "No"]`)
-- **`correctAnswer`** — must be `"Yes"` or `"No"`; can only be set once CLOSED
+- **`correctAnswer`** — must be `"Yes"` or `"No"`; cannot be changed while a run is open (see the gate note at the end)
 - **`tolerance` / `unit`** — unused
 - **Grading** — same logic as MULTIPLE_CHOICE (exact match → 1.0, wrong → 0.5, missing → 0.0)
 - **Student input** — two styled radio buttons
@@ -81,6 +81,23 @@ Students enter a number. Graded against a professor-set answer ± tolerance.
 
 ---
 
+## When the answer key can be changed
+
+`PATCH /sessions/:id/questions/:qid` refuses a `correctAnswer` change **while a run is
+open**, except for `NUMERIC`, `ORDERING` and `STRUCTURE`, which are exempt because their
+key is authoring metadata rather than something the room is racing to guess
+(`bypassClosedCheck` in `questions.routes.ts`).
+
+Note this is *not* "only once CLOSED" — an earlier version of this document said so, and it
+misled a UI that hid the key until a run had happened. Before any run exists, every type
+can be keyed freely, which is when you would normally do it. `FREE_TEXT` is **not** exempt,
+and its rubric hint is stored in `correctAnswer`, so that field is read-only mid-run too.
+
+Changing `options` nulls a `correctAnswer` that no longer matches them, so a key never
+outlives the choices it referred to.
+
+---
+
 ## Grading Score Values
 
 Scores are stored as `Float` on `Response.aiScore` (for FREE_TEXT) or computed at read time for the other types. The `calcScore()` function in both `sessions.routes.ts` and `responses.routes.ts` implements this logic.
@@ -100,7 +117,7 @@ Scores are stored as `Float` on `Response.aiScore` (for FREE_TEXT) or computed a
 Students check all options that apply (zero or more).
 
 - **`options`** — `string[]` JSON array, the list of choices (≥2 required)
-- **`correctAnswer`** — JSON string of a `string[]` subset of options, e.g. `'["Option A","Option C"]'`; can only be set once the session is CLOSED
+- **`correctAnswer`** — JSON string of a `string[]` subset of options, e.g. `'["Option A","Option C"]'`; cannot be changed while a run is open (see the gate note at the end)
 - **`tolerance` / `unit`** — unused
 - **Grading** — exact set match (order-independent): 1.0 if correct set, 0.5 if answered but wrong set, 0.0 if no response or empty selection. If `correctAnswer` is null, full credit.
 - **Student input** — checkbox list
@@ -124,10 +141,12 @@ Students drag items into the correct sequence.
 Students draw a chemical structure using the JSME molecule editor. Stored as a SMILES string.
 
 - **`options`** — unused
-- **`correctAnswer`** — unused; no automated equivalence checking
+- **`correctAnswer`** — an InChI string. Both the key and the submitted structure are run
+  through `toInchi()` (Indigo) and compared, so equivalence checking *is* implemented at the
+  InChI level. No UI sets it, though, so in practice structure questions are manual-graded.
 - **`tolerance` / `unit`** — unused
-- **Grading** — manual override only (same pattern as FREE_TEXT): default 1.0, professor clicks score badge to set 0.5 or 0.0. Submitted structures are rendered back to the professor via `smiles-drawer` in the response list.
-- **`correctAnswer` restriction** — N/A
+- **Grading** — 1.0 on an InChI match, 0.5 for a wrong structure, 1.0 for everyone if no key is set; a manual `aiScore` override wins over all of it, which is how these are graded in practice. Submitted structures are rendered back to the professor via `smiles-drawer` in the response list.
+- **`correctAnswer` restriction** — exempt from the open-run gate, like NUMERIC and ORDERING
 - **Student input** — JSME editor (`@loschmidt/jsme-react`); `disabled` after submission shows the drawn structure read-only. SMILES string stored in `responseText`.
 - **Implementation note** — JSME loads its JS from CDN on first render (lazy-loaded in React via `Suspense`). Structural equivalence checking is not implemented — requires a cheminformatics backend (RDKit/Indigo) and is out of scope.
 
