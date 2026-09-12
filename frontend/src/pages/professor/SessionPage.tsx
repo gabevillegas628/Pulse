@@ -592,7 +592,7 @@ export default function SessionPage() {
                 place, and the gate the backend actually applies rather than a stricter
                 invented one. */}
             <AnswerKey
-              key={activeQuestion.id}
+              key={`answer-key-${activeQuestion.id}`}
               sessionId={sessionId!}
               question={activeQuestion}
               isLive={isLive}
@@ -607,10 +607,17 @@ export default function SessionPage() {
               the projector falls back to it when themes fail. */}
           {activeQuestion.type !== 'FREE_TEXT' && <ResultsSummary question={activeQuestion} />}
 
-          {/* Aggregate views first, then the bar that acts on the list below it. */}
+          {/* Aggregate views first, then the bar that acts on the list below it.
+
+              The keys on these components are namespaced rather than bare question ids.
+              They are keyed so their local state resets when the question changes, but a
+              key only has to be unique among *siblings* — and ThemesPanel and ResponseTable
+              are siblings, so two bare ids collided. React matched a new key to the first
+              occurrence and never deleted the second fiber, leaving a panel behind on every
+              question change until the page was full of them. */}
           {activeQuestion.type === 'FREE_TEXT' && activeQuestion.responses.length > 0 && (
             <ThemesPanel
-              key={activeQuestion.id}
+              key={`themes-${activeQuestion.id}`}
               themes={themesForQuestion}
               isSummarizing={summarizeMutation.isPending}
               isError={summarizeMutation.isError}
@@ -670,7 +677,7 @@ export default function SessionPage() {
             <Empty message="No responses yet" />
           ) : (
             <ResponseTable
-              key={activeQuestion.id}
+              key={`responses-${activeQuestion.id}`}
               question={activeQuestion}
               gradeReasons={gradeReasons}
               filter={activeFilter}

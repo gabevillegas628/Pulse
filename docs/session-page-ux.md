@@ -945,6 +945,39 @@ the eight types as interchangeable will be wrong in the same way.
 58 lines, still a card stack that cycles scores on click with the exact-match label bug
 `ScoreBadge` fixed. Sharing this table would close the largest remaining piece of UX-21.
 
+### Bug: duplicate sibling keys stacked the theme panels, 2026-09-12
+
+Introduced by slice 8 and caught by the author immediately. Navigating between two
+free-text questions added a theme panel each time instead of replacing it — fourteen of
+them by the time the page was printed, alternating in navigation order.
+
+Three components are mounted with a key derived from the question id — `AnswerKey`,
+`ThemesPanel` and `ResponseTable` — so their local state (draft inputs, collapse, sort,
+search) resets when the question changes. Two of those are siblings in the same container,
+and both used the bare id.
+
+**A key only has to be unique among siblings, and a duplicate is not merely untidy:** React
+matches the new key to the first occurrence and never deletes the second fiber, so one is
+left behind on every change. The warning says the consequence outright — components "may be
+duplicated and/or omitted".
+
+`ThemesPanel`'s key was unique until slice 8 added `ResponseTable` with the identical one,
+which is why the symptom appeared exactly then.
+
+Fixed by namespacing — `answer-key-`, `themes-`, `responses-` — which keeps the remount and
+removes the collision. The reasoning sits at the render site as well as here, because the
+next person keying a component in that container will reach for the bare id too.
+
+**The process failure is worth more than the fix.** The browser console had said exactly what
+was wrong from the first report. Instead of asking for it, I read the same source file four
+times and offered two confident wrong diagnoses — stale HMR, then a stale dev server — both
+blaming the environment for a bug I had written two commits earlier. The author's first
+instinct, "we've now gone and broken something", was right.
+
+**Ask for the console before theorising about a UI bug.** A React warning names the
+component, the container and the failure mode; no amount of re-reading the source produces
+that.
+
 ### Still open
 
 *Space for changes and corrections to the findings above.*
