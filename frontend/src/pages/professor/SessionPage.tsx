@@ -7,22 +7,24 @@ import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
 import Empty from '@/components/ui/Empty'
-import { Check, ChevronLeft, Copy, Download, Flag, Pencil, PictureInPicture2, Plus, Trash2, X } from 'lucide-react'
+import { Archive, Check, ChevronLeft, Copy, Download, Flag, MoreHorizontal, Pencil, PictureInPicture2, Plus, Trash2, X } from 'lucide-react'
 import { io } from 'socket.io-client'
 import type { SessionDetail, QuestionWithResponses, ResponseWithStudent, ThemeSet } from 'shared'
 import { SessionStatus } from 'shared'
 import ResultsSummary from '@/components/ResultsSummary'
 import LiveMonitorPanel from '@/components/LiveMonitorPanel'
 import { apiError } from '@/lib/errors'
-import QuestionImageField from '@/components/QuestionImageField'
 import QuestionSettings from '@/components/session/QuestionSettings'
 import AnswerKey from '@/components/session/AnswerKey'
 import GradingToolbar, { type ResponseFilter } from '@/components/session/GradingToolbar'
 import ScoreBadge from '@/components/session/ScoreBadge'
 import ThemesPanel from '@/components/session/ThemesPanel'
-import { deleteUpload } from '@/lib/uploadImage'
+import QuestionDialog from '@/components/session/QuestionDialog'
+import ConfirmDialog, { type DialogRequest } from '@/components/ui/ConfirmDialog'
+import Popover from '@/components/ui/Popover'
 import { downloadCsv } from '@/lib/downloadCsv'
 import { calcResponseScore } from '@/lib/scoring'
+import { questionTypeLabel } from '@/lib/questionTypes'
 import { copyQrCardToClipboard } from 'shared'
 
 type PipWindow = Window & { documentPictureInPicture?: { requestWindow: (opts: { width: number; height: number }) => Promise<Window> } }
@@ -38,47 +40,11 @@ export default function SessionPage() {
   const [copiedQrId, setCopiedQrId] = useState<string | null>(null)
   const [showSectionModal, setShowSectionModal] = useState(false)
 
-  const [showAddQuestion, setShowAddQuestion] = useState(false)
-  const [aqTitle, setAqTitle] = useState('')
-  const [aqText, setAqText] = useState('')
-  const [aqType, setAqType] = useState<'FREE_TEXT' | 'MULTIPLE_CHOICE' | 'RATING' | 'YES_NO' | 'NUMERIC' | 'MULTI_SELECT' | 'ORDERING' | 'STRUCTURE'>('FREE_TEXT')
-  const [aqOptions, setAqOptions] = useState('')
-  const [aqImageUrl, setAqImageUrl] = useState<string | null>(null)
-  const [aqNumericAnswer, setAqNumericAnswer] = useState('')
-  const [aqTolerance, setAqTolerance] = useState('')
-  const [aqUnit, setAqUnit] = useState('')
-  const [aqError, setAqError] = useState('')
+  /** A confirm or a notice, whichever the last action asked for. */
+  const [ask, setAsk] = useState<DialogRequest | null>(null)
 
-  const [showEditQuestion, setShowEditQuestion] = useState(false)
-  const [eqId, setEqId] = useState<string | null>(null)
-  const [eqTitle, setEqTitle] = useState('')
-  const [eqText, setEqText] = useState('')
-  const [eqOptions, setEqOptions] = useState<string[]>([])
-  const [eqImageUrl, setEqImageUrl] = useState<string | null>(null)
-  const [eqError, setEqError] = useState('')
-
-  /**
-   * Abandon the new question, and the image it never got attached to.
-   *
-   * The upload happens the moment the professor picks a file, so backing out of the
-   * dialog is the one path that can leave a file with nothing pointing at it.
-   */
-  function closeAddQuestion() {
-    if (aqImageUrl) deleteUpload(aqImageUrl)
-    setShowAddQuestion(false)
-    setAqImageUrl(null)
-    setAqError('')
-  }
-
-  function openEditQuestion(q: QuestionWithResponses) {
-    setEqId(q.id)
-    setEqTitle(q.title ?? '')
-    setEqText(q.text)
-    setEqOptions((q.options as string[] | null) ?? [])
-    setEqImageUrl(q.imageUrl ?? null)
-    setEqError('')
-    setShowEditQuestion(true)
-  }
+  /** The question dialog: absent, adding, or editing a particular question. */
+  const [dialog, setDialog] = useState<{ mode: 'add' } | { mode: 'edit'; question: QuestionWithResponses } | null>(null)
 
   const deleteQuestionMutation = useMutation({
     mutationFn: (questionId: string) => api.delete(`/sessions/${sessionId}/questions/${questionId}`),
@@ -91,63 +57,8 @@ export default function SessionPage() {
       setActiveTab((t) => Math.max(0, t - 1))
     },
     onError: (e: unknown) => {
-      alert(apiError(e, 'Failed to delete question'))
+      setAsk({ title: 'Could not delete that question', body: apiError(e, 'Failed to delete question') })
     },
-  })
-
-  const addQuestionMutation = useMutation({
-    mutationFn: () => api.post(`/sessions/${sessionId}/questions`, {
-      title: aqTitle.trim() || undefined,
-      text: aqText,
-      type: aqType,
-      options: ['MULTIPLE_CHOICE', 'MULTI_SELECT', 'ORDERING'].includes(aqType)
-        ? aqOptions.split('\n').map(s => s.trim()).filter(Boolean) : undefined,
-      correctAnswer: aqType === 'NUMERIC' && aqNumericAnswer ? aqNumericAnswer : undefined,
-      tolerance: aqType === 'NUMERIC' && aqTolerance ? parseFloat(aqTolerance) : undefined,
-      unit: aqType === 'NUMERIC' && aqUnit ? aqUnit : undefined,
-      imageUrl: aqImageUrl ?? undefined,
-    }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['session', sessionId] })
-      setShowAddQuestion(false)
-      setAqTitle(''); setAqText(''); setAqType('FREE_TEXT'); setAqOptions('')
-      setAqNumericAnswer(''); setAqTolerance(''); setAqUnit(''); setAqError('')
-      setAqImageUrl(null)
-    },
-    onError: (e: unknown) => {
-      setAqError(apiError(e, 'Failed to add question'))
-    },
-  })
-
-  const editQuestionMutation = useMutation({
-    mutationFn: () => {
-      if (!eqId) throw new Error('No question selected')
-      const question = data?.questions.find(q => q.id === eqId)
-      if (!question) throw new Error('Question not found')
-
-      const payload: Record<string, unknown> = {}
-      const newTitle = eqTitle.trim() || null
-      if (newTitle !== (question.title ?? null)) payload.title = newTitle
-      if (eqText.trim() !== question.text) payload.text = eqText.trim()
-
-      if (eqImageUrl !== (question.imageUrl ?? null)) payload.imageUrl = eqImageUrl
-
-      const hasOptions = ['MULTIPLE_CHOICE', 'MULTI_SELECT', 'ORDERING'].includes(question.type)
-      if (hasOptions) {
-        const originalOpts = (question.options as string[] | null) ?? []
-        const changed = eqOptions.length !== originalOpts.length || eqOptions.some((o, i) => o !== originalOpts[i])
-        if (changed) payload.options = eqOptions.filter(o => o.trim()).map(o => o.trim())
-      }
-
-      return api.patch(`/sessions/${sessionId}/questions/${eqId}`, payload)
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['session', sessionId] })
-      setShowEditQuestion(false)
-      setEqId(null); setEqTitle(''); setEqText(''); setEqOptions([]); setEqError('')
-      setEqImageUrl(null)
-    },
-    onError: (e: unknown) => setEqError(apiError(e, 'Failed to save question')),
   })
 
   const [pipActiveTab, setPipActiveTab] = useState<number | null>(null)
@@ -261,15 +172,6 @@ export default function SessionPage() {
     if (title) return title
     return q.text.length > 60 ? q.text.slice(0, 60).trimEnd() + '…' : q.text
   }
-
-  function questionTypeLabel(type: string): string {
-    const labels: Record<string, string> = {
-      FREE_TEXT: 'Free text', MULTIPLE_CHOICE: 'Multiple choice', MULTI_SELECT: 'Multi-select',
-      ORDERING: 'Ordering', NUMERIC: 'Numeric', RATING: 'Rating', YES_NO: 'Yes / No', STRUCTURE: 'Structure',
-    }
-    return labels[type] ?? type
-  }
-
 
   // Archive-only status mutation (PATCH /sessions/:id { status: 'ARCHIVED' })
   const statusMutation = useMutation({
@@ -398,7 +300,12 @@ export default function SessionPage() {
   async function openPip() {
     const pipApi = (window as PipWindow).documentPictureInPicture
     if (!pipApi) {
-      alert('Picture-in-Picture requires Chrome or Edge. Firefox is not supported yet.')
+      // Names the capability rather than a browser list, which goes stale as support
+      // lands. The check above is a feature test, so support arriving needs no edit here.
+      setAsk({
+        title: 'This browser cannot pop out results',
+        body: 'Popping out needs Document Picture-in-Picture, which this browser does not support. Results still appear on this page and in the PowerPoint add-in.',
+      })
       return
     }
     try {
@@ -459,7 +366,12 @@ export default function SessionPage() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-ink">{data.title}</h1>
-            <p className="text-sm text-muted mt-1 font-mono">{totalResponses} response{totalResponses !== 1 ? 's' : ''}</p>
+            {/* The roster size was fetched for the PiP panel and never shown here, so the
+                page could tell you 34 answers without the 42 that makes it a number. */}
+            <p className="text-sm text-muted mt-1 font-mono">
+              {totalResponses} response{totalResponses !== 1 ? 's' : ''}
+              {(data.enrolledCount ?? 0) > 0 && <> · {data.enrolledCount} enrolled</>}
+            </p>
             {openRun?.section && (
               <div className="flex items-center gap-2 mt-2">
                 <span className="text-xs text-muted">Live for:</span>
@@ -468,6 +380,10 @@ export default function SessionPage() {
             )}
           </div>
 
+          {/* Pop out and the session's own state are the two that matter: one is the only
+              live view that does not need PowerPoint, the other is the only place in the
+              app a run can be opened or closed. Export and Archive are occasional, and
+              Archive is one-way — it does not belong beside Reopen. */}
           <div className="flex items-center gap-2 shrink-0">
             <Button
               variant="ghost"
@@ -477,12 +393,7 @@ export default function SessionPage() {
             >
               <PictureInPicture2 size={14} /> {pipContainer ? 'Live' : 'Pop out'}
             </Button>
-            <button
-              onClick={() => downloadCsv(`/sessions/${sessionId}/export`, `session-${sessionId}.csv`)}
-              className="inline-flex items-center gap-1.5 bg-surface border border-hairline-strong text-ink-2 rounded-sm px-4 py-2 text-sm font-bold hover:bg-surface-2 transition-colors"
-            >
-              <Download size={14} /> Export CSV
-            </button>
+
             {data.status === SessionStatus.ARCHIVED ? (
               <span className="text-xs text-muted border border-hairline px-3 py-2 rounded-sm">Archived</span>
             ) : isLive ? (
@@ -493,29 +404,6 @@ export default function SessionPage() {
               >
                 Close session
               </button>
-            ) : hasBeenRun ? (
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    if (sectionsData && sectionsData.length > 1) {
-                      setShowSectionModal(true)
-                    } else {
-                      openRunMutation.mutate(null)
-                    }
-                  }}
-                  disabled={openRunMutation.isPending}
-                  className="bg-good-soft text-good border border-good/20 px-4 py-2 rounded-sm text-sm font-bold hover:opacity-80 disabled:opacity-50 transition-colors"
-                >
-                  Reopen
-                </button>
-                <button
-                  onClick={() => statusMutation.mutate(SessionStatus.ARCHIVED)}
-                  disabled={statusMutation.isPending}
-                  className="text-muted border border-hairline px-4 py-2 rounded-sm text-sm hover:bg-surface-2 disabled:opacity-50 transition-colors"
-                >
-                  Archive
-                </button>
-              </div>
             ) : (
               <Button
                 variant="primary"
@@ -528,9 +416,44 @@ export default function SessionPage() {
                 }}
                 disabled={openRunMutation.isPending}
               >
-                Open session
+                {hasBeenRun ? 'Reopen' : 'Open session'}
               </Button>
             )}
+
+            <Popover
+              label="More session actions"
+              chevron={false}
+              trigger={<MoreHorizontal size={16} />}
+              className="w-52 p-1.5"
+            >
+              {(close) => (
+                <>
+                  <button
+                    onClick={() => {
+                      downloadCsv(`/sessions/${sessionId}/export`, `session-${sessionId}.csv`)
+                      close()
+                    }}
+                    className="w-full flex items-center gap-2 text-left text-sm text-ink-2 hover:bg-surface-2 rounded-sm px-2.5 py-2 transition-colors"
+                  >
+                    <Download size={14} className="text-muted" /> Export CSV
+                  </button>
+                  {!isLive && hasBeenRun && data.status !== SessionStatus.ARCHIVED && (
+                    <button
+                      onClick={() => setAsk({
+                        title: 'Archive this session?',
+                        body: 'It moves out of the active list. Responses and grades are kept, and it can still be reopened.',
+                        confirmLabel: 'Archive',
+                        onConfirm: () => statusMutation.mutate(SessionStatus.ARCHIVED),
+                      })}
+                      disabled={statusMutation.isPending}
+                      className="w-full flex items-center gap-2 text-left text-sm text-ink-2 hover:bg-surface-2 rounded-sm px-2.5 py-2 transition-colors disabled:opacity-50"
+                    >
+                      <Archive size={14} className="text-muted" /> Archive session
+                    </button>
+                  )}
+                </>
+              )}
+            </Popover>
           </div>
         </div>
       </div>
@@ -599,11 +522,17 @@ export default function SessionPage() {
 
                       {!isLive && data.status !== SessionStatus.ARCHIVED && (
                         <button
-                          onClick={() => {
-                            const toll = n > 0 ? `\n\nIts ${n} response${n !== 1 ? 's' : ''} will be deleted too.` : ''
-                            if (!confirm(`Delete Q${i + 1} — "${questionLabel(q)}"?${toll}\n\nThis cannot be undone.`)) return
-                            deleteQuestionMutation.mutate(q.id)
-                          }}
+                          onClick={() => setAsk({
+                            title: `Delete Q${i + 1}?`,
+                            body: [
+                              questionLabel(q),
+                              n > 0 ? `Its ${n} response${n !== 1 ? 's' : ''} will be deleted too.` : null,
+                              'This cannot be undone.',
+                            ].filter(Boolean).join('\n\n'),
+                            confirmLabel: 'Delete',
+                            destructive: true,
+                            onConfirm: () => deleteQuestionMutation.mutate(q.id),
+                          })}
                           disabled={deleteQuestionMutation.isPending}
                           className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity absolute top-2 right-2 w-5 h-5 flex items-center justify-center text-hairline-strong hover:text-red-500 rounded-sm disabled:opacity-30"
                           title="Delete question"
@@ -619,7 +548,7 @@ export default function SessionPage() {
 
             <div className="border-t border-hairline p-2">
               <button
-                onClick={() => { setAqError(''); setShowAddQuestion(true) }}
+                onClick={() => setDialog({ mode: 'add' })}
                 disabled={isLive}
                 title={isLive ? 'Close the session to add questions' : 'Add a new question'}
                 className="w-full flex items-center justify-center gap-1.5 text-xs font-medium text-signal hover:bg-signal-soft disabled:text-muted disabled:hover:bg-transparent disabled:cursor-not-allowed px-2 py-2 rounded-sm transition-colors"
@@ -665,7 +594,7 @@ export default function SessionPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => openEditQuestion(activeQuestion)}
+                      onClick={() => setDialog({ mode: 'edit', question: activeQuestion })}
                       title="Edit question"
                     >
                       <Pencil size={12} /> Edit
@@ -786,18 +715,31 @@ export default function SessionPage() {
             isGradePending={gradeMutation.isPending}
             canGradeWithAi={hasBeenRun || data.status === SessionStatus.ARCHIVED}
             onGrade={(mode) => {
-              if (mode === 'all') {
-                const alreadyGraded = activeQuestion.responses.filter((r) => r.aiScore !== null).length
-                if (alreadyGraded > 0 && !window.confirm(
-                  `${alreadyGraded} response${alreadyGraded !== 1 ? 's' : ''} already have AI scores (including any manual edits). Re-grading will overwrite them. Continue?`
-                )) return
+              const alreadyGraded = activeQuestion.responses.filter((r) => r.aiScore !== null).length
+              if (mode === 'all' && alreadyGraded > 0) {
+                setAsk({
+                  title: 'Re-grade everything?',
+                  body: `${alreadyGraded} response${alreadyGraded !== 1 ? 's' : ''} already ${alreadyGraded !== 1 ? 'have' : 'has'} a score, including any you set by hand. Re-grading overwrites all of them.`,
+                  confirmLabel: 'Re-grade',
+                  destructive: true,
+                  onConfirm: () => gradeMutation.mutate({ questionId: activeQuestion.id, mode }),
+                })
+                return
               }
               gradeMutation.mutate({ questionId: activeQuestion.id, mode })
             }}
             onFullCredit={() => {
-              const alreadyFull = activeQuestion.responses.every((r) => r.aiScore === 1.0)
-              if (alreadyFull || window.confirm(`Give all ${activeQuestion.responses.length} responses full credit?`))
+              // Already unanimous: nothing changes, so nothing to warn about.
+              if (activeQuestion.responses.every((r) => r.aiScore === 1.0)) {
                 fullCreditMutation.mutate(activeQuestion.id)
+                return
+              }
+              setAsk({
+                title: 'Give everyone full credit?',
+                body: `All ${activeQuestion.responses.length} responses on this question get 1.0, replacing any score already set.`,
+                confirmLabel: 'Give full credit',
+                onConfirm: () => fullCreditMutation.mutate(activeQuestion.id),
+              })
             }}
             isFullCreditPending={fullCreditMutation.isPending}
             filter={activeFilter}
@@ -882,168 +824,15 @@ export default function SessionPage() {
         </div>
       </div>
 
-      {/* Add question modal */}
-      {showAddQuestion && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-          <Card flat className="w-full max-w-md p-6 shadow-pop">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-base font-semibold text-ink">Add question</h2>
-              <button onClick={closeAddQuestion} className="text-muted hover:text-ink-2 transition-colors"><X size={18} /></button>
-            </div>
-            <div className="space-y-4">
-              <input
-                autoFocus
-                value={aqTitle}
-                onChange={(e) => setAqTitle(e.target.value)}
-                placeholder="Short title (optional) — shown in the sidebar"
-                maxLength={120}
-                className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
-              />
-              <input
-                value={aqText}
-                onChange={(e) => setAqText(e.target.value)}
-                placeholder="Question text…"
-                className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
-              />
-              <QuestionImageField value={aqImageUrl} onChange={setAqImageUrl} cleanupOnReplace />
-              <select
-                value={aqType}
-                onChange={(e) => setAqType(e.target.value as typeof aqType)}
-                className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
-              >
-                <option value="FREE_TEXT">Free text</option>
-                <option value="MULTIPLE_CHOICE">Multiple choice</option>
-                <option value="MULTI_SELECT">Multi-select</option>
-                <option value="ORDERING">Ordering</option>
-                <option value="NUMERIC">Numeric</option>
-                <option value="STRUCTURE">Structure drawing</option>
-                <option value="RATING">Rating (1–5)</option>
-                <option value="YES_NO">Yes / No</option>
-              </select>
-              {(aqType === 'MULTIPLE_CHOICE' || aqType === 'MULTI_SELECT') && (
-                <textarea
-                  rows={3}
-                  value={aqOptions}
-                  onChange={(e) => setAqOptions(e.target.value)}
-                  placeholder={"Option A\nOption B\nOption C"}
-                  className="w-full border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal resize-none"
-                />
-              )}
-              {aqType === 'ORDERING' && (
-                <textarea
-                  rows={3}
-                  value={aqOptions}
-                  onChange={(e) => setAqOptions(e.target.value)}
-                  placeholder={"Step 1\nStep 2\nStep 3"}
-                  className="w-full border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal resize-none"
-                />
-              )}
-              {aqType === 'NUMERIC' && (
-                <div className="flex gap-2 flex-wrap">
-                  <input value={aqNumericAnswer} onChange={(e) => setAqNumericAnswer(e.target.value)}
-                    placeholder="Correct answer (optional)"
-                    className="flex-1 min-w-0 border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal" />
-                  <input value={aqTolerance} onChange={(e) => setAqTolerance(e.target.value)}
-                    placeholder="± tolerance"
-                    className="w-28 border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal" />
-                  <input value={aqUnit} onChange={(e) => setAqUnit(e.target.value)}
-                    placeholder="Unit (optional)"
-                    className="w-32 border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal" />
-                </div>
-              )}
-              {aqError && <p className="text-red-500 text-xs">{aqError}</p>}
-              <div className="flex justify-end gap-3 pt-1">
-                <button onClick={closeAddQuestion} className="px-4 py-2 text-sm text-muted hover:text-ink transition-colors">Cancel</button>
-                <Button
-                  variant="primary"
-                  onClick={() => addQuestionMutation.mutate()}
-                  disabled={!aqText.trim() || addQuestionMutation.isPending}
-                >
-                  {addQuestionMutation.isPending ? 'Adding…' : 'Add question'}
-                </Button>
-              </div>
-            </div>
-          </Card>
-        </div>
-      )}
+      <ConfirmDialog request={ask} onClose={() => setAsk(null)} />
 
-      {/* Edit question modal */}
-      {showEditQuestion && eqId && (() => {
-        const question = data.questions.find(q => q.id === eqId)
-        if (!question) return null
-        const hasOptions = ['MULTIPLE_CHOICE', 'MULTI_SELECT', 'ORDERING'].includes(question.type)
-        return (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-            <Card flat className="w-full max-w-md p-6 shadow-pop">
-              <div className="flex items-center justify-between mb-5">
-                <h2 className="text-base font-semibold text-ink">Edit question</h2>
-                <button onClick={() => setShowEditQuestion(false)} className="text-muted hover:text-ink-2 transition-colors"><X size={18} /></button>
-              </div>
-              <div className="space-y-4">
-                <input
-                  autoFocus
-                  value={eqTitle}
-                  onChange={(e) => setEqTitle(e.target.value)}
-                  placeholder="Short title (optional) — shown in the sidebar"
-                  maxLength={120}
-                  className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
-                />
-                <input
-                  value={eqText}
-                  onChange={(e) => setEqText(e.target.value)}
-                  placeholder="Question text…"
-                  className="w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
-                />
-                <QuestionImageField value={eqImageUrl} onChange={setEqImageUrl} />
-                {hasOptions && (
-                  <div className="space-y-2">
-                    <p className="text-xs text-muted font-medium">Options</p>
-                    {eqOptions.map((opt, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <input
-                          value={opt}
-                          onChange={(e) => { const next = [...eqOptions]; next[i] = e.target.value; setEqOptions(next) }}
-                          className="flex-1 border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
-                          placeholder={`Option ${i + 1}`}
-                        />
-                        <button
-                          onClick={() => setEqOptions(eqOptions.filter((_, j) => j !== i))}
-                          className="text-hairline-strong hover:text-red-400 transition-colors"
-                        >
-                          <X size={14} />
-                        </button>
-                      </div>
-                    ))}
-                    <button
-                      onClick={() => setEqOptions([...eqOptions, ''])}
-                      className="flex items-center gap-1 text-xs text-signal hover:text-[var(--signal-bright)] mt-1 transition-colors"
-                    >
-                      <Plus size={12} /> Add option
-                    </button>
-                  </div>
-                )}
-                {question.type === 'NUMERIC' && (
-                  <p className="text-xs text-muted leading-snug">
-                    The answer, tolerance and unit are set from the answer key on the page
-                    behind this dialog, so there is only one place to look for them.
-                  </p>
-                )}
-                {eqError && <p className="text-red-500 text-xs">{eqError}</p>}
-                <div className="flex justify-end gap-3 pt-1">
-                  <button onClick={() => setShowEditQuestion(false)} className="px-4 py-2 text-sm text-muted hover:text-ink transition-colors">Cancel</button>
-                  <Button
-                    variant="primary"
-                    onClick={() => editQuestionMutation.mutate()}
-                    disabled={!eqText.trim() || (hasOptions && eqOptions.filter(o => o.trim()).length < 2) || editQuestionMutation.isPending}
-                  >
-                    {editQuestionMutation.isPending ? 'Saving…' : 'Save changes'}
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          </div>
-        )
-      })()}
+      {dialog && (
+        <QuestionDialog
+          sessionId={sessionId!}
+          question={dialog.mode === 'edit' ? dialog.question : null}
+          onClose={() => setDialog(null)}
+        />
+      )}
 
       {/* PiP portal */}
       {pipContainer && data && pipActiveTab !== null &&

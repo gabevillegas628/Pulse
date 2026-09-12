@@ -6,9 +6,16 @@ import { cn } from '@/lib/utils'
 interface PopoverProps {
   /** Contents of the trigger button — usually a summary of what is inside. */
   trigger: React.ReactNode
-  children: React.ReactNode
+  /**
+   * Panel contents. As a function it receives `close`, which a menu item needs: clicking
+   * inside the panel is not an outside click, so an item that acts and leaves would
+   * otherwise act and stay.
+   */
+  children: React.ReactNode | ((close: () => void) => React.ReactNode)
   /** Accessible name for the trigger. */
   label: string
+  /** A summary trigger earns a chevron; an icon-only menu button does not. */
+  chevron?: boolean
   /** Which edge the panel is pinned to. Use `left` when the trigger sits left of centre. */
   align?: 'left' | 'right'
   triggerClassName?: string
@@ -27,7 +34,7 @@ interface PopoverProps {
  * beside rather than carrying styling of its own.
  */
 export default function Popover({
-  trigger, children, label, align = 'right', triggerClassName, className,
+  trigger, children, label, align = 'right', chevron = true, triggerClassName, className,
 }: PopoverProps) {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -60,10 +67,12 @@ export default function Popover({
         className={cn(open && 'bg-surface-2 text-ink border-signal', triggerClassName)}
       >
         {trigger}
-        <ChevronDown
-          size={12}
-          className={cn('text-muted transition-transform', open && 'rotate-180')}
-        />
+        {chevron && (
+          <ChevronDown
+            size={12}
+            className={cn('text-muted transition-transform', open && 'rotate-180')}
+          />
+        )}
       </Button>
 
       {open && (
@@ -75,7 +84,7 @@ export default function Popover({
             className,
           )}
         >
-          {children}
+          {typeof children === 'function' ? children(() => setOpen(false)) : children}
         </div>
       )}
     </div>

@@ -188,13 +188,15 @@ in the plan, aimed at the least-validated need. Revisit when a second professor 
 when a demo needs a professor-view moment on screen.
 
 ### UX-7 — `enrolledCount` never reaches the main page
-- [ ] **Status** — unblocked, worth doing
+- [x] **Status** — done 2026-09-12
 
 It is fetched and passed only to the PiP panel (`:1453`). `17 / 42 answered` is the number
 that decides whether to move on, and it is absent from the page itself.
 
-**Decision:** Not actually a live feature, so it survives the parking. "34 of 42 answered" is a
-participation fact that reads as well after class as during it, and it is cheap.
+**Decision:** Done — in the page header, beside the response count: "14 responses · 42
+enrolled". Session-level rather than per-question, which is what that header is; the richer
+"17 of 42 answered" for a single question reads as a live-mode figure, and live is parked.
+The sidebar could carry it per question later, which is Zone 6 work.
 
 ### UX-8 — PiP is the only good live view, and it is Chrome/Edge only
 - [-] **Status** — withdrawn 2026-09-12
@@ -207,13 +209,23 @@ be replaced by an inline layout. That has it backwards: PiP is the cross-platfor
 and the one to preserve. Nothing to fix here.
 
 ### UX-9 — The sidebar never shows which questions are closed
-- [ ] **Status**
+- [-] **Status** — parked with Zone 2
 
 `Question.closedAt` exists (`shared/src/index.ts:122`) and auto-close closes questions
 individually. During a run that is arguably the most important per-question state, and it
 is invisible.
 
-**Decision:** TBD
+**Decision (2026-09-12): parked with Zone 2, and the finding was wrong.**
+
+This item claimed `Question.closedAt` exists. It does not — not in `shared`, not in the
+Prisma model. The `closedAt` cited at `shared/src/index.ts:122` belongs to `SessionRun`.
+
+Per-question closure is not stored at all. It lives in `clock.service.ts`, in memory, and
+only `/addin/live` computes and ships it as `closesAt` / `closeWindowMs`. So showing it in
+the sidebar needs `sessions.routes.ts` to consult the clock service — a backend change this
+branch has otherwise not needed — to surface a state that exists only while a run is open.
+
+Which is live mode, and parked. It goes with Zone 2.
 
 ---
 
@@ -397,7 +409,7 @@ Two pieces of page state went with it: `dismissedThemesFor` and `shownThemes`.
 ## Zone 5 — Header actions have no hierarchy
 
 ### UX-17 — One primary action plus an overflow
-- [ ] **Status**
+- [x] **Status** — done 2026-09-12
 
 `:513-575`. *Pop out*, *Export CSV* and the session-state action all carry equal weight,
 and **Archive sits immediately beside Reopen** — a one-way action next to the common one.
@@ -422,7 +434,18 @@ be the opposite of the right call. The overflow holds **Export CSV and Archive o
 `:614` builds `"9 / 14 graded"` / `"not graded"` and then buries it in a `title` tooltip,
 rendering only `"14 responses"` in a colour that has to be decoded.
 
-**Decision:** TBD
+**Decision:** Done, per the author's call on which two are the stars. **Pop out** and the session state
+action (Open / Close / Reopen) are first-class; **Export CSV** and **Archive** moved into a
+`⋯` menu.
+
+Archive leaving that row is the substantive part. It sat directly beside Reopen — a one-way
+action adjacent to the common one — and Reopen is now the state button on its own, which
+also collapses two branches of the old markup into one. Archive additionally picked up a
+confirmation, since it had none.
+
+`Popover` gained two things to serve as a menu: an optional chevron, and children as a
+function receiving `close`, because a click inside the panel is not an outside click and an
+item that acts should also leave.
 
 ### UX-19 — Keyboard navigation between questions
 - [ ] **Status**
@@ -512,36 +535,80 @@ inline controls share one definition rather than copying each other's classes.
 Net −282 lines across the two pages. The assignment-side duplication is untouched.
 
 ### UX-22 — Add and Edit question modals are near-duplicates that diverged
-- [ ] **Status**
+- [x] **Status** — done 2026-09-12
 
 `:1264` and `:1348`. Add uses a newline textarea for options, Edit uses per-option inputs
 with add and remove; Add lets you pick a type, Edit does not. One component with a `mode`
 prop.
 
-**Decision:** TBD
+**Decision:** Done as `components/session/QuestionDialog.tsx`, one component for both modes. The
+divergences that were accidental are gone: options are per-option rows in both (a new
+question starts with two empty ones, so the first is typed rather than clicked for), and the
+add dialog no longer parses newline-separated text.
+
+The two differences that remain are deliberate and now stated in the UI. **Type is fixed
+after creation** — changing it would orphan the options and re-interpret every answer
+already given — so edit shows a chip and says why. **A numeric key is offered at creation
+only**, because until the question exists there is no `AnswerKey` on the page to set it
+from; the edit dialog points at it instead.
+
+**A leak closed on the way past.** The upload happens when a file is picked, so abandoning
+the dialog could strand it. Add handled that; edit did not, so replacing an image and
+cancelling orphaned the new upload. One rule now covers both: on cancel, delete the draft
+image unless it is the one already saved on the question.
 
 ### UX-23 — Native `alert()` / `confirm()` in six places
-- [ ] **Status**
+- [x] **Status** — done 2026-09-12
 
 Delete question, re-grade, full credit, PiP unsupported, delete failure — alongside
 `Card`-based modals everywhere else.
 
-**Decision:** TBD
+**Decision:** Done as `components/ui/ConfirmDialog.tsx`, covering both shapes: a confirm, or a notice with
+one dismiss button where an `alert` used to be. Destructive actions get a red confirm button,
+which `window.confirm` could never express.
+
+**The count in this finding was wrong, in both directions.** It said six; the session page
+had five. But grepping only that file missed a sixth in `ThemesPanel` — a component this
+redesign created two slices earlier — so the Regenerate confirmation was still native. Fixed.
+
+Six remain elsewhere in the frontend, untouched because they are outside this redesign:
+`assignment/GroupPanel`, `assignment/QuestionPanel`, `RichTextEditor`, `AdminPage`, and two
+in `ClassPage`. `ConfirmDialog` makes each a small change now that it exists.
+
+**The Picture-in-Picture notice also stopped lying.** It read "requires Chrome or Edge.
+Firefox is not supported yet", which is no longer true. The check is a feature test, so
+support arriving anywhere already works — only the message went stale. It now names the
+capability and no browsers, so it cannot go stale again.
 
 ### UX-24 — Duplicated feedback
-- [ ] **Status**
+- [x] **Status** — done 2026-09-12
 
 `summarizeMutation.isError` renders twice (`:1143` and `:1148`), and *"Could not change
 that — try again."* appears three times verbatim.
 
-**Decision:** TBD
+**Decision:** Mostly resolved by slices 3 and 4 before it was reached. Of the original two complaints:
+
+- The duplicated `summarizeMutation.isError` block is now one `errorLine` in `ThemesPanel`,
+  rendered from two mutually exclusive branches. It never rendered twice even before — but
+  the literal existed twice, which is what drifts.
+- "Could not change that — try again." is down from three to two, in `QuestionSettings` and
+  `SessionPage`. Left alone deliberately: they are different mutations in different
+  components reporting in different places on screen. A shared constant would couple two
+  unrelated components for the sake of one string.
 
 ### UX-25 — About 25 `useState` calls in one component
-- [ ] **Status**
+- [x] **Status** — done 2026-09-12
 
 Eight for Add-question and eight for Edit-question. UX-22 collapses most of it.
 
-**Decision:** TBD
+**Decision:** Done, mostly as a consequence of UX-22 rather than as its own work. `SessionPage` went from
+29 `useState` mentions to 13, and from 1535 lines to about 870.
+
+The sixteen add/edit slots — `aqTitle`, `aqText`, `aqType`, `aqOptions`, `aqImageUrl`,
+`aqNumericAnswer`, `aqTolerance`, `aqUnit`, `aqError`, `eqId`, `eqTitle`, `eqText`,
+`eqOptions`, `eqImageUrl`, `eqError`, plus the two `show*` booleans — became one
+`dialog` slot. Earlier slices had already taken `rubricDraft`, three numeric drafts,
+`dismissedThemesFor` and `shownThemes`.
 
 ---
 
@@ -579,12 +646,16 @@ extraction followed by one wholesale redesign.
 1. **Settings** — UX-2, UX-3, part of UX-5 and UX-21. ✓ done 2026-09-12
 2. **Answer key** — UX-13, carrying UX-10, UX-11 and UX-12. ✓ done 2026-09-12
 3. **Grading** — UX-14 and UX-15. ✓ done 2026-09-12
-4. **Sweep** — UX-17 (amended), UX-18, UX-22 through UX-25, and whatever of UX-21 is left.
-   UX-16 was pulled forward ahead of this and is done.
+4. **Sweep** — UX-17 (amended), UX-22 through UX-25, UX-7. ✓ done 2026-09-12.
+   UX-16 was pulled forward ahead of it. UX-9 turned out to belong to Zone 2. UX-18 moved
+   into Zone 6 below.
    UX-7 and UX-9 ride along here; neither is a live feature.
-5. **Authoring versus review** — UX-1, redefined. By then each zone is a component, so it
+5. **Zone 6 as one unit** — UX-18, UX-19, UX-20. The author's call: the sidebar is one
+   piece of work, so its label, keyboard navigation and reordering land together rather
+   than one at a time.
+6. **Authoring versus review** — UX-1, redefined. By then each zone is a component, so it
    reduces to choosing which ones render when.
-6. ~~**Live layout**~~ — UX-4, UX-6, UX-8. Parked; see Zone 2. Not a step in this plan
+7. ~~**Live layout**~~ — UX-4, UX-6, UX-8, UX-9. Parked; see Zone 2. Not a step in this plan
    until there is a reason to un-park it.
 
 Nothing in steps 3 to 5 depends on the parked live work, which is why parking it does not
@@ -712,6 +783,21 @@ list before removing a branch from a component that serves more than one surface
 Both filter chips initially used the same `Flag` icon and colour, which made two different
 filters look like one control. `Flag` now stays with Short, matching the per-card "Short"
 pill, and Needs review took `AlertCircle`.
+
+### Slice 6 — the sweep, 2026-09-12
+
+New: `session/QuestionDialog.tsx`, `ui/ConfirmDialog.tsx`, `lib/questionTypes.ts`.
+`SessionPage.tsx` 1138 → about 870 lines, `useState` 29 → 13. Across all six slices the page
+has gone 1535 → ~870.
+
+`lib/questionTypes.ts` exists because the type list was encoded twice and the two had
+drifted: the add dialog's picker said "Structure drawing" and "Rating (1–5)" where the
+header chip said "Structure" and "Rating". One list now, with a terse label for chips and a
+fuller one for the picker.
+
+**Two findings in this pass were wrong when checked**, which is the argument for checking
+before implementing: UX-9 cited a field that does not exist, and UX-23 undercounted its own
+subject while missing an instance in a component this redesign had just written.
 
 ### Still open
 

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, RefreshCw, Sparkles } from 'lucide-react'
 import Card from '@/components/ui/Card'
+import ConfirmDialog, { type DialogRequest } from '@/components/ui/ConfirmDialog'
 import ThemeBars from '@/components/ThemeBars'
 import type { ThemeSet } from 'shared'
 
@@ -34,6 +35,13 @@ interface Props {
  */
 export default function ThemesPanel({ themes, isSummarizing, isError, onSummarize }: Props) {
   const [collapsed, setCollapsed] = useState(false)
+  const [ask, setAsk] = useState<DialogRequest | null>(null)
+
+  // Defined once. The two states below are mutually exclusive, so this never renders
+  // twice — but it was written out twice, which is the kind of thing that drifts.
+  const errorLine = isError
+    ? <p className="text-xs text-red-500 mt-2">Failed to summarize — try again.</p>
+    : null
 
   // Nothing derived for this run yet: the one case where summarizing creates rather
   // than replaces, so it needs no warning.
@@ -48,7 +56,7 @@ export default function ThemesPanel({ themes, isSummarizing, isError, onSummariz
           <Sparkles size={14} />
           {isSummarizing ? 'Summarizing…' : 'Summarize responses'}
         </button>
-        {isError && <p className="text-xs text-red-500 mt-2">Failed to summarize — try again.</p>}
+        {errorLine}
       </div>
     )
   }
@@ -77,12 +85,13 @@ export default function ThemesPanel({ themes, isSummarizing, isError, onSummariz
           control.
         */}
         <button
-          onClick={() => {
-            if (!window.confirm(
-              'Re-derive the themes from scratch? The current labels and counts are replaced — if a projector is showing them, the room will see them change.'
-            )) return
-            onSummarize()
-          }}
+          onClick={() => setAsk({
+            title: 'Re-derive the themes?',
+            body: 'The current labels and counts are replaced. If a projector is showing them, the room will see them change.',
+            confirmLabel: 'Regenerate',
+            destructive: true,
+            onConfirm: onSummarize,
+          })}
           disabled={isSummarizing}
           className="flex items-center gap-1 text-xs text-muted hover:text-signal disabled:opacity-50 transition-colors shrink-0"
           title="Group the answers again from scratch"
@@ -105,7 +114,8 @@ export default function ThemesPanel({ themes, isSummarizing, isError, onSummariz
         </div>
       )}
 
-      {isError && <p className="text-xs text-red-500 mt-3">Failed to summarize — try again.</p>}
+      {errorLine}
+      <ConfirmDialog request={ask} onClose={() => setAsk(null)} />
     </Card>
   )
 }
