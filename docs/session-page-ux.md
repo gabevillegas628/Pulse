@@ -81,7 +81,10 @@ list — the thing actually being watched — below the fold.
 Branch the layout on authoring / live / review instead of gating each widget on
 `hasBeenRun` and `isLive` separately. This is the structural decision the rest hangs off.
 
-**Decision:** TBD
+**Decision (redefined 2026-09-12):** Still wanted, but it is no longer three modes. With
+Zone 2 parked, live is left exactly as it is, so this becomes **authoring versus review**
+with the live path untouched. It was already last in the order, so nothing changes in
+sequence — but the item as originally written no longer describes the work.
 
 ### UX-2 — Collapse the three settings rows into a popover
 - [x] **Status** — done 2026-09-12
@@ -118,12 +121,15 @@ default is later flipped and this question should hold its value. Judged not wor
 control; easy to add back.
 
 ### UX-4 — Move the projection block out of the header
-- [ ] **Status**
+- [-] **Status** — parked with Zone 2
 
 Access code, QR toggle and copy-card (`:706-760`) are noise while authoring and far too
 small during a run at 32px. They belong to live mode — see UX-6.
 
-**Decision:** TBD
+**Decision:** Parked. Reframed once already — with results appearing in PowerPoint, the code and QR are
+used while building slides, which is authoring rather than monitoring. But moving them out
+of the header still changes what is visible during a run, so this is not the
+authoring-only change that reframing implied. It waits for UX-6.
 
 ### UX-5 — "Give them more time" is a live action inside a config block
 - [~] **Status** — partly done 2026-09-12
@@ -138,35 +144,67 @@ live-mode question, so it stays here until UX-6.
 
 ---
 
-## Zone 2 — Live mode barely exists
+## Zone 2 — Live mode, and why it is parked
+
+**Parked 2026-09-12, not decided.** Left exactly as it is, to revisit deliberately later.
+
+The history matters. This page was once *the* place results came in — professors were meant
+to keep it open and watch. Then Document PiP took that job, because it floats over
+PowerPoint on the same screen. Then the PowerPoint add-in took it again, showing results in
+situ on the slide. The author does not look at this page during a run at all any more.
+
+Two facts constrain what can be done about that:
+
+- **This page is the only run controller in the app.** The add-in is read-only on runs —
+  `GET /addin/live` finds an already-open run and there is no endpoint to open or close one.
+  Dashboard's "End" and "Open monitor", and ClassPage's "Open monitor" and "Resume", are all
+  `<Link>`s here. So the live *controls* are load-bearing however little the live *monitor*
+  is used.
+- **PiP is the cross-platform live view and is not going anywhere.** It is the only live
+  path that does not require PowerPoint — Chromium and, per the author, now Firefox, leaving
+  Safari as the holdout. Any plan that demotes or deletes it is wrong.
+
+So the split is between run *control* (load-bearing) and run *monitoring* (superseded
+twice). Nothing here is deleted, and nothing is polished either, until there is a second
+professor to design against or a demo that needs it. Building a live layout for a
+hypothetical user is how this page got its three unused settings rows.
+
+---
+
+## Zone 2 — the live items, parked
 
 With a run open the page looks almost exactly like it does closed.
 
 ### UX-6 — Build a real live layout
-- [ ] **Status**
+- [-] **Status** — parked 2026-09-12
 
 When `isLive`: large access code and QR, an `answered / enrolled` counter, theme bars if
 live themes are on, and two actions — *Give them more time* and *Close session*. Config
 collapses away. `LiveMonitorPanel` is already well factored for exactly this; render it
 inline rather than only through PiP.
 
-**Decision:** TBD
+**Decision:** Parked with the rest of Zone 2, and it is the specific thing not being built. Largest slice
+in the plan, aimed at the least-validated need. Revisit when a second professor exists, or
+when a demo needs a professor-view moment on screen.
 
 ### UX-7 — `enrolledCount` never reaches the main page
-- [ ] **Status**
+- [ ] **Status** — unblocked, worth doing
 
 It is fetched and passed only to the PiP panel (`:1453`). `17 / 42 answered` is the number
 that decides whether to move on, and it is absent from the page itself.
 
-**Decision:** TBD
+**Decision:** Not actually a live feature, so it survives the parking. "34 of 42 answered" is a
+participation fact that reads as well after class as during it, and it is cheap.
 
 ### UX-8 — PiP is the only good live view, and it is Chrome/Edge only
-- [ ] **Status**
+- [-] **Status** — withdrawn 2026-09-12
 
 It needs a deliberate click and fails through `alert()` (`:709`). Once UX-6 exists, PiP
 becomes a bonus rather than the only path to a usable live view.
 
-**Decision:** TBD
+**Decision:** Withdrawn. It was framed as "PiP is the only good live view", implying PiP was a stopgap to
+be replaced by an inline layout. That has it backwards: PiP is the cross-platform live view
+and the one to preserve. Nothing to fix here.
 
 ### UX-9 — The sidebar never shows which questions are closed
 - [ ] **Status**
@@ -313,7 +351,10 @@ slightly off from its neighbours.
 Proposal: one primary button reflecting session state (Open / Close / Reopen), with
 Export CSV, Archive and Pop out behind an overflow menu.
 
-**Decision:** TBD
+**Decision (amended 2026-09-12):** Do it, but **Pop out stays first-class** — the original
+proposal was wrong. It assumed PiP was vestigial; PiP is in fact the only live view that
+does not require PowerPoint, and burying the sole cross-platform live path behind `⋯` would
+be the opposite of the right call. The overflow holds **Export CSV and Archive only**.
 
 ---
 
@@ -408,12 +449,16 @@ extraction followed by one wholesale redesign.
 
 1. **Settings** — UX-2, UX-3, part of UX-5 and UX-21. ✓ done 2026-09-12
 2. **Answer key** — UX-13, carrying UX-10, UX-11 and UX-12. ✓ done 2026-09-12
-3. **Live layout** — UX-6 with UX-4, UX-7 and UX-8, on `LiveMonitorPanel` and the
-   prototype's "the room" card.
-4. **Grading** — UX-14 and UX-15.
-5. **Mode-awareness** — UX-1. Last rather than first: by then each zone is a component, so
-   it reduces to choosing which ones render when.
-6. **Sweep** — UX-17, UX-18, UX-22 through UX-25, and whatever of UX-21 is left.
+3. **Grading** — UX-14 and UX-15.
+4. **Sweep** — UX-17 (amended), UX-18, UX-22 through UX-25, and whatever of UX-21 is left.
+   UX-7 and UX-9 ride along here; neither is a live feature.
+5. **Authoring versus review** — UX-1, redefined. By then each zone is a component, so it
+   reduces to choosing which ones render when.
+6. ~~**Live layout**~~ — UX-4, UX-6, UX-8. Parked; see Zone 2. Not a step in this plan
+   until there is a reason to un-park it.
+
+Nothing in steps 3 to 5 depends on the parked live work, which is why parking it does not
+stall the redesign.
 
 ---
 
@@ -474,6 +519,23 @@ The overlay is portalled to `document.body`, since this field sits several cards
 The lesson worth keeping: `docs/question-types.md` said structure equivalence checking "is
 not implemented — out of scope", and I believed the document over the code twice in one
 slice. Both claims are corrected there now.
+
+### The live question, 2026-09-12
+
+Parked rather than answered — see Zone 2 for the reasoning and the two facts that constrain
+it. The three forks considered were: rip live out entirely, build UX-4/6/7/8, or accept the
+mess. The first turned out not to be available (this page is the only run controller), the
+second is speculative work for a user base of one who does not use it, and the third
+conflates the live ambiguity with the grading-zone mess, which is separable and fork-independent.
+
+**Small thing worth fixing whenever Zone 2 thaws:** `openPip` hardcodes "Picture-in-Picture
+requires Chrome or Edge. Firefox is not supported yet." The code feature-detects
+`window.documentPictureInPicture`, so support arriving anywhere works on its own and only the
+message goes stale. It should name the capability, not a browser list.
+
+**Dead code confirmed:** `components/PipDisplay.tsx` has zero references — superseded by
+`LiveMonitorPanel`. Already on the project backlog; safe to delete independently of any of
+this. `LiveMonitorPanel` itself is live and must stay.
 
 ### Still open
 
