@@ -545,6 +545,31 @@ Eight for Add-question and eight for Edit-question. UX-22 collapses most of it.
 
 ---
 
+## Do not disturb the projector
+
+`pages/present/PresentResultsPage.tsx` is the PowerPoint content add-in that renders live
+results on a slide, and as of 2026-09-12 it is the surface that works best in real lectures.
+Nothing in this redesign should reach it unless that is the intention.
+
+It shares these with `SessionPage`, and they are effectively frozen unless the projector is
+deliberately in scope:
+
+- `ResultsSummary` — including its `FREE_TEXT` branch, which is the fallback when theme
+  derivation fails. Slice 5 nearly deleted that branch; see the note in that slice's log.
+- `ThemeBars` — the `stage` variant is the projector's theme display.
+- `NumericDots`, and `lib/scoring` (`normalizeNumeric`, `parseValueUnit`) through it.
+- `ui/PulseMark`, `ui/LiveDot`, `PresenceGrid`, `AnswersArriving`, `CloseCountdown`.
+
+The remaining sweep items are all `SessionPage`-local and come nowhere near these. The one
+foreseeable collision is migrating `ThemesPanel`'s collapse into a shared
+`CollapsibleSection`, which would touch `ThemeBars` territory — that needs the projector
+checked alongside it.
+
+Verified for slices 1 to 5: none of the 14 files changed on `session-redesign` appears in
+that page's dependency closure, and no backend file was touched at all.
+
+---
+
 ## Order of work
 
 Sliced by zone rather than by phase. Each slice extracts one zone into a component *and*
