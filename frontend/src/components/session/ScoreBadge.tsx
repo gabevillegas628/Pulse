@@ -122,7 +122,12 @@ export default function ScoreBadge({ score, reason, onChange, pending, disabled 
       {open && (
         <div
           className={cn(
-            'absolute right-0 top-full mt-1 z-30 bg-surface border border-hairline rounded-[14px] shadow-pop p-3',
+            // Beside the badge, not beneath it. Opening downwards covered the score
+            // badges of the rows below — in a dense table that is the column you are
+            // working along, so the picker was hiding its own next target. To the right
+            // it lands on the time and answer columns instead, and the score column has
+            // most of the table's width to its right to open into.
+            'absolute left-full top-0 ml-1.5 z-30 bg-surface border border-hairline rounded-[14px] shadow-pop p-3',
             // `white-space` inherits, and this badge sits in a table cell set to
             // `whitespace-nowrap` to keep the badge itself on one line. Without resetting
             // it here the reason below refused to wrap and ran out of the panel. Set on the
