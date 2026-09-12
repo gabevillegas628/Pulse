@@ -17,7 +17,7 @@ import { apiError } from '@/lib/errors'
 import QuestionImageField from '@/components/QuestionImageField'
 import QuestionSettings from '@/components/session/QuestionSettings'
 import AnswerKey from '@/components/session/AnswerKey'
-import GradingToolbar from '@/components/session/GradingToolbar'
+import GradingToolbar, { type ResponseFilter } from '@/components/session/GradingToolbar'
 import ScoreBadge from '@/components/session/ScoreBadge'
 import ThemesPanel from '@/components/session/ThemesPanel'
 import { deleteUpload } from '@/lib/uploadImage'
@@ -190,8 +190,11 @@ export default function SessionPage() {
   })
 
   const [gradeReasons, setGradeReasons] = useState<Record<string, string>>({})
-  /** Question id whose response list is filtered to scores below full credit, or null. */
-  const [reviewOnly, setReviewOnly] = useState<string | null>(null)
+  /**
+   * Which question's response list is narrowed, and how. Keyed by question so moving
+   * between questions clears the filter rather than silently carrying it across.
+   */
+  const [responseFilter, setResponseFilter] = useState<{ questionId: string; mode: Exclude<ResponseFilter, 'all'> } | null>(null)
   const [gradingState, setGradingState] = useState<Record<string, { graded: number; total: number }>>({})
   const [gradeResult, setGradeResult] = useState<Record<string, { failedCount: number }>>({})
 
@@ -437,6 +440,9 @@ export default function SessionPage() {
   // in view. Whether the panel is open is the panel's business, not the page's.
   const themesForQuestion =
     persistedThemes && themesQuestionId === activeQuestion?.id ? persistedThemes : null
+
+  const activeFilter: ResponseFilter =
+    responseFilter && responseFilter.questionId === activeQuestion?.id ? responseFilter.mode : 'all'
 
   // Derive live state from runs
   const openRun = data.runs.find((r) => r.status === SessionStatus.OPEN) ?? null
@@ -750,8 +756,12 @@ export default function SessionPage() {
             />
           </div>
 
-          {/* Responses summary chart */}
-          <ResultsSummary question={activeQuestion} />
+          {/* Distribution, for the types where it is the result. Free text is excluded
+              here on purpose: its summary was a response count duplicated from three
+              other places, an average word count nothing acts on, and a flagged count
+              that is now a filter in the toolbar. `ResultsSummary` keeps that branch —
+              the projector falls back to it when themes fail. */}
+          {activeQuestion.type !== 'FREE_TEXT' && <ResultsSummary question={activeQuestion} />}
 
           {/* Aggregate views first, then the bar that acts on the list below it. */}
           {activeQuestion.type === 'FREE_TEXT' && activeQuestion.responses.length > 0 && (
@@ -790,8 +800,10 @@ export default function SessionPage() {
                 fullCreditMutation.mutate(activeQuestion.id)
             }}
             isFullCreditPending={fullCreditMutation.isPending}
-            reviewOnly={reviewOnly === activeQuestion.id}
-            onToggleReview={() => setReviewOnly(reviewOnly === activeQuestion.id ? null : activeQuestion.id)}
+            filter={activeFilter}
+            onFilter={(mode) => setResponseFilter(
+              mode === 'all' ? null : { questionId: activeQuestion.id, mode },
+            )}
           />
 
 
@@ -802,9 +814,12 @@ export default function SessionPage() {
             <div className="space-y-3">
               {activeQuestion.responses
                 .filter((r) => {
-                  if (reviewOnly !== activeQuestion.id) return true
-                  const s = calcResponseScore(activeQuestion, r)
-                  return s !== null && s < 1.0
+                  if (activeFilter === 'short') return r.isFlagged
+                  if (activeFilter === 'review') {
+                    const s = calcResponseScore(activeQuestion, r)
+                    return s !== null && s < 1.0
+                  }
+                  return true
                 })
                 .map((r) => (
                 <div

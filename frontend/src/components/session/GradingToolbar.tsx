@@ -1,6 +1,12 @@
-import { Check, Flag, GraduationCap } from 'lucide-react'
+import { AlertCircle, Check, Flag, GraduationCap } from 'lucide-react'
 import { calcResponseScore } from '@/lib/scoring'
 import type { QuestionWithResponses } from 'shared'
+
+/**
+ * The response list shows everything, or one narrowing of it. Mutually exclusive on
+ * purpose: two independent toggles can combine into an empty list, which reads as a bug.
+ */
+export type ResponseFilter = 'all' | 'review' | 'short'
 
 interface Props {
   question: QuestionWithResponses
@@ -15,8 +21,9 @@ interface Props {
   onGrade: (mode: 'all' | 'ungraded') => void
   onFullCredit: () => void
   isFullCreditPending: boolean
-  reviewOnly: boolean
-  onToggleReview: () => void
+  /** Which subset of the response list is showing. */
+  filter: ResponseFilter
+  onFilter: (mode: ResponseFilter) => void
 }
 
 /**
@@ -33,7 +40,7 @@ interface Props {
  */
 export default function GradingToolbar({
   question, progress, result, gradeError, isGradePending, canGradeWithAi,
-  onGrade, onFullCredit, isFullCreditPending, reviewOnly, onToggleReview,
+  onGrade, onFullCredit, isFullCreditPending, filter, onFilter,
 }: Props) {
   const total = question.responses.length
   if (total === 0) return null
@@ -47,6 +54,11 @@ export default function GradingToolbar({
     const s = calcResponseScore(question, r)
     return s !== null && s < 1.0
   }).length
+
+  // Short answers are flagged on submit, free text only, under ten words. The only
+  // aggregate of that anywhere — and under effort grading they are what loses credit,
+  // so the count is worth having before grading rather than after.
+  const shortCount = question.responses.filter((r) => r.isFlagged).length
 
   const ungraded = question.responses.filter((r) => r.aiScore === null).length
   const isFreeText = question.type === 'FREE_TEXT'
@@ -97,15 +109,29 @@ export default function GradingToolbar({
             )}
             {needsReview > 0 && (
               <button
-                onClick={onToggleReview}
+                onClick={() => onFilter(filter === 'review' ? 'all' : 'review')}
                 className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-sm border transition-colors ${
-                  reviewOnly
+                  filter === 'review'
+                    ? 'bg-warn-soft border-warn/30 text-warn'
+                    : 'bg-surface border-hairline text-muted hover:text-ink'
+                }`}
+              >
+                <AlertCircle size={11} />
+                {filter === 'review' ? `Showing ${needsReview} to review` : `Needs review (${needsReview})`}
+              </button>
+            )}
+            {shortCount > 0 && (
+              <button
+                onClick={() => onFilter(filter === 'short' ? 'all' : 'short')}
+                title="Answers under ten words"
+                className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-sm border transition-colors ${
+                  filter === 'short'
                     ? 'bg-warn-soft border-warn/30 text-warn'
                     : 'bg-surface border-hairline text-muted hover:text-ink'
                 }`}
               >
                 <Flag size={11} />
-                {reviewOnly ? `Showing ${needsReview} to review` : `Needs review (${needsReview})`}
+                {filter === 'short' ? `Showing ${shortCount} short` : `Short (${shortCount})`}
               </button>
             )}
             <button

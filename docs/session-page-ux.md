@@ -440,6 +440,54 @@ No way to reorder from the sidebar.
 
 ---
 
+## Zone 7 — Per-type distributions
+
+### UX-26 — Free text carried a distribution block that earned nothing
+- [x] **Status** — done 2026-09-12
+
+Raised by the author while reviewing the types: most of them have a visualization between
+the question and the responses, and they get in the way.
+
+**The extraction this started as was already done.** `ResultsSummary` (378 lines) has handled
+all eight types in one component for a long time — multiple-choice bars, rating histogram,
+yes/no split, multi-select bars, ordering sequence, numeric dot plot, free-text stat tiles.
+Nothing per-type was inline in `SessionPage`. So the question was only ever about when to
+show it.
+
+**A blanket collapse would have been wrong, because the value inverts by type.** For
+multiple-choice, rating, yes/no, multi-select and numeric, the distribution *is* the result —
+forty individual "4"s tell you nothing a histogram does not tell you instantly, so
+defaulting those closed hides the reason you opened the page. Free text is the reverse: the
+responses are the substance and the summary was three stat tiles.
+
+Taking those three apart is what settled it:
+
+- **Response count** — already in the grading toolbar, the sidebar, and the page header. A
+  fourth copy earns nothing.
+- **Average word count** — no decision changes on 18 versus 22, and every card shows its own
+  count.
+- **Short (<10 words) count** — the only aggregate of `isFlagged` anywhere, and under effort
+  grading short answers are exactly what loses credit. Worth keeping.
+
+So free text now renders no distribution on this page, and the short count became a **filter**
+rather than a stat — `Short (n)` beside `Needs review (n)` in the toolbar, where it is one
+click to see just those instead of a number to look at. The two filters are mutually
+exclusive: independent toggles can combine into an empty list, which reads as a bug.
+`reviewOnly` became a `{ questionId, mode }` pair.
+
+**And with that, the collapsible wrapper was not built.** Every remaining instance would have
+defaulted to open, so a disclosure triangle on each one is ceremony. `ThemesPanel` keeps the
+collapse it already has; a shared `CollapsibleSection` waits until something needs a second.
+
+**Decision:** Done — and deliberately *not* by deleting `ResultsSummary`'s `FREE_TEXT`
+branch, which was the first plan. That branch is load-bearing for the projector:
+`PresentResultsPage` falls back to it when themes fail, with a comment about not "leaving a
+gap nobody can interpret" on the big screen. `LiveMonitorPanel` and `PipDisplay` call the same
+component. So the change is scoped to the page that had the problem — `SessionPage` skips it
+for free text — and the component still serves its other three surfaces.
+
+---
+
 ## Cross-cutting debt this redesign should sweep up
 
 ### UX-21 — Two parallel implementations have drifted
@@ -623,6 +671,22 @@ dangerous.
 The panel order on the page is now `ResultsSummary` → `ThemesPanel` → `GradingToolbar` →
 responses. Aggregates group together, and the sticky bar is adjacent to what it acts on
 rather than separated from it by a theme card.
+
+### Slice 5 — free-text distribution, 2026-09-12
+
+No new component. `SessionPage.tsx` 1123 → 1138 lines (the filter logic costs more than the
+block removed, which is fine — the page got shorter on screen, not in source).
+
+**The near-miss worth recording:** the plan was to delete `ResultsSummary`'s `FREE_TEXT`
+branch outright. That component has four consumers — `SessionPage`, `LiveMonitorPanel`,
+`PipDisplay` and `PresentResultsPage` — and the projector uses exactly that branch as its
+fallback when theme derivation fails. Deleting it would have put a hole on a lecture-hall
+screen in the one case someone had already written a comment to prevent. Check the consumer
+list before removing a branch from a component that serves more than one surface.
+
+Both filter chips initially used the same `Flag` icon and colour, which made two different
+filters look like one control. `Flag` now stays with Short, matching the per-card "Short"
+pill, and Needs review took `AlertCircle`.
 
 ### Still open
 
