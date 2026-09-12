@@ -466,6 +466,11 @@ is now `components/StructureKeyField.tsx`, used by both `AnswerKey` and `Grading
 rather than copied into a second place. `GradingControls` drops 60 lines and its own Ketcher
 wiring.
 
+The editor opens in a modal rather than inline. Inline it was a 500px canvas wedged into
+whichever card contained it — tolerable in the assignment list, absurd in the question header.
+The overlay is portalled to `document.body`, since this field sits several cards deep where a
+`fixed` position cannot be trusted.
+
 The lesson worth keeping: `docs/question-types.md` said structure equivalence checking "is
 not implemented — out of scope", and I believed the document over the code twice in one
 slice. Both claims are corrected there now.
