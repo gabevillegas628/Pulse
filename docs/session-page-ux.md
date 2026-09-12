@@ -310,22 +310,52 @@ with AI* / *Grade ungraded* in a separate block (`:1044`), the *Needs review* fi
 that (`:1157`), and per-response cycling in the list.
 
 ### UX-14 — One sticky grading toolbar above the response list
-- [ ] **Status**
+- [x] **Status** — done 2026-09-12
 
 `avg 0.82 · 12/14 graded` on the left; `Grade with AI` (all / ungraded), `Needs review
 (3)`, `All full credit` on the right. One row, reading order, stays visible while
 scrolling responses.
 
-**Decision:** TBD
+**Decision:** Done as `components/session/GradingToolbar.tsx`, **sticky** at the top of the response list
+per the author's call. Left side carries the count and average; right side carries Grade with
+AI, Ungraded (n), Needs review (n) and All full credit. The AI progress bar takes over the
+whole bar while grading, and the outcome message sits underneath it.
+
+Presentational on purpose — it takes values and callbacks rather than mutations. The socket
+that drives progress and result belongs to the page, and giving the toolbar its own listener
+would have meant two subscriptions to the same events.
+
+Three stretches of page collapse into it: the score summary line, the AI grade block, and
+the needs-review filter. The themes panel stayed where it is; that is UX-16.
 
 ### UX-15 — Score cycling is undiscoverable and has no undo
-- [ ] **Status**
+- [x] **Status** — done 2026-09-12
 
 `:1229-1240`. A button reading `1.0 pt` silently cycles 1 → 0.5 → 0 on click, with the
 AI's reason in a `title` tooltip. For a real grading pass: a visible 0 / 0.5 / 1 segmented
 control, and keyboard shortcuts (`j`/`k` to move, `0`/`1`/`2` to score).
 
-**Decision:** TBD
+**Decision:** Done as `components/session/ScoreBadge.tsx`, and **the badge stays** — the author's call over
+the segmented control this item proposed. Hovering it opens a picker with 0, 0.5 and 1.0
+presets plus a custom 0–1 field. It also opens on click and focus: hover alone would strand
+keyboard and touch users on the one control in the app that assigns marks.
+
+**Custom scores were always supported and always displayed wrong.** `aiScore` is `Float?` and
+the route validates `z.number().min(0).max(1)`, so any value in range stores and grades
+correctly — `gradeSession` sums the float. But the badge read
+`score === 1.0 ? '1.0' : score === 0.5 ? '0.5' : '0'` with a matching exact-match colour, so
+a 0.75 rendered as **"0" in red**. Latent for as long as the UI only ever wrote three values;
+exposing a custom field would have surfaced it immediately. Label and tone are now
+generalised — threshold colours, two decimals — which is what makes the custom field safe
+rather than just possible.
+
+**Not done from this item as written:** the `j`/`k` plus `0`/`1`/`2` keyboard shortcuts. The
+picker removes the aim-by-cycling problem, which was the real complaint; list navigation is a
+separate idea and belongs with UX-19 if it is wanted.
+
+One deliberate duplication: the grader's reason now shows both in the picker and on the line
+under the response. They serve different moments — scanning the list, versus deciding a new
+score — so both stay.
 
 ### UX-16 — The themes panel splits configuration from result
 - [ ] **Status**
@@ -449,7 +479,7 @@ extraction followed by one wholesale redesign.
 
 1. **Settings** — UX-2, UX-3, part of UX-5 and UX-21. ✓ done 2026-09-12
 2. **Answer key** — UX-13, carrying UX-10, UX-11 and UX-12. ✓ done 2026-09-12
-3. **Grading** — UX-14 and UX-15.
+3. **Grading** — UX-14 and UX-15. ✓ done 2026-09-12
 4. **Sweep** — UX-17 (amended), UX-18, UX-22 through UX-25, and whatever of UX-21 is left.
    UX-7 and UX-9 ride along here; neither is a live feature.
 5. **Authoring versus review** — UX-1, redefined. By then each zone is a component, so it
@@ -536,6 +566,22 @@ message goes stale. It should name the capability, not a browser list.
 **Dead code confirmed:** `components/PipDisplay.tsx` has zero references — superseded by
 `LiveMonitorPanel`. Already on the project backlog; safe to delete independently of any of
 this. `LiveMonitorPanel` itself is live and must stay.
+
+### Slice 3 — grading, 2026-09-12
+
+New: `session/GradingToolbar.tsx`, `session/ScoreBadge.tsx`. `SessionPage.tsx` 1283 → 1186
+lines, and `cycleScore` is no longer imported there (the assignment page still uses it, so it
+stays in `lib/scoring`).
+
+**The find worth remembering:** custom scores have always been storable and gradable, and
+would have rendered as "0" in red. The three-value UI was hiding a display bug rather than
+enforcing a three-value model. Anyone adding a score control elsewhere should use
+`formatScore` and the threshold tone from `ScoreBadge` rather than matching on exact values.
+
+`assignment/ResponseList.tsx` still cycles scores on click, with the same exact-match label
+and colour. It has the identical bug and the identical discoverability problem. Not touched
+here — it is the assignment side — but it is the obvious next `ScoreBadge` call site and
+would close UX-21 a little further.
 
 ### Still open
 

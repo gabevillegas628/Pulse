@@ -7,7 +7,7 @@ import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
 import Empty from '@/components/ui/Empty'
-import { Check, ChevronLeft, Copy, Download, Flag, GraduationCap, Pencil, PictureInPicture2, Plus, RefreshCw, Sparkles, Trash2, X } from 'lucide-react'
+import { Check, ChevronLeft, Copy, Download, Flag, Pencil, PictureInPicture2, Plus, RefreshCw, Sparkles, Trash2, X } from 'lucide-react'
 import { io } from 'socket.io-client'
 import type { SessionDetail, QuestionWithResponses, ResponseWithStudent, ThemeSet } from 'shared'
 import { SessionStatus } from 'shared'
@@ -18,9 +18,11 @@ import { apiError } from '@/lib/errors'
 import QuestionImageField from '@/components/QuestionImageField'
 import QuestionSettings from '@/components/session/QuestionSettings'
 import AnswerKey from '@/components/session/AnswerKey'
+import GradingToolbar from '@/components/session/GradingToolbar'
+import ScoreBadge from '@/components/session/ScoreBadge'
 import { deleteUpload } from '@/lib/uploadImage'
 import { downloadCsv } from '@/lib/downloadCsv'
-import { calcResponseScore, cycleScore } from '@/lib/scoring'
+import { calcResponseScore } from '@/lib/scoring'
 import { copyQrCardToClipboard } from 'shared'
 
 type PipWindow = Window & { documentPictureInPicture?: { requestWindow: (opts: { width: number; height: number }) => Promise<Window> } }
@@ -756,98 +758,39 @@ export default function SessionPage() {
           {/* Responses summary chart */}
           <ResultsSummary question={activeQuestion} />
 
-          {/* Score summary line */}
-          {activeQuestion.responses.length > 0 && (() => {
-            const scores = activeQuestion.responses.map((r) => calcResponseScore(activeQuestion, r)).filter((s): s is number => s !== null)
-            const avg = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null
-            return (
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-xs text-muted font-mono">
-                  {avg !== null
-                    ? <>{scores.length} of {activeQuestion.responses.length} scored — avg <span className="font-medium text-ink-2">{avg.toFixed(2)} / 1.0</span></>
-                    : <span className="text-hairline-strong">{activeQuestion.responses.length} response{activeQuestion.responses.length !== 1 ? 's' : ''}</span>
-                  }
-                </p>
-                <button
-                  onClick={() => {
-                    const alreadyFull = activeQuestion.responses.every(r => r.aiScore === 1.0)
-                    if (alreadyFull || window.confirm(`Give all ${activeQuestion.responses.length} responses full credit?`))
-                      fullCreditMutation.mutate(activeQuestion.id)
-                  }}
-                  disabled={fullCreditMutation.isPending}
-                  className="flex items-center gap-1 text-xs text-muted hover:text-good border border-hairline hover:border-good/30 px-2.5 py-1 rounded-sm transition-colors disabled:opacity-50"
-                >
-                  <Check size={11} /> Give all full credit
-                </button>
-              </div>
-            )
-          })()}
+          {/* Everything for grading this question, in a bar that stays put while the
+              responses it acts on scroll underneath. */}
+          <GradingToolbar
+            question={activeQuestion}
+            progress={gradingState[activeQuestion.id] ?? null}
+            result={gradeResult[activeQuestion.id] ?? null}
+            gradeError={gradeMutation.isError
+              ? ((gradeMutation.error as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Failed to start grading.')
+              : null}
+            isGradePending={gradeMutation.isPending}
+            canGradeWithAi={hasBeenRun || data.status === SessionStatus.ARCHIVED}
+            onGrade={(mode) => {
+              if (mode === 'all') {
+                const alreadyGraded = activeQuestion.responses.filter((r) => r.aiScore !== null).length
+                if (alreadyGraded > 0 && !window.confirm(
+                  `${alreadyGraded} response${alreadyGraded !== 1 ? 's' : ''} already have AI scores (including any manual edits). Re-grading will overwrite them. Continue?`
+                )) return
+              }
+              gradeMutation.mutate({ questionId: activeQuestion.id, mode })
+            }}
+            onFullCredit={() => {
+              const alreadyFull = activeQuestion.responses.every((r) => r.aiScore === 1.0)
+              if (alreadyFull || window.confirm(`Give all ${activeQuestion.responses.length} responses full credit?`))
+                fullCreditMutation.mutate(activeQuestion.id)
+            }}
+            isFullCreditPending={fullCreditMutation.isPending}
+            reviewOnly={reviewOnly === activeQuestion.id}
+            onToggleReview={() => setReviewOnly(reviewOnly === activeQuestion.id ? null : activeQuestion.id)}
+          />
 
-          {/* AI summary + grade buttons for free text */}
+          {/* AI theme summary for free text. Grading moved to the toolbar above. */}
           {activeQuestion.type === 'FREE_TEXT' && activeQuestion.responses.length > 0 && (
             <div className="mb-5">
-              {(hasBeenRun || data.status === SessionStatus.ARCHIVED) && (() => {
-                const qid = activeQuestion.id
-                const isGrading = !!gradingState[qid]
-                const ungradedCount = activeQuestion.responses.filter((r) => r.aiScore === null).length
-                const result = gradeResult[qid]
-                return (
-                  <div className="mb-2 space-y-2">
-                    {isGrading ? (
-                      <div className="flex items-center gap-3 py-1">
-                        <div className="flex-1 h-1.5 rounded-full bg-surface-2 overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-good transition-all duration-300"
-                            style={{ width: `${Math.round((gradingState[qid].graded / gradingState[qid].total) * 100)}%` }}
-                          />
-                        </div>
-                        <span className="text-xs text-muted font-mono shrink-0">
-                          {gradingState[qid].graded} / {gradingState[qid].total}
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <button
-                          onClick={() => {
-                            const alreadyGraded = activeQuestion.responses.filter((r) => r.aiScore !== null).length
-                            if (alreadyGraded > 0 && !window.confirm(
-                              `${alreadyGraded} response${alreadyGraded !== 1 ? 's' : ''} already have AI scores (including any manual edits). Re-grading will overwrite them. Continue?`
-                            )) return
-                            gradeMutation.mutate({ questionId: qid, mode: 'all' })
-                          }}
-                          disabled={gradeMutation.isPending}
-                          className="flex items-center gap-1.5 text-sm text-good border border-good/20 px-3 py-2 rounded-sm hover:bg-good-soft disabled:opacity-50 transition-colors"
-                        >
-                          <GraduationCap size={14} /> Grade all with AI
-                        </button>
-                        {ungradedCount > 0 && (ungradedCount < activeQuestion.responses.length || !!result) && (
-                          <button
-                            onClick={() => gradeMutation.mutate({ questionId: qid, mode: 'ungraded' })}
-                            disabled={gradeMutation.isPending}
-                            className="flex items-center gap-1.5 text-sm text-ink-2 border border-hairline px-3 py-2 rounded-sm hover:bg-surface-2 disabled:opacity-50 transition-colors"
-                          >
-                            <GraduationCap size={14} /> Grade ungraded ({ungradedCount})
-                          </button>
-                        )}
-                      </div>
-                    )}
-                    {result && !isGrading && (
-                      result.failedCount > 0 ? (
-                        <p className="text-xs text-warn bg-warn-soft border border-warn/20 rounded-sm px-3 py-2">
-                          Graded {activeQuestion.responses.length - result.failedCount} of {activeQuestion.responses.length} — {result.failedCount} failed. Use &ldquo;Grade ungraded&rdquo; to retry.
-                        </p>
-                      ) : (
-                        <p className="text-xs text-good bg-good-soft border border-good/20 rounded-sm px-3 py-2">
-                          All {activeQuestion.responses.length} responses graded.
-                        </p>
-                      )
-                    )}
-                    {gradeMutation.isError && (
-                      <p className="text-xs text-red-500">{(gradeMutation.error as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Failed to start grading.'}</p>
-                    )}
-                  </div>
-                )
-              })()}
               {!shownThemes ? (
                 <button
                   onClick={() => {
@@ -915,38 +858,6 @@ export default function SessionPage() {
             </div>
           )}
 
-          {/* Review filter — the scores a professor actually has to look at are the
-              ones that aren't full credit, and under effort grading a low score is an
-              accusation, so it should be one click to see only those. */}
-          {(() => {
-            const needsReview = activeQuestion.responses.filter((r) => {
-              const s = calcResponseScore(activeQuestion, r)
-              return s !== null && s < 1.0
-            })
-            if (needsReview.length === 0) return null
-            const on = reviewOnly === activeQuestion.id
-            return (
-              <div className="flex items-center gap-2 mb-3">
-                <button
-                  onClick={() => setReviewOnly(on ? null : activeQuestion.id)}
-                  className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-sm border transition-colors ${
-                    on
-                      ? 'bg-warn-soft border-warn/30 text-warn'
-                      : 'bg-surface border-hairline text-muted hover:text-ink'
-                  }`}
-                >
-                  <Flag size={11} />
-                  {on ? 'Showing needs review' : `Needs review (${needsReview.length})`}
-                </button>
-                {on && (
-                  <span className="text-[11px] text-muted">
-                    {needsReview.length} of {activeQuestion.responses.length} scored below full credit
-                  </span>
-                )}
-              </div>
-            )
-          })()}
-
           {/* Response list */}
           {activeQuestion.responses.length === 0 ? (
             <Empty message="No responses yet" />
@@ -980,27 +891,19 @@ export default function SessionPage() {
                       {(() => {
                         const score = calcResponseScore(activeQuestion, r)
                         if (score === null) return null
-                        const label = score === 1.0 ? '1.0' : score === 0.5 ? '0.5' : '0'
-                        const color = score === 1.0
-                          ? 'bg-good-soft text-good border-good/20'
-                          : score === 0.5
-                          ? 'bg-warn-soft text-warn border-warn/20'
-                          : 'bg-red-100 text-red-600 border-red-200'
                         // The socket reason is fresher than the stored one during a run;
                         // the stored one is what survives a reload.
-                        const title = gradeReasons[r.id] || r.aiReason || 'Click to cycle score'
                         return (
-                          <button
-                            title={title}
-                            onClick={() => overrideScoreMutation.mutate({
+                          <ScoreBadge
+                            score={score}
+                            reason={gradeReasons[r.id] || r.aiReason}
+                            pending={overrideScoreMutation.isPending}
+                            onChange={(aiScore) => overrideScoreMutation.mutate({
                               questionId: activeQuestion.id,
                               responseId: r.id,
-                              aiScore: cycleScore(score),
+                              aiScore,
                             })}
-                            className={`text-xs font-mono font-medium px-2 py-0.5 rounded-full border ${color} cursor-pointer hover:opacity-80`}
-                          >
-                            {label} pt
-                          </button>
+                          />
                         )
                       })()}
                     </div>
