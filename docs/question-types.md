@@ -141,14 +141,16 @@ Students drag items into the correct sequence.
 Students draw a chemical structure using the JSME molecule editor. Stored as a SMILES string.
 
 - **`options`** — unused
-- **`correctAnswer`** — an InChI string. Both the key and the submitted structure are run
-  through `toInchi()` (Indigo) and compared, so equivalence checking *is* implemented at the
-  InChI level. No UI sets it, though, so in practice structure questions are manual-graded.
+- **`correctAnswer`** — an InChI string. Set it by drawing the molecule: `StructureKeyField`
+  puts a Ketcher editor in front of the professor, hands the molfile to the PATCH route, and
+  the backend converts it with `toInchi()`. Submitted structures go through the same
+  conversion on the way in, so the comparison is InChI against InChI and **structure
+  questions grade automatically**.
 - **`tolerance` / `unit`** — unused
-- **Grading** — 1.0 on an InChI match, 0.5 for a wrong structure, 1.0 for everyone if no key is set; a manual `aiScore` override wins over all of it, which is how these are graded in practice. Submitted structures are rendered back to the professor via `smiles-drawer` in the response list.
+- **Grading** — 1.0 on an InChI match, 0.5 for a wrong structure, 1.0 for everyone if no key is set. A manual `aiScore` override still wins, as it does for every type. Submitted structures are rendered back to the professor via `smiles-drawer` in the response list.
 - **`correctAnswer` restriction** — exempt from the open-run gate, like NUMERIC and ORDERING
 - **Student input** — JSME editor (`@loschmidt/jsme-react`); `disabled` after submission shows the drawn structure read-only. SMILES string stored in `responseText`.
-- **Implementation note** — JSME loads its JS from CDN on first render (lazy-loaded in React via `Suspense`). Structural equivalence checking is not implemented — requires a cheminformatics backend (RDKit/Indigo) and is out of scope.
+- **Implementation note** — JSME loads its JS from CDN on first render (lazy-loaded in React via `Suspense`). Equivalence checking **is** implemented, against the Indigo service that runs as its own container and is reached through the app's authenticated `/api/indigo` proxy. An earlier version of this document called it out of scope; that has not been true for some time.
 
 ---
 

@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check, ChevronDown, ChevronUp, Lock } from 'lucide-react'
 import { api } from '@/api/client'
 import { apiError } from '@/lib/errors'
+import StructureKeyField from '@/components/StructureKeyField'
 import type { QuestionWithResponses } from 'shared'
 
 /**
@@ -69,9 +70,8 @@ export default function AnswerKey({ sessionId, question, isLive, effortOn }: Pro
 
   const locked = isLive && !EDITABLE_WHILE_LIVE.includes(question.type as string)
 
-  // Neither type has a key to set: rating is participation credit by design, and a
-  // structure key would need a molecule editor and an equivalence check we do not have.
-  if (question.type === 'RATING' || question.type === 'STRUCTURE') return null
+  // Rating is participation credit by design, and the backend 400s on a key for it.
+  if (question.type === 'RATING') return null
 
   const setKey = (correctAnswer: string | null) => save.mutate({ correctAnswer })
 
@@ -252,6 +252,15 @@ export default function AnswerKey({ sessionId, question, isLive, effortOn }: Pro
             className={`w-32 ${inputCls}`}
           />
         </div>
+      )}
+
+      {question.type === 'STRUCTURE' && (
+        <StructureKeyField
+          value={question.correctAnswer}
+          onSave={(molfile) => setKey(molfile)}
+          pending={save.isPending}
+          disabled={locked}
+        />
       )}
 
       {save.isError && (

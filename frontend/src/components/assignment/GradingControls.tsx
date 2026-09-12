@@ -1,14 +1,8 @@
-import { useState, useRef } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Sparkles } from 'lucide-react'
 import type { SummaryCategory } from 'shared'
-import StructureRenderer from '@/components/StructureRenderer'
+import StructureKeyField from '@/components/StructureKeyField'
 import type { QWithGroup, GradeMutationType } from './types'
-import { Editor } from 'ketcher-react'
-import { RemoteStructServiceProvider } from 'ketcher-core'
-import type { Ketcher } from 'ketcher-core'
-
-const structServiceProvider = new RemoteStructServiceProvider('/api/indigo')
 
 interface Props {
   q: QWithGroup
@@ -32,10 +26,6 @@ export default function GradingControls({
   summarizeMutation, summary, summaryQuestionId, setSummary, setSummaryQuestionId,
   effortGradingMutation, classEffortDefault,
 }: Props) {
-  const [editingStructure, setEditingStructure] = useState(false)
-  const ketcherRef = useRef<Ketcher | null>(null)
-  const initialStruct = useRef('')
-
   return (
     <div className="flex items-center gap-3 flex-wrap py-2 border-t border-hairline">
       {(q.type === 'MULTIPLE_CHOICE' || q.type === 'YES_NO') && (
@@ -91,61 +81,11 @@ export default function GradingControls({
       )}
       {(q.type as string) === 'STRUCTURE' && (
         <div className="w-full pt-1">
-          {editingStructure ? (
-            <div className="space-y-2">
-              <div className="h-[500px] border border-hairline rounded-[14px] overflow-hidden">
-                <Editor
-                  staticResourcesUrl=""
-                  structServiceProvider={structServiceProvider}
-                  errorHandler={(err) => console.error('Ketcher error:', err)}
-                  onInit={async (ketcher) => {
-                    ketcherRef.current = ketcher
-                    if (initialStruct.current) {
-                      await ketcher.setMolecule(initialStruct.current)
-                    }
-                  }}
-                />
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={async () => {
-                    const molfile = ketcherRef.current ? await ketcherRef.current.getMolfile() : ''
-                    setCorrectAnswerMutation.mutate(
-                      { questionId: q.id, correctAnswer: molfile || null },
-                      { onSuccess: () => setEditingStructure(false) }
-                    )
-                  }}
-                  disabled={setCorrectAnswerMutation.isPending}
-                  className="text-xs text-white bg-signal hover:bg-[var(--signal-bright)] px-3 py-1.5 rounded-sm disabled:opacity-50"
-                >Save</button>
-                <button onClick={() => setEditingStructure(false)} className="text-xs text-muted px-2 py-1.5">Cancel</button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center gap-3">
-              {q.correctAnswer ? (
-                <>
-                  <StructureRenderer inchi={q.correctAnswer ?? ''} width={180} height={120} />
-                  <div className="flex flex-col gap-1.5">
-                    <button
-                      onClick={() => { initialStruct.current = q.correctAnswer ?? ''; setEditingStructure(true) }}
-                      className="text-xs text-signal hover:text-signal border border-signal/20 px-2.5 py-1 rounded-sm"
-                    >Change</button>
-                    <button
-                      onClick={() => setCorrectAnswerMutation.mutate({ questionId: q.id, correctAnswer: null })}
-                      disabled={setCorrectAnswerMutation.isPending}
-                      className="text-xs text-muted hover:text-red-600 border border-hairline px-2.5 py-1 rounded-sm disabled:opacity-50"
-                    >Clear</button>
-                  </div>
-                </>
-              ) : (
-                <button
-                  onClick={() => { initialStruct.current = ''; setEditingStructure(true) }}
-                  className="text-xs text-signal hover:text-signal border border-signal/20 px-2.5 py-1.5 rounded-sm"
-                >Set correct structure…</button>
-              )}
-            </div>
-          )}
+          <StructureKeyField
+            value={q.correctAnswer}
+            onSave={(molfile) => setCorrectAnswerMutation.mutate({ questionId: q.id, correctAnswer: molfile })}
+            pending={setCorrectAnswerMutation.isPending}
+          />
         </div>
       )}
       {(q.type as string) === 'ORDERING' && q.correctAnswer && (

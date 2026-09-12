@@ -258,11 +258,9 @@ Two deliberate deviations from this item as written:
   both dialogs, but at creation time the question does not exist yet, so there is no
   `AnswerKey` to use — stripping it would force create-then-key for every numeric
   question. The edit dialog is the one that had a redundant second home.
-- **RATING and STRUCTURE render nothing.** Rating is participation credit by design and the
-  backend 400s on a key. Structure keys *do* work server-side — both the key and the
-  student response are converted to InChI and compared — but setting one needs a molecule
-  editor, so it stays unreachable from the UI. Recorded in the notes as a gap rather than
-  half-built here.
+- **Only RATING renders nothing**, because it is participation credit by design and the
+  backend 400s on a key for it. Structure questions are fully supported — see the
+  correction in the notes below; the first pass at this slice wrongly left them out.
 
 ---
 
@@ -360,7 +358,8 @@ Extracting shared `QuestionSettings` / `AnswerKey` / `GradingToolbar` / `Respons
 components would roughly halve `SessionPage` and stop the drift. This is the natural
 vehicle for the whole redesign rather than a separate cleanup.
 
-**Decision:** Started. Three shared pieces now exist: `ui/Switch` (lifted from `ClassPage`, which
+**Decision:** Started. Four shared pieces now exist: `components/StructureKeyField` (the structure answer
+key, previously living only inside the assignment page), `ui/Switch` (lifted from `ClassPage`, which
 hand-rolled the same markup three times), `ui/Popover` (new — the repo had only
 `<details>`), and `session/QuestionSettings`. `ui/Button` gained a `size` so the small
 inline controls share one definition rather than copying each other's classes.
@@ -453,10 +452,23 @@ for multiple-choice, yes/no and multi-select; the rule is "not while a run is op
 NUMERIC, ORDERING and STRUCTURE exempt. It also called the structure key unused, when both
 sides of that comparison are converted to InChI and scored.
 
-**Gap left open: structure answer keys.** Functional in the backend, unreachable from the
-UI, because setting one needs a molecule editor. Worth its own decision later — the
-alternative is admitting structure questions are manual-grade-only and dropping the
-server-side support.
+**Correction, same day: structure answer keys were already solved, and I claimed otherwise.**
+The first pass at this slice left STRUCTURE out of `AnswerKey` on the grounds that setting a
+key needs a molecule editor the app lacks. It does not lack one. `GradingControls` on the
+assignment side has had a complete implementation for some time — a Ketcher editor against
+`RemoteStructServiceProvider('/api/indigo')`, saving a molfile the backend converts to InChI,
+with `StructureRenderer` showing the current key and Change / Clear beside it. Indigo runs as
+its own container. So structure questions were never manual-grade-only; the session page just
+never got the control.
+
+That makes it a UX-21 drift case, not a missing feature, and it was fixed as one: the editor
+is now `components/StructureKeyField.tsx`, used by both `AnswerKey` and `GradingControls`
+rather than copied into a second place. `GradingControls` drops 60 lines and its own Ketcher
+wiring.
+
+The lesson worth keeping: `docs/question-types.md` said structure equivalence checking "is
+not implemented — out of scope", and I believed the document over the code twice in one
+slice. Both claims are corrected there now.
 
 ### Still open
 
