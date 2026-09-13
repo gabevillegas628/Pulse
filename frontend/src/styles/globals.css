@@ -205,6 +205,10 @@
 .pulse-scroll::-webkit-scrollbar-thumb  { background: var(--hairline-strong); border-radius: 99px; }
 .pulse-scroll::-webkit-scrollbar-track  { background: transparent; }
 
+/* Strips that scroll sideways on a phone (tab rows) without showing a bar doing it. */
+.no-scrollbar                           { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar        { display: none; }
+
 /* ── Textbook reader shell ────────────────────────────────────────────────── */
 /* The reader is usually a panel rather than the page: both class tabs mount it inside a
    fixed-height box and fullscreen is 95vw, so viewport width says little about the box

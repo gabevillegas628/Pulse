@@ -9,7 +9,8 @@ import Pill from '@/components/ui/Pill'
 import Tabs from '@/components/ui/Tabs'
 import LiveDot from '@/components/ui/LiveDot'
 import Empty from '@/components/ui/Empty'
-import { BookOpen, ChevronLeft, Clock, KeyRound, LogOut } from 'lucide-react'
+import Popover from '@/components/ui/Popover'
+import { BookOpen, ChevronLeft, Clock, KeyRound, LogOut, Menu } from 'lucide-react'
 import type { AssignmentRow, GradeSession } from 'shared'
 import PasswordChangeModal from '@/components/PasswordChangeModal'
 import SessionGradeSheet from '@/components/SessionGradeSheet'
@@ -141,11 +142,61 @@ export default function StudentClassPage() {
     )
   }
 
+  // On a phone the reader takes whatever height the page chrome leaves, so the page is
+  // pinned to the screen and the reader flexes into the remainder instead of guessing it.
+  const reading = tab === 'textbook' && !!cls?.textbookRepo
+
   return (
-    <div className="min-h-screen bg-canvas">
+    <div className={reading ? 'h-[100dvh] flex flex-col bg-canvas sm:h-auto sm:min-h-screen sm:block' : 'min-h-screen bg-canvas'}>
       {/* Header */}
-      <header className="bg-surface border-b border-hairline">
-        <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
+      <header className="bg-surface border-b border-hairline shrink-0">
+        {/* Phone: one bar carries what the desktop spreads over the header, back link and
+            class heading — those three cost about 170px before the tabs even start. */}
+        <div className="sm:hidden h-12 px-2 flex items-center gap-1">
+          <Link
+            to="/student/classes"
+            aria-label="My Classes"
+            className="p-2 text-muted hover:text-ink transition-colors"
+          >
+            <ChevronLeft size={20} />
+          </Link>
+          <p className="flex-1 min-w-0 truncate font-semibold text-ink">{cls?.name ?? '…'}</p>
+          {liveSessions.length > 0 && (
+            <Link
+              to="/student/enter-code"
+              className="inline-flex items-center gap-1.5 shrink-0 bg-signal text-white px-3 py-1.5 rounded-sm text-xs font-bold hover:bg-[var(--signal-bright)] transition-colors"
+            >
+              <LiveDot className="bg-white" /> Enter code
+            </Link>
+          )}
+          <Popover label="Account menu" chevron={false} trigger={<Menu size={18} />} className="w-60 p-2">
+            {(close) => (
+              <>
+                <div className="px-2 pt-1 pb-2 mb-1 border-b border-hairline">
+                  <p className="text-sm text-ink-2">
+                    {cls?.professor.name}
+                    {enrollment?.section && <span> · Section {enrollment.section.name}</span>}
+                  </p>
+                  <p className="text-xs text-muted font-mono mt-0.5">{student?.netId}</p>
+                </div>
+                <button
+                  onClick={() => { close(); setShowPwModal(true) }}
+                  className="w-full flex items-center gap-2 px-2 py-2 rounded-sm text-sm text-ink-2 hover:bg-surface-2 transition-colors"
+                >
+                  <KeyRound size={14} /> Change password
+                </button>
+                <button
+                  onClick={() => { logout(); navigate('/login') }}
+                  className="w-full flex items-center gap-2 px-2 py-2 rounded-sm text-sm text-ink-2 hover:bg-surface-2 transition-colors"
+                >
+                  <LogOut size={14} /> Sign out
+                </button>
+              </>
+            )}
+          </Popover>
+        </div>
+
+        <div className="hidden sm:flex max-w-6xl mx-auto px-4 h-14 items-center justify-between">
           <Link to="/student/classes" className="inline-flex items-center gap-2">
             <PulseMark size={20} />
             <span className="font-extrabold text-ink text-lg tracking-tight" style={{ letterSpacing: '-0.02em' }}>Pulse</span>
@@ -165,14 +216,18 @@ export default function StudentClassPage() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-8">
-        {/* Back link */}
-        <Link to="/student/classes" className="flex items-center gap-1 text-sm text-muted hover:text-ink mb-4 transition-colors">
+      <main
+        className={reading
+          ? 'w-full max-w-6xl mx-auto px-4 flex-1 min-h-0 flex flex-col sm:py-8 sm:block'
+          : 'max-w-6xl mx-auto px-4 pt-1 pb-6 sm:py-8'}
+      >
+        {/* Back link — on a phone the header bar's chevron stands in */}
+        <Link to="/student/classes" className="hidden sm:flex items-center gap-1 text-sm text-muted hover:text-ink mb-4 transition-colors">
           <ChevronLeft size={16} /> My Classes
         </Link>
 
-        {/* Class header */}
-        <div className="flex items-start justify-between mb-6">
+        {/* Class header — on a phone the name moves into the header bar, the rest into its menu */}
+        <div className="hidden sm:flex items-start justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-ink">{cls?.name ?? '…'}</h1>
             <p className="text-sm text-muted mt-0.5">
@@ -195,7 +250,8 @@ export default function StudentClassPage() {
           tabs={CLASS_TABS as unknown as { key: string; label: string }[]}
           active={tab}
           onChange={(k) => setTab(k as Tab)}
-          className="mb-6"
+          // Edge to edge on a phone, and flush against the reader when it is showing
+          className={`-mx-4 sm:mx-0 sm:mb-6 shrink-0 ${reading ? 'mb-0' : 'mb-4'}`}
         />
 
         {/* Live Sessions tab */}
@@ -319,10 +375,8 @@ export default function StudentClassPage() {
           !cls?.textbookRepo ? (
             <Empty icon={BookOpen} message="No textbook linked to this class yet." />
           ) : (
-            <div
-              className="border border-hairline rounded-[14px] overflow-hidden flex"
-              style={{ height: 'calc(100vh - 340px)', minHeight: '480px' }}
-            >
+            // Phone: fills what is left below the tabs, edge to edge. Desktop: the framed panel.
+            <div className="-mx-4 flex-1 min-h-0 overflow-hidden flex sm:mx-0 sm:border sm:border-hairline sm:rounded-[14px] sm:h-[calc(100vh_-_340px)] sm:min-h-[480px]">
               <TextbookPage repo={cls.textbookRepo} path={cls.textbookPath ?? ''} classId={classId} />
             </div>
           )
