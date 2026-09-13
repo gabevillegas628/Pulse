@@ -126,7 +126,14 @@ export default function QuestionPage() {
     let responseText = data.response ?? ''
     if (question.type === 'ORDERING') responseText = JSON.stringify(orderedItems)
     if (question.type === 'MULTI_SELECT') responseText = JSON.stringify(selectedOptions)
-    if (question.type === 'STRUCTURE') responseText = ketcherRef.current ? await ketcherRef.current.getMolfile() : ''
+    if (question.type === 'STRUCTURE') {
+      // An empty canvas has no InChI; the server can only refuse it, so say so here.
+      if (!ketcherRef.current || ketcherRef.current.editor.struct().isBlank()) {
+        setSubmitError('Draw a structure before submitting')
+        return
+      }
+      responseText = await ketcherRef.current.getMolfile()
+    }
     try {
       await api.post('/responses', { questionId: question.id, responseText })
       navigate(`/q/${question.id}/confirmation`)
@@ -213,7 +220,7 @@ export default function QuestionPage() {
           <h1 className="text-white text-base font-semibold mt-0.5">{q.session?.title}</h1>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-6">
+        <div className="p-6 space-y-6">
           <p className="text-sm font-medium text-ink">{q.text}</p>
 
           {q.imageUrl && (
@@ -225,7 +232,20 @@ export default function QuestionPage() {
             />
           )}
 
-          <div>
+          {/* Outside the form on purpose. Most of Ketcher's toolbar buttons carry no `type`,
+              so inside a form every tool a student tapped submitted it — with an empty canvas. */}
+          {q.type === 'STRUCTURE' && (
+            <div className="h-[500px] border border-hairline rounded-[14px] overflow-hidden">
+              <Editor
+                staticResourcesUrl=""
+                structServiceProvider={structServiceProvider}
+                errorHandler={(err) => console.error('Ketcher error:', err)}
+                onInit={(ketcher) => { ketcherRef.current = ketcher }}
+              />
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             {q.type === 'FREE_TEXT' && (
               <textarea
                 {...register('response')}
@@ -374,30 +394,19 @@ export default function QuestionPage() {
               </DndContext>
             )}
 
-            {q.type === 'STRUCTURE' && (
-              <div className="h-[500px] border border-hairline rounded-[14px] overflow-hidden">
-                <Editor
-                  staticResourcesUrl=""
-                  structServiceProvider={structServiceProvider}
-                  errorHandler={(err) => console.error('Ketcher error:', err)}
-                  onInit={(ketcher) => { ketcherRef.current = ketcher }}
-                />
-              </div>
+            {submitError && (
+              <p className="text-red-500 text-sm bg-red-50 rounded-sm px-3 py-2">{submitError}</p>
             )}
-          </div>
 
-          {submitError && (
-            <p className="text-red-500 text-sm bg-red-50 rounded-sm px-3 py-2">{submitError}</p>
-          )}
-
-          <button
-            type="submit"
-            disabled={isSubmitting || isAnswerEmpty}
-            className="w-full bg-signal text-white rounded-[14px] py-4 text-base font-bold hover:bg-[var(--signal-bright)] disabled:opacity-50 transition-colors"
-          >
-            {isSubmitting ? 'Submitting…' : 'Submit'}
-          </button>
-        </form>
+            <button
+              type="submit"
+              disabled={isSubmitting || isAnswerEmpty}
+              className="w-full bg-signal text-white rounded-[14px] py-4 text-base font-bold hover:bg-[var(--signal-bright)] disabled:opacity-50 transition-colors"
+            >
+              {isSubmitting ? 'Submitting…' : 'Submit'}
+            </button>
+          </form>
+        </div>
       </div>
 
       {/* A diagram at phone width is often unreadable — tapping it fills the screen. */}
