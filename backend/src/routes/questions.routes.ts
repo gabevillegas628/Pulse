@@ -73,6 +73,12 @@ router.post('/sessions/:id/questions', requireProfessor, async (req: Request, re
       effortGrading: z.boolean().nullable().optional(),
     }).parse(req.body)
 
+    // The dialog no longer offers it, but the dialog is not the guard. Ketcher is
+    // mouse-only — no touch handling at all — and live answers come from phones.
+    if (type === 'STRUCTURE') {
+      throw new AppError('Structure questions need a mouse to draw, so they are available on assignments only', 400)
+    }
+
     const session = await getSession(p(req.params.id), professor)
 
     // For session questions, check no OPEN run exists when editing (sessions allow edits while DRAFT or when not actively running)

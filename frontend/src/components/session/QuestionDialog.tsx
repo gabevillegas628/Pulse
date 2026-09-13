@@ -168,7 +168,9 @@ export default function QuestionDialog({ sessionId, question, onClose }: Props) 
               }}
               className={inputCls}
             >
-              {QUESTION_TYPES.map((t) => (
+              {/* No structure questions in a live session: Ketcher only understands a mouse,
+                  and students answer these on phones. Assignments still offer it. */}
+              {QUESTION_TYPES.filter((t) => t.value !== 'STRUCTURE').map((t) => (
                 <option key={t.value} value={t.value}>{questionTypeChoiceLabel(t)}</option>
               ))}
             </select>
