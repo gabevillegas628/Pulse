@@ -1,0 +1,790 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Codebase Map — Pulse</title>
+<!--
+  Reference page for the whole repository: what Pulse is made of, where each piece
+  lives, and how the pieces talk to each other. The companion to close-countdown.html,
+  one level up: that page explains one mechanism, this one explains the building.
+
+  Standalone and self-contained: open it directly in a browser. Built on the same design
+  tokens and typefaces as the app itself (see frontend/src/styles/globals.css).
+
+  Written 2026-09-01 at commit 83cbf99. Counts (lines, endpoints, models) are literal
+  snapshots, not generated — they will drift as the code moves, but the shape they
+  describe changes far more slowly than the numbers do.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+
+<style>
+  :root {
+    --font-ui: 'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+    --canvas: #faf8f4;
+    --surface: #ffffff;
+    --surface-2: #f3f0ea;
+    --ink: #1b1814;
+    --ink-2: #4a453d;
+    --muted: #847d72;
+    --hairline: #e8e3da;
+    --hairline-strong: #d8d2c6;
+    --signal: #ee4d2e;
+    --signal-soft: #fdece7;
+    --warn: #a96c14;
+    --warn-soft: #f8f0df;
+    --good: #1f8a5b;
+    --radius: 14px;
+    --radius-sm: 9px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --canvas: #15120f;
+      --surface: #1f1b16;
+      --surface-2: #272019;
+      --ink: #f5f1ea;
+      --ink-2: #d9d2c6;
+      --muted: #968d7f;
+      --hairline: rgba(255,255,255,.10);
+      --hairline-strong: rgba(255,255,255,.18);
+      --signal: #ff5a36;
+      --signal-soft: rgba(255,90,54,.14);
+      --warn: #d99a3c;
+      --warn-soft: rgba(185,121,27,.18);
+      --good: #45b183;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --canvas: #15120f;
+    --surface: #1f1b16;
+    --surface-2: #272019;
+    --ink: #f5f1ea;
+    --ink-2: #d9d2c6;
+    --muted: #968d7f;
+    --hairline: rgba(255,255,255,.10);
+    --hairline-strong: rgba(255,255,255,.18);
+    --signal: #ff5a36;
+    --signal-soft: rgba(255,90,54,.14);
+    --warn: #d99a3c;
+    --warn-soft: rgba(185,121,27,.18);
+    --good: #45b183;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-ui);
+    font-size: 17px;
+    line-height: 1.62;
+    margin: 0;
+    padding: clamp(28px, 5vw, 76px) clamp(18px, 5vw, 40px) 96px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 900px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 46px;
+  }
+
+  .measure { max-width: 68ch; }
+
+  /* ── Masthead ─────────────────────────────────────────── */
+  header { display: flex; flex-direction: column; gap: 14px; }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--signal);
+  }
+
+  h1 {
+    font-size: clamp(34px, 6vw, 52px);
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    line-height: 1.06;
+    text-wrap: balance;
+    margin: 0;
+  }
+
+  .standfirst {
+    font-size: clamp(17px, 2.1vw, 20px);
+    color: var(--ink-2);
+    max-width: 60ch;
+    margin: 0;
+  }
+
+  /* ── Sections ─────────────────────────────────────────── */
+  section { display: flex; flex-direction: column; gap: 18px; }
+
+  h2 {
+    font-size: 13px;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  h3 {
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+
+  p { margin: 0; }
+  p + p { margin-top: 0.85em; }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+    background: var(--surface-2);
+    border-radius: 5px;
+    padding: 0.12em 0.36em;
+  }
+
+  strong { font-weight: 600; }
+
+  a { color: var(--signal); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ── Lifecycle steps ──────────────────────────────────── */
+  ol.steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    counter-reset: step;
+  }
+
+  ol.steps > li {
+    counter-increment: step;
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    gap: 18px;
+    padding: 18px 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+  ol.steps > li:last-child { border-bottom: none; }
+
+  ol.steps > li::before {
+    content: counter(step);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--signal);
+    padding-top: 3px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .step-body { display: flex; flex-direction: column; gap: 5px; max-width: 66ch; }
+  .step-body p { font-size: 16px; color: var(--ink-2); }
+
+  /* ── Figure ───────────────────────────────────────────── */
+  figure {
+    margin: 0;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    padding: 26px 24px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .fig-scroll { overflow-x: auto; }
+  figure svg { display: block; width: 100%; min-width: 660px; height: auto; }
+  figcaption {
+    font-size: 14.5px;
+    color: var(--muted);
+    max-width: 70ch;
+    border-top: 1px solid var(--hairline);
+    padding-top: 14px;
+  }
+
+  /* Diagram */
+  .d-box { fill: var(--canvas); stroke: var(--hairline-strong); rx: 8; }
+  .d-host { fill: var(--surface-2); stroke: var(--hairline-strong); }
+  .d-inner { fill: var(--surface); stroke: var(--hairline); rx: 6; }
+  .d-name { font-family: var(--font-ui); font-size: 13.5px; font-weight: 600; fill: var(--ink); text-anchor: middle; }
+  .d-sub { font-family: var(--font-mono); font-size: 10px; fill: var(--muted); text-anchor: middle; }
+  .d-title { font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: .08em; fill: var(--muted); }
+  .d-line { stroke: var(--muted); stroke-width: 1.3; fill: none; }
+  .d-ws { stroke: var(--signal); stroke-width: 1.3; stroke-dasharray: 4 4; fill: none; }
+  .d-ah { fill: var(--muted); }
+
+  /* ── Tables ───────────────────────────────────────────── */
+  .table-scroll {
+    overflow-x: auto;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+
+  table { border-collapse: collapse; width: 100%; font-size: 15px; }
+
+  th {
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--hairline-strong);
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 15px 18px;
+    border-bottom: 1px solid var(--hairline);
+    vertical-align: top;
+    color: var(--ink-2);
+  }
+  tr:last-child td { border-bottom: none; }
+
+  td.k { white-space: nowrap; }
+  td.k code { background: none; padding: 0; color: var(--ink); font-weight: 500; }
+
+  /* ── Callout ──────────────────────────────────────────── */
+  .note {
+    background: var(--surface-2);
+    border-left: 3px solid var(--signal);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    padding: 18px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .note .label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--signal);
+  }
+  .note p { font-size: 16px; color: var(--ink-2); max-width: 66ch; }
+
+  /* ── Cards ────────────────────────────────────────────── */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(248px, 1fr)); gap: 14px; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-sm);
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .card h4 { margin: 0; font-size: 15px; font-weight: 600; }
+  .card p { font-size: 14.5px; color: var(--muted); }
+  .card .stat {
+    font-family: var(--font-mono);
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+
+  footer {
+    border-top: 1px solid var(--hairline);
+    padding-top: 20px;
+    font-size: 14px;
+    color: var(--muted);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  footer code { font-size: 12.5px; }
+
+  @media (max-width: 560px) {
+    body { font-size: 16px; }
+    ol.steps > li { grid-template-columns: 26px 1fr; gap: 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <span class="eyebrow">Pulse · reference</span>
+    <h1>The codebase map</h1>
+    <p class="standfirst">
+      What started as an iClicker replacement is now a live-questions tool, a homework
+      system, a gradebook, a textbook reader, and a PowerPoint add-in sharing one server
+      and one database. This page is the floor plan: every room, what it's for, and
+      which hallways connect them.
+    </p>
+  </header>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <section>
+    <h2>The shape of it</h2>
+    <div class="measure">
+      <p>
+        Pulse is a monorepo with one deployable unit. In production a single Node process
+        serves everything: the REST API, the socket.io hub, the built React frontend, and
+        the built PowerPoint task pane — all one origin, which is what lets the add-in
+        pages share auth with the app. Railway runs it; Postgres sits behind it via
+        Prisma; a separate Indigo container handles chemistry.
+      </p>
+      <p>
+        The domain has exactly <strong>two lanes</strong> that share their atoms. A
+        <strong>Session</strong> is an in-class deck — answers are live, final, and
+        socket-broadcast. An <strong>Assignment</strong> is homework — answers are drafts
+        until submitted, with deadlines and per-student extensions. Both lanes are built
+        from the same <code>Question</code> and <code>Response</code> tables, and nearly
+        every student-facing route branches once on which lane a question belongs to.
+        Hold that split in your head and most of the backend reads itself.
+      </p>
+    </div>
+    <div class="cards">
+      <div class="card"><span class="stat">7,151</span><p>lines of backend TypeScript — 12 route files, 2 services, ~95 endpoints</p></div>
+      <div class="card"><span class="stat">11,815</span><p>lines of frontend TypeScript — 19 pages, ~30 components</p></div>
+      <div class="card"><span class="stat">16</span><p>Prisma models, 20 migrations, 8 question types</p></div>
+      <div class="card"><span class="stat">4</span><p>screens: student phone, professor dashboard, projector slide, task pane</p></div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <section>
+    <h2>One process, four screens</h2>
+    <figure>
+      <div class="fig-scroll">
+        <svg viewBox="0 0 720 470" role="img" aria-label="Architecture: four clients above one Node process above four backing services">
+          <defs>
+            <marker id="ah" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+              <path d="M0,0 L8,4 L0,8 z" class="d-ah"/>
+            </marker>
+          </defs>
+
+          <!-- Clients -->
+          <rect class="d-box" x="8"   y="10" width="166" height="64" rx="8"/>
+          <text class="d-name" x="91"  y="38">Student phone</text>
+          <text class="d-sub"  x="91"  y="58">/q/:id · answering</text>
+
+          <rect class="d-box" x="187" y="10" width="166" height="64" rx="8"/>
+          <text class="d-name" x="270" y="38">Professor dashboard</text>
+          <text class="d-sub"  x="270" y="58">/professor · wall + grades</text>
+
+          <rect class="d-box" x="366" y="10" width="166" height="64" rx="8"/>
+          <text class="d-name" x="449" y="38">Projector slide</text>
+          <text class="d-sub"  x="449" y="58">/present · aggregate only</text>
+
+          <rect class="d-box" x="545" y="10" width="166" height="64" rx="8"/>
+          <text class="d-name" x="628" y="38">PowerPoint task pane</text>
+          <text class="d-sub"  x="628" y="58">/addin · deck upkeep</text>
+
+          <!-- Client → server arrows (REST solid, socket dashed) -->
+          <line class="d-line" x1="84"  y1="74" x2="84"  y2="134" marker-end="url(#ah)"/>
+          <line class="d-ws"   x1="100" y1="74" x2="100" y2="138"/>
+          <line class="d-line" x1="263" y1="74" x2="263" y2="134" marker-end="url(#ah)"/>
+          <line class="d-ws"   x1="279" y1="74" x2="279" y2="138"/>
+          <line class="d-line" x1="442" y1="74" x2="442" y2="134" marker-end="url(#ah)"/>
+          <line class="d-ws"   x1="458" y1="74" x2="458" y2="138"/>
+          <line class="d-line" x1="628" y1="74" x2="628" y2="134" marker-end="url(#ah)"/>
+
+          <!-- Server -->
+          <rect class="d-host" x="8" y="140" width="704" height="168" rx="12"/>
+          <text class="d-title" x="24" y="168">BACKEND/SRC · ONE NODE PROCESS · EXPRESS + SOCKET.IO</text>
+
+          <rect class="d-inner" x="24"  y="184" width="126" height="56" rx="6"/>
+          <text class="d-name" x="87"  y="208" style="font-size:12.5px">routes/</text>
+          <text class="d-sub"  x="87"  y="226">REST · /api</text>
+
+          <rect class="d-inner" x="162" y="184" width="126" height="56" rx="6"/>
+          <text class="d-name" x="225" y="208" style="font-size:12.5px">socket.ts</text>
+          <text class="d-sub"  x="225" y="226">rooms per session</text>
+
+          <rect class="d-inner" x="300" y="184" width="126" height="56" rx="6"/>
+          <text class="d-name" x="363" y="208" style="font-size:12.5px">clock.service</text>
+          <text class="d-sub"  x="363" y="226">countdowns · RAM</text>
+
+          <rect class="d-inner" x="438" y="184" width="126" height="56" rx="6"/>
+          <text class="d-name" x="501" y="208" style="font-size:12.5px">themes.service</text>
+          <text class="d-sub"  x="501" y="226">AI themes worker</text>
+
+          <rect class="d-inner" x="576" y="184" width="126" height="56" rx="6"/>
+          <text class="d-name" x="639" y="208" style="font-size:12.5px">scheduler</text>
+          <text class="d-sub"  x="639" y="226">60 s run sweep</text>
+
+          <text class="d-sub" x="360" y="284" style="font-size:11px">also serves the built frontend, task-pane assets, /uploads, and proxies /api/indigo</text>
+
+          <!-- Server → backing services -->
+          <line class="d-line" x1="91"  y1="308" x2="91"  y2="374" marker-end="url(#ah)"/>
+          <line class="d-line" x1="270" y1="308" x2="270" y2="374" marker-end="url(#ah)"/>
+          <line class="d-line" x1="449" y1="308" x2="449" y2="374" marker-end="url(#ah)"/>
+          <line class="d-line" x1="628" y1="308" x2="628" y2="374" marker-end="url(#ah)"/>
+
+          <!-- Backing services -->
+          <rect class="d-box" x="8"   y="380" width="166" height="64" rx="8"/>
+          <text class="d-name" x="91"  y="408">PostgreSQL</text>
+          <text class="d-sub"  x="91"  y="428">Prisma · 16 models</text>
+
+          <rect class="d-box" x="187" y="380" width="166" height="64" rx="8"/>
+          <text class="d-name" x="270" y="408">Anthropic API</text>
+          <text class="d-sub"  x="270" y="428">themes + AI grading</text>
+
+          <rect class="d-box" x="366" y="380" width="166" height="64" rx="8"/>
+          <text class="d-name" x="449" y="408">GitHub raw</text>
+          <text class="d-sub"  x="449" y="428">textbook markdown</text>
+
+          <rect class="d-box" x="545" y="380" width="166" height="64" rx="8"/>
+          <text class="d-name" x="628" y="408">Indigo service</text>
+          <text class="d-sub"  x="628" y="428">chemistry structures</text>
+        </svg>
+      </div>
+      <figcaption>
+        Solid lines are HTTPS; dashed red is socket.io. The three live screens hold a
+        socket; the task pane is plain REST. Everything in the middle band shares one
+        process and one memory space — which is why the clocks and debounce timers can
+        live in RAM, and why Pulse must never run as two instances
+        (<code>index.ts</code> boots exactly this once).
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <section>
+    <h2>The vocabulary</h2>
+    <div class="measure">
+      <p>
+        The mental map is mostly the data model. Sixteen models, but really five ideas:
+        <strong>people</strong> (Professor, Student), <strong>the container</strong>
+        (Class, Section, Enrollment), <strong>the two lanes</strong> (Session + SessionRun
+        vs Assignment + DeadlineExtension), <strong>the shared atoms</strong>
+        (QuestionGroup, Question, Response), and <strong>the AI layer</strong> (ThemeSet,
+        ThemeCategory, ResponseTheme).
+      </p>
+      <p>
+        The subtlest distinction — and the one worth re-learning — is
+        <strong>Session versus SessionRun</strong>. A Session is a <em>template</em>: the
+        deck of questions, reusable across terms and sections. A SessionRun is one
+        <em>occurrence</em> of it, opened for a section (or the whole class), and it is
+        what actually opens and closes. Responses stamp the run they landed in, which is
+        how the same session taught twice keeps its answer sets apart.
+      </p>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Model</th><th>What it is</th></tr></thead>
+        <tbody>
+          <tr><td class="k"><code>Professor</code></td><td>An account that owns classes. Registration is gated by an invite code (<code>PROFESSOR_INVITE_CODE</code>).</td></tr>
+          <tr><td class="k"><code>Student</code></td><td>An account keyed by netId. Enrolls, answers, sees grades. No display name by design.</td></tr>
+          <tr><td class="k"><code>Class</code></td><td>The container: a <code>joinCode</code>, a textbook pointer (repo/path/branch), and the two behaviour defaults — <code>liveThemesDefault</code>, <code>autoCloseDefault</code> — that questions inherit.</td></tr>
+          <tr><td class="k"><code>Section</code></td><td>A named subdivision with its own <code>joinCode</code>. Runs can target one section; grading respects the boundary.</td></tr>
+          <tr><td class="k"><code>Enrollment</code></td><td>Student↔class join row, optionally pinned to a section. Auto-created the first time a student touches a class's question, so answering never fails on paperwork.</td></tr>
+          <tr><td class="k"><code>Session</code></td><td>An in-class deck. A <em>template</em> — reused term after term. Carries a vestigial <code>accessCode</code> (dropping it is on the backlog).</td></tr>
+          <tr><td class="k"><code>SessionRun</code></td><td>One live occurrence of a session, scoped to a section or open to all. The thing that opens and closes; the close clocks and theme sets key to it.</td></tr>
+          <tr><td class="k"><code>Assignment</code></td><td>The homework lane: same question machinery, plus a deadline, no runs.</td></tr>
+          <tr><td class="k"><code>DeadlineExtension</code></td><td>A per-student deadline override on one assignment. Always wins over the assignment's own deadline.</td></tr>
+          <tr><td class="k"><code>QuestionGroup</code></td><td>A titled cluster of questions inside either parent — multi-part problems with shared stem text.</td></tr>
+          <tr><td class="k"><code>Question</code></td><td>The atom. Belongs to a session <em>or</em> an assignment (XOR via nullable FKs). Eight types, a globally-unique 4-digit <code>accessCode</code> (what QR codes encode), optional <code>correctAnswer</code>/<code>tolerance</code>/<code>unit</code>, and per-question <code>liveThemes</code>/<code>autoClose</code> overrides (null = inherit class default).</td></tr>
+          <tr><td class="k"><code>Response</code></td><td>One student's answer to one question — unique per (question, student). Session answers stamp their <code>runId</code> and are final; homework answers upsert as drafts until submitted. STRUCTURE answers are stored as InChI. <code>aiScore</code> holds AI or manual grades.</td></tr>
+          <tr><td class="k"><code>TextbookView</code></td><td>An anonymous per-chapter view ping, for the reading-analytics chart.</td></tr>
+          <tr><td class="k"><code>ThemeSet</code></td><td>The live AI categories for one (question, run) — keyed to the run so next term starts clean. A five-state machine: WAITING → BOOTSTRAPPING → ACTIVE (→ RECLUSTERING) → FAILED.</td></tr>
+          <tr><td class="k"><code>ThemeCategory</code></td><td>One label in a set. Exactly one per set is the server-made <code>isOther</code> bucket ("Still forming") — never invented by the model.</td></tr>
+          <tr><td class="k"><code>ResponseTheme</code></td><td>A response's category assignment. Deliberately its own table so hot <code>Response</code> queries stay lean; counts are always derived by groupBy, never stored.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <section>
+    <h2>The repository</h2>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Path</th><th>What lives there</th></tr></thead>
+        <tbody>
+          <tr><td class="k"><code>backend/</code></td><td>Express + Prisma + socket.io. Everything server-side, including smoke-test scripts (<code>npm run test:smoke:*</code>, <code>rehearse</code>).</td></tr>
+          <tr><td class="k"><code>frontend/</code></td><td>React + Vite + Tailwind + react-query. Built to <code>dist/</code> and served by the backend in production.</td></tr>
+          <tr><td class="k"><code>addin/</code></td><td>The PowerPoint add-in: task pane (deck upkeep) and auth page. Its own Vite build, served by the backend at <code>/addin</code>. Has a good README.</td></tr>
+          <tr><td class="k"><code>shared/</code></td><td>Types, enums, and the QR card renderer used by both frontend and add-in. The contract between client and server, by hand.</td></tr>
+          <tr><td class="k"><code>docs/</code></td><td>Reference pages (this one, <a href="close-countdown.html">close-countdown</a>) plus question-types, security-findings, production-hardening notes.</td></tr>
+          <tr><td class="k"><code>Redesign/</code></td><td>Design exploration: wireframes, tokens, UX pass notes. Not wired into the build.</td></tr>
+          <tr><td class="k"><code>uploads/</code></td><td>Professor-uploaded question images, served statically.</td></tr>
+          <tr><td class="k">root <code>*.md</code></td><td>Handoff/spec documents: <code>live_ai_themes_spec.md</code>, <code>pedagogy_handoff.md</code>, <code>classroom_response_tool_handoff.md</code>, and friends. The "why" behind the subsystems.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <section>
+    <h2>The backend, file by file</h2>
+    <div class="measure">
+      <p>
+        All routes mount in <code>app.ts</code>, which also holds the split Helmet policy
+        (the add-in surfaces need Office's CDN and framing, the app does not), the Indigo
+        proxy, and static serving. Auth is a JWT in the <code>Authorization</code> header,
+        role-stamped; <code>requireProfessor</code> / <code>requireStudent</code> guard
+        per-route or per-router.
+      </p>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>File</th><th>Guard</th><th>Owns</th></tr></thead>
+        <tbody>
+          <tr><td class="k"><code>auth.routes.ts</code></td><td>public</td><td>Register / login / me / change-password for both roles. Logins are rate-limited; professor registration needs the invite code.</td></tr>
+          <tr><td class="k"><code>classes.routes.ts</code></td><td>professor</td><td>Class CRUD, duplicate-for-new-term, sections, roster and per-student activity, student password reset, the gradebook with CSV/JSON export, textbook-view analytics. Second-biggest file (1,030 lines).</td></tr>
+          <tr><td class="k"><code>sessions.routes.ts</code></td><td>professor</td><td>Session CRUD and export — and the run lifecycle: <code>POST /sessions/:id/runs</code> opens one, <code>PATCH …/runs/:runId</code> closes it.</td></tr>
+          <tr><td class="k"><code>assignments.routes.ts</code></td><td>professor</td><td>Assignment CRUD, export, per-student submission status.</td></tr>
+          <tr><td class="k"><code>questions.routes.ts</code></td><td>professor</td><td>Question and group CRUD + reorder, duplicated across both parents; reopening a countdown-closed question.</td></tr>
+          <tr><td class="k"><code>grading.routes.ts</code></td><td>professor</td><td>AI participation grading (batched, Sonnet, live progress over sockets), manual score overrides, theme summarize/read.</td></tr>
+          <tr><td class="k"><code>extensions.routes.ts</code></td><td>professor</td><td>Deadline extensions: list, grant, revoke.</td></tr>
+          <tr><td class="k"><code>responses.routes.ts</code></td><td>student</td><td><strong>The entire student surface</strong>, despite the name: code lookup, question fetch, answer submit, homework submit-lock, all grade views, enrollment, class list, textbook config. Biggest file (1,062 lines).</td></tr>
+          <tr><td class="k"><code>uploads.routes.ts</code></td><td>professor</td><td>Question-image upload via multer.</td></tr>
+          <tr><td class="k"><code>textbook.routes.ts</code></td><td>mixed</td><td>Fetches markdown chapters from GitHub, renders through unified (remark-math → MathJax, GFM, sanitize), searches across chapters, caches.</td></tr>
+          <tr><td class="k"><code>addin.routes.ts</code></td><td>professor</td><td>Deck integrity for the add-in: verify codes in bulk, adopt/rebind codes, QR PNGs — and <code>GET /addin/live</code>, the identity-stripped aggregate feed the projector polls.</td></tr>
+          <tr><td class="k"><code>addin-manifest.ts</code></td><td>public</td><td>Office manifest XML (taskpane, live-results, legacy spike).</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Supporting cast</th><th>Role</th></tr></thead>
+        <tbody>
+          <tr><td class="k"><code>services/clock.service.ts</code></td><td>The close countdown — in-memory, threshold-armed, median-gap adaptive. Fully documented in <a href="close-countdown.html">its own page</a>.</td></tr>
+          <tr><td class="k"><code>services/themes.service.ts</code></td><td>Live AI themes: Opus bootstraps categories from the first 8 answers, Haiku classifies the rest in debounced batches; re-clusters when "Still forming" grows past 30%. Spec in <code>live_ai_themes_spec.md</code>.</td></tr>
+          <tr><td class="k"><code>scheduler.ts</code></td><td>Every 60 s, closes runs older than 100 minutes — the "professor walked away" backstop.</td></tr>
+          <tr><td class="k"><code>socket.ts</code></td><td>JWT-gated rooms: <code>{sessionId}</code> for everyone, <code>{sessionId}:professor</code> for identity-bearing events.</td></tr>
+          <tr><td class="k"><code>middleware/</code></td><td>JWT auth, uniform <code>AppError</code> handling, request logging (winston).</td></tr>
+          <tr><td class="k"><code>utils/scoring.ts</code></td><td>All grade math (see below). Mirrored client-side in <code>frontend/src/lib/scoring.ts</code> — change both.</td></tr>
+          <tr><td class="k"><code>utils/indigo.ts</code>, <code>qr.ts</code>, <code>codes.ts</code>, <code>enrollment.ts</code></td><td>SMILES→InChI via the Indigo container; QR generation; unique code minting; the auto-enroll upsert.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <section>
+    <h2>A lecture, end to end</h2>
+    <ol class="steps">
+      <li><div class="step-body">
+        <h3>The professor opens a run</h3>
+        <p><code>POST /sessions/:id/runs</code>, scoped to a section or the whole class. <code>run_status</code> goes out to the session room; the deck's printed QR codes are already live because codes belong to questions, not runs.</p>
+      </div></li>
+      <li><div class="step-body">
+        <h3>Students scan in</h3>
+        <p>The QR resolves to <code>/q/code/:code</code>. The server accepts it only if a run is open <em>for that student's section</em> — the lookup joins their enrollment, so section B can't answer section A's run.</p>
+      </div></li>
+      <li><div class="step-body">
+        <h3>An answer lands</h3>
+        <p><code>POST /responses</code>: final, stamped with the run, one per student per question. First contact with a class auto-enrolls the student — nobody fails to answer over paperwork.</p>
+      </div></li>
+      <li><div class="step-body">
+        <h3>The server fans out</h3>
+        <p>Three side-effects per answer, none of which can fail the student's request: the professor room gets <code>new_response</code> (with identity and clock state), the close clock is touched if armed, and theme work is debounced onto the queue if enabled.</p>
+      </div></li>
+      <li><div class="step-body">
+        <h3>The room watches the slide</h3>
+        <p><code>/present</code>, framed inside PowerPoint, asks <code>/addin/live</code> "what's open right now?" and follows the class automatically. Below the answer threshold it shows presence dots; with themes on, bars grow as Haiku classifies; with a clock armed, the countdown bar drains and resets.</p>
+      </div></li>
+      <li><div class="step-body">
+        <h3>Things close</h3>
+        <p>A timed question closes itself when the room goes quiet (<code>question_closed</code>; the professor can reopen). The run closes when the professor closes it — or when the scheduler's 100-minute sweep does. Closing the run drops its clocks and freezes its theme set.</p>
+      </div></li>
+      <li><div class="step-body">
+        <h3>Afterwards</h3>
+        <p>The professor runs AI grading per question (progress streams over the socket), overrides scores where the model was wrong, and the gradebook and student grade views pick it all up.</p>
+      </div></li>
+    </ol>
+    <div class="measure">
+      <p>
+        Homework is the same skeleton with the tempo changed: answers upsert as drafts,
+        an explicit submit locks them, the deadline (extension-aware) is enforced
+        server-side on every write, and grades appear once the assignment closes.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <section>
+    <h2>How grades are computed</h2>
+    <div class="measure">
+      <p>
+        One function owns it: <code>gradeSession()</code> in
+        <code>backend/src/utils/scoring.ts</code>. Every question scores 0–1. An
+        <code>aiScore</code> on the response — whether the model's or a professor
+        override — always wins. Without one, objective types self-grade: numeric answers
+        compare with tolerance and unit conversion via mathjs, structures compare as
+        InChI strings, choice types compare literally. Free text only ever gets a score
+        from AI participation grading (full / partial / no credit).
+      </p>
+      <p>
+        A question <em>counts</em> toward earned/max only if the professor set it up for
+        grading (a key exists, or AI grading was run) — and, for in-class questions, only
+        if it was actually presented to that student's section, which is inferred from
+        responses existing in the section's runs. That last rule is what keeps a
+        two-section course from penalising section B for a question only section A saw.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <section>
+    <h2>The socket vocabulary</h2>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Event</th><th>Room</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td class="k"><code>new_response</code></td><td>professor</td><td>One answer, with student identity and current clock state.</td></tr>
+          <tr><td class="k"><code>run_status</code></td><td>session</td><td>A run opened or closed — including by the 100-minute sweep.</td></tr>
+          <tr><td class="k"><code>question_closed</code></td><td>session</td><td>A countdown expired; the server now refuses answers.</td></tr>
+          <tr><td class="k"><code>question_reopened</code></td><td>session</td><td>The professor overruled the clock.</td></tr>
+          <tr><td class="k"><code>themes_updated</code></td><td>session</td><td>New category counts. Aggregate only — safe for the projector.</td></tr>
+          <tr><td class="k"><code>grade_progress</code> / <code>grade_complete</code></td><td>professor</td><td>AI grading batches landing.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note">
+      <span class="label">The projector invariant</span>
+      <p>
+        Anything that can appear on a lecture-hall wall — <code>/present</code>,
+        <code>ResultsSummary</code>, <code>ThemeBars</code>, the <code>/addin/live</code>
+        payload, the session-room socket events — carries aggregates only: counts and
+        shares, never a student's name, netId, or raw answer. Identity flows exclusively
+        through the <code>:professor</code> room and professor-guarded REST. When adding
+        anything to the projector path, this is the invariant to keep.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <section>
+    <h2>The frontend, route by route</h2>
+    <div class="measure">
+      <p>
+        Routing lives in <code>App.tsx</code>; state is react-query over the axios client
+        in <code>api/client.ts</code>. Two parallel auth contexts (professor, student)
+        can be logged in simultaneously; the client injects whichever token fits, with a
+        third fallback token for pages rendered inside PowerPoint, whose storage
+        partition can't see the browser's. A 401 anywhere raises the session-expired
+        modal instead of silently dumping work.
+      </p>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Route</th><th>Page</th><th>What it shows</th></tr></thead>
+        <tbody>
+          <tr><td class="k"><code>/login</code>, <code>/register</code></td><td class="k"><code>LoginPage</code>, <code>RegisterPage</code></td><td>Unified auth with a role switch.</td></tr>
+          <tr><td class="k"><code>/professor</code></td><td class="k"><code>DashboardPage</code></td><td>Class list, create, duplicate for a new term.</td></tr>
+          <tr><td class="k"><code>/professor/classes/:id</code></td><td class="k"><code>ClassPage</code></td><td>The class hub: sessions, assignments, roster, sections, gradebook, textbook analytics. 1,163 lines — the professor's home.</td></tr>
+          <tr><td class="k"><code>/professor/sessions/:id</code></td><td class="k"><code>SessionPage</code></td><td>Deck authoring + the live wall (via <code>LiveMonitorPanel</code>): responses with identity, theme bars, grading. Biggest page (1,384 lines).</td></tr>
+          <tr><td class="k"><code>/professor/classes/:cid/assignments/:id</code></td><td class="k"><code>AssignmentDetailPage</code></td><td>Homework authoring, groups, extensions, AI grading, per-student review.</td></tr>
+          <tr><td class="k"><code>/student</code>, <code>/student/classes/:id</code></td><td class="k"><code>MyClassesPage</code>, <code>StudentClassPage</code></td><td>Enrolled classes, live-now sessions, assignments, grades.</td></tr>
+          <tr><td class="k"><code>/q/code/:code</code> → <code>/q/:id</code></td><td class="k"><code>QuestionRedirectPage</code>, <code>QuestionPage</code></td><td>The answering flow: all eight input types, including drag-to-order and the Ketcher structure editor.</td></tr>
+          <tr><td class="k"><code>/student/assignments/:id</code></td><td class="k"><code>AssignmentPage</code></td><td>Homework: drafts, autosave, explicit submit, post-close grades.</td></tr>
+          <tr><td class="k"><code>/present</code></td><td class="k"><code>PresentResultsPage</code></td><td>The projector view inside the PowerPoint content add-in. Zero-config (follows whatever's open), never blank by design.</td></tr>
+          <tr><td class="k"><code>/student/classes/:id/textbook</code></td><td class="k"><code>StudentTextbookPage</code> / <code>TextbookPage</code></td><td>The rendered textbook with search; shared with the professor view.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <section>
+    <h2>The PowerPoint add-in</h2>
+    <div class="measure">
+      <p>
+        Two pieces with opposite philosophies, both in <code>addin/</code>. The
+        <strong>task pane</strong> is the pre-lecture tool: it inserts question QR cards
+        as ordinary tagged pictures (static PNGs — they work offline, print, and can't
+        fail to load mid-lecture), checks a whole deck's codes against
+        <code>/api/addin/verify</code>, and re-binds them at semester rollover. The
+        <strong>Live Results object</strong> is a content add-in that frames
+        <code>/present</code> on a slide: live by nature, so instead of a static
+        fallback it degrades to a readable status line. Slides bind to questions by
+        <code>accessCode</code>, and the tags live inside the <code>.pptx</code> itself —
+        keeping decks true across saves, copies, and terms is the add-in's whole job.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <section>
+    <h2>Where to look when…</h2>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>You want to…</th><th>Start at</th></tr></thead>
+        <tbody>
+          <tr><td>Add or change a question type</td><td><code>shared/src/index.ts</code> (enum) + Prisma migration → <code>questions.routes.ts</code> → <code>QuestionPage.tsx</code> (input) → <code>ResultsSummary.tsx</code> (display) → <em>both</em> scoring files. <code>docs/question-types.md</code> has the catalogue.</td></tr>
+          <tr><td>Tune the close countdown</td><td>The constants atop <code>clock.service.ts</code>; the numbers in <a href="close-countdown.html">close-countdown.html</a> go stale with them.</td></tr>
+          <tr><td>Change live-theme behaviour</td><td>The constants atop <code>themes.service.ts</code>, with reasoning in <code>live_ai_themes_spec.md</code> §3.1.</td></tr>
+          <tr><td>Adjust the AI grading rubric</td><td>The prompt in <code>grading.routes.ts → gradeBatch()</code>.</td></tr>
+          <tr><td>Fix textbook rendering</td><td>The unified pipeline + sanitize schema in <code>textbook.routes.ts</code>. Remember the MathJax array rule: <code>$$</code> on its own line.</td></tr>
+          <tr><td>Touch auth or tokens</td><td><code>auth.routes.ts</code>, <code>auth.middleware.ts</code>, <code>frontend/src/api/client.ts</code> — including the add-in token fallback.</td></tr>
+          <tr><td>Change grade math</td><td><code>backend/src/utils/scoring.ts</code> and its mirror <code>frontend/src/lib/scoring.ts</code>, together.</td></tr>
+          <tr><td>Work on the add-in</td><td><code>addin/README.md</code> first — it explains the binding model better than the code does.</td></tr>
+          <tr><td>See why a subsystem exists at all</td><td>The root handoff docs: <code>pedagogy_handoff.md</code>, <code>live_ai_themes_spec.md</code>, <code>classroom_response_tool_handoff.md</code>.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <section>
+    <h2>Sharp edges</h2>
+    <div class="cards">
+      <div class="card">
+        <h4>One process, or nothing works</h4>
+        <p>Close clocks, theme debounce timers, and socket rooms all live in RAM. A second instance would silently break all three. <code>warmFromDb()</code> covers restarts; nothing covers replicas.</p>
+      </div>
+      <div class="card">
+        <h4>responses.routes.ts is misnamed</h4>
+        <p>It's the whole student API. The run-resolution, deadline-with-extension, and enrollment checks are each repeated three to four times inside it — extract before extending.</p>
+      </div>
+      <div class="card">
+        <h4>The XOR parent</h4>
+        <p>Every student route branches on session-vs-assignment. Tolerable at this scale, but each new student endpoint pays the two-lane tax. Write both branches or reject one explicitly.</p>
+      </div>
+      <div class="card">
+        <h4>Answer key leaks to students</h4>
+        <p><code>GET /student/assignments/:id</code> returns <code>correctAnswer</code> while homework is open, and a leftover Debug panel in <code>AssignmentPage.tsx</code> renders it. Strip both.</p>
+      </div>
+      <div class="card">
+        <h4>Dead and vestigial code</h4>
+        <p><code>SubmitPage.tsx</code> (367 lines) is routed nowhere. <code>Session.accessCode</code> is unused. The add-in spike (<code>spike.html</code>, spike manifest) is on the backlog to delete, as is root clutter like <code>migrate_structures_q.sql</code>.</p>
+      </div>
+      <div class="card">
+        <h4>Grade math exists twice</h4>
+        <p>Backend <code>utils/scoring.ts</code> and frontend <code>lib/scoring.ts</code> implement the same rules. A change to one without the other shows students different numbers than the gradebook.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>
+      Environment: <code>DATABASE_URL</code> · <code>JWT_SECRET</code> · <code>ANTHROPIC_API_KEY</code> ·
+      <code>GITHUB_TOKEN</code> · <code>PROFESSOR_INVITE_CODE</code> · <code>INDIGO_SERVICE_URL</code> ·
+      <code>BASE_URL</code> / <code>FRONTEND_URL</code> · <code>UPLOAD_DIR</code> (see <code>backend/src/config/index.ts</code>).
+      Deploy: Railway (<code>railway.toml</code>) — migrate then start, healthcheck on <code>/health</code>.
+    </p>
+    <p>Snapshot of 2026-09-01, commit <code>83cbf99</code>. Companion: <a href="close-countdown.html">the close countdown</a>.</p>
+  </footer>
+
+</div>
+</body>
+</html>
