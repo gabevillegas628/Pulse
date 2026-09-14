@@ -12,6 +12,11 @@ interface Props {
   isError: boolean
   /** Derive a set. Destructive when one already exists — the server replaces it. */
   onSummarize: () => void
+  /**
+   * Which opening of the session the themes belong to. Null when the session has only been
+   * opened once, since there is then nothing to confuse it with.
+   */
+  scope?: { opened: string; section: string | null } | null
 }
 
 /**
@@ -33,7 +38,7 @@ interface Props {
  * collapsed panel hide incoming live themes indefinitely; if it is wanted later,
  * `localStorage` keyed by question id is the whole job.
  */
-export default function ThemesPanel({ themes, isSummarizing, isError, onSummarize }: Props) {
+export default function ThemesPanel({ themes, isSummarizing, isError, onSummarize, scope }: Props) {
   const [collapsed, setCollapsed] = useState(false)
   const [ask, setAsk] = useState<DialogRequest | null>(null)
 
@@ -56,6 +61,12 @@ export default function ThemesPanel({ themes, isSummarizing, isError, onSummariz
           <Sparkles size={14} />
           {isSummarizing ? 'Summarizing…' : 'Summarize responses'}
         </button>
+        {scope && (
+          <p className="text-[11px] text-muted leading-snug mt-1.5">
+            Themes are built separately each time the session is opened, so this opening
+            {scope.section ? ` (Section ${scope.section})` : ''} starts with none of its own.
+          </p>
+        )}
         {errorLine}
       </div>
     )
@@ -100,6 +111,19 @@ export default function ThemesPanel({ themes, isSummarizing, isError, onSummariz
           {isSummarizing ? 'Regrouping…' : 'Regenerate'}
         </button>
       </div>
+
+      {/*
+        Themes are built per opening of the session, from that opening's answers only, so a
+        question reopened for another section gets a fresh set rather than the last one's.
+        That is the right behaviour and it was invisible — the author forgot it, and nobody
+        else would ever have known. Said only once there has been a second opening.
+      */}
+      {scope && (
+        <p className="text-[11px] text-muted leading-snug mt-1">
+          From this opening only{scope.section ? ` · Section ${scope.section}` : ''} · {scope.opened}.
+          Each reopening builds its own set.
+        </p>
+      )}
 
       {!collapsed && (
         <div className="mt-4">

@@ -364,6 +364,16 @@ export default function SessionPage() {
   const isLive = openRun !== null
   const hasBeenRun = data.runs.length > 0
 
+  // Which opening the themes panel is describing, once there is more than one to tell apart.
+  const themeScope = data.runs.length > 1 && latestRun
+    ? {
+        opened: new Date(latestRun.openedAt).toLocaleString([], {
+          weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+        }),
+        section: latestRun.section?.name ?? null,
+      }
+    : null
+
   return (
     <ProfessorLayout>
       {/* Header */}
@@ -637,6 +647,7 @@ export default function SessionPage() {
               isSummarizing={summarizeMutation.isPending}
               isError={summarizeMutation.isError}
               onSummarize={() => summarizeMutation.mutate(activeQuestion.id)}
+              scope={themeScope}
             />
           )}
 
