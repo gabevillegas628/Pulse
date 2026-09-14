@@ -74,7 +74,7 @@ Students enter a number. Graded against a professor-set answer ± tolerance.
 - **`options`** — unused
 - **`correctAnswer`** — the correct numeric value stored as a **string** (e.g. `"6.02e23"`, `"-273.15"`). Parsed with `parseFloat()` at grading time — both standard and scientific notation are supported.
 - **`tolerance`** — acceptable deviation from `correctAnswer`. A student answer `s` is correct if `|s - correct| ≤ tolerance`. Defaults to `0` if null (exact match required).
-- **`unit`** — optional display-only label shown as a suffix next to the student's input field (e.g. `"mol/L"`, `"kJ/mol"`). Not validated; purely cosmetic.
+- **`unit`** — optional label shown as a suffix next to the student's input field (e.g. `"mol/L"`, `"kJ/mol"`). Also the grading unit when `correctAnswer` carries none: student answers are converted into it with mathjs. Validated on save by `numericKeyProblem` — a unit mathjs cannot parse (`%`, `ppm`) would mark every answer wrong, so it is refused. For a percent, leave the unit blank and say "as a percent (0–100)" in the question.
 - **Grading** — 1.0 if within tolerance, 0.0 otherwise. No partial credit.
 - **`correctAnswer` restriction** — can be set at question creation time and patched at any session status (unlike MC/YES_NO which require CLOSED). This is intentional: the answer is authoring metadata for NUMERIC, not a grading secret.
 - **Student input** — `<input type="text">` (not `type="number"` — preserves scientific notation display and avoids browser-specific formatting quirks), followed by unit label if set.

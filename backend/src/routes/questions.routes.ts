@@ -9,6 +9,7 @@ import { generateUniqueCode } from '../utils/codes.js'
 import { generateQuestionQr } from '../utils/qr.js'
 import { p } from '../utils/params.js'
 import { toInchi } from '../utils/indigo.js'
+import { numericKeyProblem } from '../utils/scoring.js'
 import { uploadPathSchema, deleteUploadIfUnreferenced } from '../utils/uploads.js'
 import { reopen } from '../services/clock.service.js'
 import { getIo } from '../socket.js'
@@ -77,6 +78,11 @@ router.post('/sessions/:id/questions', requireProfessor, async (req: Request, re
     // mouse-only — no touch handling at all — and live answers come from phones.
     if (type === 'STRUCTURE') {
       throw new AppError('Structure questions need a mouse to draw, so they are available on assignments only', 400)
+    }
+
+    if (type === 'NUMERIC') {
+      const problem = numericKeyProblem(correctAnswer ?? null, unit ?? null)
+      if (problem) throw new AppError(problem, 400)
     }
 
     const session = await getSession(p(req.params.id), professor)
@@ -319,6 +325,16 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
     if (body.tolerance !== undefined) updateData.tolerance = body.tolerance
     if (body.unit !== undefined) updateData.unit = body.unit
 
+    // Check the key as it will stand after this save: the answer key panel sends the
+    // value and the unit as separate requests, so either half may come from the row.
+    if ((question.type as string) === 'NUMERIC' && (body.correctAnswer !== undefined || body.unit !== undefined)) {
+      const problem = numericKeyProblem(
+        body.correctAnswer !== undefined ? body.correctAnswer : question.correctAnswer,
+        body.unit !== undefined ? body.unit : question.unit,
+      )
+      if (problem) throw new AppError(problem, 400)
+    }
+
     // Title is professor-facing navigation metadata — never shown to students, so
     // it stays editable regardless of run/assignment status.
     if (body.title !== undefined) updateData.title = body.title?.trim() || null
@@ -492,6 +508,11 @@ router.post('/assignments/:id/questions', requireProfessor, async (req: Request,
       tolerance: z.number().optional(),
       unit: z.string().optional(),
     }).parse(req.body)
+
+    if (type === 'NUMERIC') {
+      const problem = numericKeyProblem(correctAnswer ?? null, unit ?? null)
+      if (problem) throw new AppError(problem, 400)
+    }
 
     const assignment = await getAssignment(p(req.params.id), professor)
 
@@ -672,6 +693,16 @@ router.patch('/assignments/:assignmentId/questions/:questionId', requireProfesso
 
     if (body.tolerance !== undefined) updateData.tolerance = body.tolerance
     if (body.unit !== undefined) updateData.unit = body.unit
+
+    // Check the key as it will stand after this save: the answer key panel sends the
+    // value and the unit as separate requests, so either half may come from the row.
+    if ((question.type as string) === 'NUMERIC' && (body.correctAnswer !== undefined || body.unit !== undefined)) {
+      const problem = numericKeyProblem(
+        body.correctAnswer !== undefined ? body.correctAnswer : question.correctAnswer,
+        body.unit !== undefined ? body.unit : question.unit,
+      )
+      if (problem) throw new AppError(problem, 400)
+    }
 
     // Title is professor-facing navigation metadata — never shown to students, so
     // it stays editable regardless of run/assignment status.

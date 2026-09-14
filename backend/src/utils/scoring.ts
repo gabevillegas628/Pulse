@@ -7,6 +7,41 @@ function parseValueUnit(s: string): [number, string] {
 }
 
 /**
+ * Why a numeric answer key could never be matched, or null if it can.
+ *
+ * `withinTolerance` treats a unit mathjs cannot parse as a wrong answer, which is the
+ * right call for a student's typo but a silent disaster in the key: "%" or "ppm" there
+ * marks every response in the room wrong. So the key is refused when it is saved.
+ * The unit field is checked on its own too — it is the label students see, so it has
+ * to convert into the key's unit or answers typed as labelled will not grade.
+ */
+export function numericKeyProblem(correctAnswer: string | null, unit: string | null): string | null {
+  let keyUnit = ''
+  if (correctAnswer) {
+    const [value, unitStr] = parseValueUnit(correctAnswer)
+    if (isNaN(value)) return 'The correct answer must start with a number'
+    keyUnit = unitStr
+  }
+  const label = unit?.trim() ?? ''
+  for (const u of [keyUnit, label]) {
+    if (!u) continue
+    try {
+      mathUnit(1, u)
+    } catch {
+      return `"${u}" isn't a unit Pulse can convert, so every answer would be marked wrong. Leave the unit blank and say it in the question instead.`
+    }
+  }
+  if (keyUnit && label) {
+    try {
+      mathUnit(1, label).toNumber(keyUnit)
+    } catch {
+      return `The unit "${label}" doesn't convert to "${keyUnit}" in the correct answer`
+    }
+  }
+  return null
+}
+
+/**
  * Whether a numeric answer falls inside the professor's own margin.
  *
  * Extracted so the projector can be told which answers group together without being told

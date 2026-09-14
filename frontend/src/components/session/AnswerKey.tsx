@@ -61,11 +61,17 @@ export default function AnswerKey({ sessionId, question, isLive, effortOn }: Pro
     question.tolerance != null ? String(question.tolerance) : '',
   )
   const [numUnit, setNumUnit] = useState(question.unit ?? '')
+  const [error, setError] = useState('')
 
   const save = useMutation({
     mutationFn: (payload: { correctAnswer?: string | null; tolerance?: number | null; unit?: string | null }) =>
       api.patch(`/sessions/${sessionId}/questions/${question.id}`, payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['session', sessionId] }),
+    onSuccess: () => {
+      setError('')
+      qc.invalidateQueries({ queryKey: ['session', sessionId] })
+    },
+    // Saves happen on blur with no button, so a refusal left unshown looks like it took.
+    onError: (e: unknown) => setError(apiError(e, 'Failed to save the answer key')),
   })
 
   const locked = isLive && !EDITABLE_WHILE_LIVE.includes(question.type as string)
@@ -253,6 +259,8 @@ export default function AnswerKey({ sessionId, question, isLive, effortOn }: Pro
           />
         </div>
       )}
+
+      {error && <p className="text-red-500 text-xs mt-1.5">{error}</p>}
 
       {question.type === 'STRUCTURE' && (
         <StructureKeyField
