@@ -13,6 +13,7 @@ import { logger } from './utils/logger.js'
 import { errorMiddleware } from './middleware/error.middleware.js'
 import { RENEWED_TOKEN_HEADER } from './middleware/auth.middleware.js'
 import { requestLogger } from './middleware/request-logger.middleware.js'
+import { applyApiCachePolicy } from './middleware/no-store.middleware.js'
 import rateLimit from 'express-rate-limit'
 import authRoutes from './routes/auth.routes.js'
 import classRoutes from './routes/classes.routes.js'
@@ -90,6 +91,8 @@ app.use((req, res, next) =>
 app.use(compression())
 // Before the proxy and the routes, so the duration it records is the whole request.
 app.use(requestLogger)
+// Before every /api route, so no response can leave carrying a cacheable renewal header.
+applyApiCachePolicy(app)
 
 const rawIndigoUrl = process.env.INDIGO_SERVICE_URL ?? 'http://indigoservice.railway.internal'
 try {

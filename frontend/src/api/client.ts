@@ -22,12 +22,29 @@ function readAuthToken(): string | null {
   )
 }
 
+/** A token's `iat`, or null if it cannot be read. Unverified — only ever used to compare. */
+function issuedAt(token: string | null): number | null {
+  if (!token) return null
+  try {
+    const json = atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))
+    const iat = (JSON.parse(json) as { iat?: unknown }).iat
+    return typeof iat === 'number' ? iat : null
+  } catch {
+    return null
+  }
+}
+
 /**
  * Store a token the server renewed, under the key the request read from.
  *
  * Deliberately not always `professor_token`: writing there from an add-in surface would
  * have PowerPoint quietly adopt the browser's key and leave the add-in's own untouched and
  * expiring. Re-running the read precedence names the key that was actually sent.
+ *
+ * Only ever forward in time. A real renewal is minted an hour or more after the token it
+ * replaces, so anything not strictly newer than what storage holds is a replay — on 14 Sep,
+ * a cached response handing back a three-day-old renewal over a fresh sign-in. The server
+ * no longer lets responses be cached, and this makes sure no other replay can do it again.
  */
 function storeRenewedToken(token: string): void {
   const key = localStorage.getItem(PROFESSOR_KEY)
@@ -36,6 +53,9 @@ function storeRenewedToken(token: string): void {
       ? ADDIN_PROFESSOR_KEY
       : null
   if (!key) return
+  const held = issuedAt(localStorage.getItem(key))
+  const incoming = issuedAt(token)
+  if (held != null && (incoming == null || incoming <= held)) return
   localStorage.setItem(key, token)
   // Naming the key matters to the watchdog: a renewal on an add-in surface lands in the
   // add-in key, and a write it cannot place is a write it will misread as a disappearance.

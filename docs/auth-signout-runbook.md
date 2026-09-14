@@ -13,6 +13,22 @@ hour, so an active sign-in is never far from fresh while an idle one still expir
 Four contributing defects that made it invisible were fixed in `d7270b8`; they are listed
 at the bottom because each one hid the signal rather than causing it.
 
+**Second cause, 14 Sep 2026: a cached response replayed an old renewal.** Signing in to
+the PowerPoint add-in was undone within seconds, every time. The beacon gave it away:
+`token-vanished` with `ageSec: 6` but a `tokenIat` three days old, meaning something had
+just *written* a long-dead token. API responses carried Express's default ETag and no
+`Cache-Control`, so the browser stored them, `X-Pulse-Token` header included. A poll with
+an unchanged body got a 304, and the browser gave the client the stored 200 with its old
+header, which `storeRenewedToken` wrote over the fresh sign-in. A token under an hour old
+gets no renewal header of its own, so fresh sign-ins were the most exposed. Clearing the
+Office cache confirmed it. The fix has three parts. `/api` responses are `no-store` with no
+ETag, so already-poisoned caches get a full 200 instead of a 304. Clients only accept a
+renewed token newer than the one they hold. And the add-in pane now renews at all.
+`scripts/smoke-cache-policy.ts` guards the server side.
+
+**The signature to look for:** a write-then-vanish where `ageSec` is seconds but `tokenIat`
+is a day or more old. Only a replay produces that.
+
 **Keep this runbook anyway.** Three earlier attempts (`5a9fc9a`, `a8db8a6`, `f6fee8a`) each
 fixed a plausible *trigger*, shipped, and did not hold, and the evidence trail below is what
 finally worked. If a sign-in dies again, start at step 1 rather than assuming it is expiry

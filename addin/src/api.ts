@@ -25,6 +25,38 @@ export class ApiError extends Error {
   }
 }
 
+/** The header the server renews a professor token on. See backend auth.middleware.ts. */
+const RENEWED_TOKEN_HEADER = 'X-Pulse-Token'
+
+/** A token's `iat`, or null if it cannot be read. Unverified — only ever used to compare. */
+function issuedAt(token: string | null): number | null {
+  if (!token) return null
+  try {
+    const json = atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))
+    const iat = (JSON.parse(json) as { iat?: unknown }).iat
+    return typeof iat === 'number' ? iat : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Adopt a renewed token, but only one newer than the token held.
+ *
+ * The pane used to ignore renewals, so its sign-in died exactly a day after it was made
+ * however much it was used — and its 401 then deleted the key every slide object shares.
+ * The newer-only rule is the one frontend/src/api/client.ts keeps: a renewal is always
+ * minted after the token it replaces, so an older one can only be a replay.
+ */
+function storeRenewedToken(token: string): void {
+  const held = getToken()
+  if (!held) return
+  const heldIat = issuedAt(held)
+  const incomingIat = issuedAt(token)
+  if (heldIat != null && (incomingIat == null || incomingIat <= heldIat)) return
+  setToken(token)
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken()
   const res = await fetch(`/api${path}`, {
@@ -36,9 +68,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     },
   })
 
+  const renewed = res.headers.get(RENEWED_TOKEN_HEADER)
+  if (res.ok && renewed) storeRenewedToken(renewed)
+
   const body = await res.json().catch(() => null)
   if (!res.ok) {
-    if (res.status === 401) setToken(null)
+    // Only clear the token this request actually sent. If a slide object signed in or
+    // renewed while it was in flight, the 401 is about a token already replaced, and
+    // clearing would sign everyone out on stale news.
+    if (res.status === 401 && getToken() === token) setToken(null)
     throw new ApiError(body?.error ?? `Request failed (${res.status})`, res.status)
   }
   return body.data as T
