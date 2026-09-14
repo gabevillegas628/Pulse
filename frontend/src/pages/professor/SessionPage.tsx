@@ -9,7 +9,7 @@ import Card from '@/components/ui/Card'
 import Empty from '@/components/ui/Empty'
 import { Archive, Check, ChevronLeft, Copy, Download, MoreHorizontal, Pencil, PictureInPicture2, X } from 'lucide-react'
 import { io } from 'socket.io-client'
-import type { SessionDetail, QuestionWithResponses, ResponseWithStudent, ThemeSet } from 'shared'
+import type { SessionDetail, SessionRun, QuestionWithResponses, ResponseWithStudent, ThemeSet } from 'shared'
 import { SessionStatus } from 'shared'
 import ResultsSummary from '@/components/ResultsSummary'
 import LiveMonitorPanel from '@/components/LiveMonitorPanel'
@@ -78,11 +78,20 @@ export default function SessionPage() {
     enabled: !!data?.class.id,
   })
 
+  // The run themes belong to: whichever was opened last, which is what the server resolves
+  // too. Taken by openedAt rather than position, because the API returns runs newest-first
+  // while the socket appends a newly opened run to the end.
+  const latestRun = (data?.runs ?? []).reduce<SessionRun | null>(
+    (best, r) => (!best || new Date(r.openedAt) > new Date(best.openedAt) ? r : best),
+    null,
+  )
+  const latestRunId = latestRun?.id ?? null
+
   const summarizeMutation = useMutation({
     mutationFn: (questionId: string) =>
       api.post(`/sessions/${sessionId}/questions/${questionId}/summarize`).then((r) => r.data.data.themes),
     onSuccess: (themes: ThemeSet, questionId: string) => {
-      qc.setQueryData<ThemeSet | null>(['themes', sessionId, questionId], themes)
+      qc.setQueryData<ThemeSet | null>(['themes', sessionId, questionId, latestRunId], themes)
       // A large class comes back only partly classified; the worker finishes it and
       // pushes the rest over the socket, so keep the cached copy honest either way.
       qc.invalidateQueries({ queryKey: ['themes', sessionId, questionId] })
@@ -91,10 +100,15 @@ export default function SessionPage() {
 
   // Themes persisted for the question in view. This is what makes a summary survive a
   // page reload — it used to live only in component state and vanished on refresh.
+  //
+  // Keyed by run as well as question, because the server builds a separate set for each
+  // opening of the session. Without the run in the key, reopening for another section
+  // without a reload kept showing the previous opening's themes, since nothing about the
+  // key changed and nothing invalidated it.
   const themesQuestion = data?.questions[activeTab]
   const themesQuestionId = themesQuestion?.id ?? null
   const { data: persistedThemes } = useQuery<ThemeSet | null>({
-    queryKey: ['themes', sessionId, themesQuestionId],
+    queryKey: ['themes', sessionId, themesQuestionId, latestRunId],
     queryFn: () =>
       api.get(`/sessions/${sessionId}/questions/${themesQuestionId}/themes`).then((r) => r.data.data.themes),
     enabled: !!themesQuestionId && themesQuestion?.type === 'FREE_TEXT',
@@ -266,8 +280,9 @@ export default function SessionPage() {
     // Writing straight into the query cache keeps this the same shape a reload produces.
     socket.on('themes_updated', (payload: ThemeSet & { questionId: string; runId: string }) => {
       const { questionId, runId, ...themes } = payload
-      void runId
-      qc.setQueryData<ThemeSet | null>(['themes', sessionId, questionId], themes)
+      // Into that run's own slot. A late push for an earlier opening lands somewhere the
+      // page is no longer reading, instead of overwriting the current one.
+      qc.setQueryData<ThemeSet | null>(['themes', sessionId, questionId, runId], themes)
     })
 
     socket.on('run_status', ({ runId, status, sectionId }: { runId: string; status: SessionStatus; sectionId: string | null }) => {
