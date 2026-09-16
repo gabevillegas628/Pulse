@@ -276,13 +276,73 @@ export default function ResultsSummary({ question, variant = 'panel' }: Props) {
   if (type === 'ORDERING') {
     let correctArr: string[] | null = null
     if (correctAnswer) {
-      try { correctArr = JSON.parse(correctAnswer) } catch { /* ignore */ }
+      try {
+        const key = JSON.parse(correctAnswer)
+        if (Array.isArray(key)) correctArr = key
+      } catch { /* ignore */ }
     }
 
-    const groupMap = new Map<string, { items: string[]; count: number; isExactMatch: boolean }>()
+    // Every answer that could be read, as its list of items.
+    const orders: string[][] = []
     for (const r of responses) {
-      let arr: string[]
-      try { arr = JSON.parse(r.responseText) } catch { continue }
+      try {
+        const arr = JSON.parse(r.responseText)
+        if (Array.isArray(arr)) orders.push(arr)
+      } catch { /* counted in `total`, but there is no position to place it in */ }
+    }
+
+    // Positions, not permutations.
+    //
+    // Grouping by exact ordering is what the panel does below, and it cannot carry a
+    // lecture hall: n items make n! orderings, so past about twenty students nearly every
+    // wrong answer is its own group of one and the wall fills with counts of 1 under a
+    // line saying the other six hundred were elsewhere. This is the same failure NUMERIC
+    // had before NumericDots, and the fix is the same shape — ask a question whose answer
+    // has a fixed number of parts. One bar per slot stays the same width whether twelve
+    // people answered or eight hundred, and it names the step the class actually missed
+    // rather than the fact that they missed it in many different ways.
+    //
+    // What a bar means depends on whether the key is here, and that is deliberate.
+    // `/addin/live` withholds correctAnswer while the question is still taking answers, so
+    // a student cannot read the key off the projector. Deriving these from correctAnswer
+    // rather than shipping per-position scores keeps that property by construction: with
+    // no key there is nothing to be right about, and the bars fall back to where the room
+    // agrees — which is only what the class itself has already put on screen. When the
+    // question closes the key arrives and the same bars sharpen into how many got it
+    // right. The professor's own panel has the key throughout, so it shows correctness
+    // from the first answer.
+    const slotCount = options?.length || orders.reduce((n, o) => Math.max(n, o.length), 0)
+    const slots = Array.from({ length: slotCount }, (_, i) => {
+      const counts = new Map<string, number>()
+      for (const o of orders) {
+        const item = o[i]
+        if (item != null) counts.set(item, (counts.get(item) ?? 0) + 1)
+      }
+      let topItem = ''
+      let topCount = 0
+      for (const [item, n] of counts) {
+        if (n > topCount) { topItem = item; topCount = n }
+      }
+      const key = correctArr?.[i] ?? null
+      return {
+        item: key ?? topItem,
+        count: key != null ? counts.get(key) ?? 0 : topCount,
+        known: key != null,
+      }
+    })
+
+    // Share of the answers that could be placed, which is the honest denominator: an
+    // unreadable answer is not a wrong placement, and the footer says how many there were.
+    const placed = orders.length
+    const keyArr = correctArr
+    const exact = keyArr
+      ? orders.filter((o) => o.length === keyArr.length && keyArr.every((v, i) => v === o[i])).length
+      : null
+    const distinct = new Set(orders.map((o) => JSON.stringify(o))).size
+    const unreadable = total - placed
+
+    const groupMap = new Map<string, { items: string[]; count: number; isExactMatch: boolean }>()
+    for (const arr of orders) {
       const key = JSON.stringify(arr)
       if (!groupMap.has(key)) {
         const isExactMatch =
@@ -299,20 +359,53 @@ export default function ResultsSummary({ question, variant = 'panel' }: Props) {
     const others = allGroups.filter((g) => !g.isExactMatch).sort((a, b) => b.count - a.count)
     const sorted = [...exactMatches, ...others]
 
-    // Each ordering is a row of chips, so on stage they cost several times the height
-    // they do in the panel. Fewer of them, or the tail pushes the rest off the slide.
-    const MAX_ORDERINGS = stage ? 4 : 6
+    // The full orderings stay in the professor's panel, where the tail is worth reading and
+    // there is somewhere to scroll. On stage they are replaced by the bars above: a chip row
+    // per ordering costs several lines of slide, and nobody scrolls a projector.
+    const MAX_ORDERINGS = 6
     const displayed = sorted.slice(0, MAX_ORDERINGS)
     const remaining = sorted.slice(MAX_ORDERINGS).reduce((s, g) => s + g.count, 0)
     const remainingGroups = sorted.length - MAX_ORDERINGS
 
     return (
       <div className={card} style={column}>
-        {displayed.map((group, i) => (
+        <p className="text-muted" style={{ fontSize: t.note }}>
+          {correctArr ? 'Placed correctly, by position' : 'Where the room agrees, by position'}
+        </p>
+
+        {slots.map((slot, i) => {
+          const pct = placed > 0 ? Math.round((slot.count / placed) * 100) : 0
+          return (
+            <div key={i}>
+              <div className="flex items-center justify-between mb-1 gap-2" style={{ fontSize: t.label }}>
+                <span
+                  className={`truncate flex items-center gap-1 min-w-0 ${slot.known ? 'text-good font-medium' : 'text-ink-2'}`}
+                >
+                  <span className="text-muted font-mono shrink-0">{i + 1}.</span>
+                  {slot.known && <Check size={12} style={checkStyle} className="shrink-0 text-good" />}
+                  <span className="truncate">{slot.item}</span>
+                </span>
+                <span className="text-muted shrink-0 font-mono tabular-nums" style={{ fontSize: t.count }}>
+                  {slot.count} <span className="text-muted">({pct}%)</span>
+                </span>
+              </div>
+              <div className="bg-surface-2 rounded-full overflow-hidden" style={{ height: t.bar }}>
+                <div
+                  // Sweeps out from zero on first paint, then the width transition carries
+                  // every later change — the same treatment the choice bars get.
+                  className={`h-full rounded-full bar-grow transition-all duration-500 ${slot.known ? 'bg-good' : 'bg-signal'}`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            </div>
+          )
+        })}
+
+        {!stage && displayed.map((group, i) => (
           <div
             key={i}
             className={`rounded-sm border ${group.isExactMatch ? 'border-good/30 bg-good-soft' : 'border-hairline bg-surface-2'}`}
-            style={{ padding: stage ? t.gap : '0.75rem' }}
+            style={{ padding: '0.75rem' }}
           >
             <div className="flex items-start justify-between gap-2">
               <div className="flex flex-wrap gap-1 flex-1 min-w-0">
@@ -347,12 +440,21 @@ export default function ResultsSummary({ question, variant = 'panel' }: Props) {
             )}
           </div>
         ))}
-        {remaining > 0 && (
+        {!stage && remaining > 0 && (
           <p className="text-muted font-mono pl-1" style={{ fontSize: t.note }}>
             and {remaining} response{remaining !== 1 ? 's' : ''} in {remainingGroups} more ordering{remainingGroups !== 1 ? 's' : ''}
           </p>
         )}
-        <p className="text-muted font-mono" style={{ fontSize: t.note }}>{total} response{total !== 1 ? 's' : ''}</p>
+
+        <p className="text-muted font-mono" style={{ fontSize: t.note }}>
+          {total} response{total !== 1 ? 's' : ''}
+          {exact != null && ` · ${exact} with the exact order`}
+          {distinct > 1 && ` · ${distinct} distinct orderings`}
+          {/* Said out loud rather than quietly dropped: these are inside the count above
+              but cannot appear in any bar, so the two would otherwise disagree with no
+              explanation on screen. */}
+          {unreadable > 0 && ` · ${unreadable} unreadable`}
+        </p>
       </div>
     )
   }
