@@ -22,26 +22,86 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { GripVertical } from 'lucide-react'
+import { ChevronDown, ChevronUp, GripVertical } from 'lucide-react'
 import { Editor } from 'ketcher-react'
 import { RemoteStructServiceProvider } from 'ketcher-core'
 import type { Ketcher } from 'ketcher-core'
 
 const structServiceProvider = new RemoteStructServiceProvider('/api/indigo')
 
-function SortableOrderItem({ id, label }: { id: string; label: string }) {
+/**
+ * One row of an ordering answer.
+ *
+ * `touch-none` on the grip is the whole reason this works on a phone, and it is not
+ * cosmetic. dnd-kit's PointerSensor abandons a drag as soon as the browser claims the
+ * gesture for scrolling — it listens for `pointercancel` — and on a touchscreen the browser
+ * claims it on the first vertical move. So the press registered, the finger moved, the page
+ * scrolled, and the row never lifted: dragging did nothing at all on the one device every
+ * student answers from. The rule has to sit on the element carrying the listeners, which is
+ * the author's job; dnd-kit sets it on its own drag overlay but cannot reach in here.
+ *
+ * The grip also got bigger. Fourteen pixels of icon in a bare span is a target roughly a
+ * third the width of a fingertip, so even with the gesture fixed it would have been a
+ * question answered by repeatedly missing.
+ *
+ * The arrows are not a consolation prize for a broken gesture. A precise drag down a moving
+ * list is genuinely hard one-handed in a lecture hall, and for most people tapping twice is
+ * the faster way to answer — while also being the only way this question has ever been
+ * answerable by keyboard or screen reader.
+ */
+function SortableOrderItem({
+  id,
+  label,
+  index,
+  total,
+  onMove,
+}: {
+  id: string
+  label: string
+  index: number
+  total: number
+  onMove: (from: number, to: number) => void
+}) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
+  const arrow =
+    'p-1.5 rounded-md text-muted hover:bg-surface-2 active:bg-surface-2 disabled:opacity-25 disabled:hover:bg-transparent'
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-2 px-3 py-2.5 border border-hairline-strong rounded-[14px] text-sm text-ink bg-surface cursor-grab active:cursor-grabbing"
+      className="flex items-center gap-1 pl-1 pr-1.5 py-1 border border-hairline-strong rounded-[14px] text-sm text-ink bg-surface"
     >
-      <span {...attributes} {...listeners} className="text-hairline-strong hover:text-muted">
-        <GripVertical size={14} />
+      <span
+        {...attributes}
+        {...listeners}
+        aria-label={`Reorder ${label}`}
+        className="touch-none shrink-0 p-2.5 text-hairline-strong hover:text-muted cursor-grab active:cursor-grabbing"
+      >
+        <GripVertical size={18} />
       </span>
-      {label}
+      <span className="shrink-0 font-mono tabular-nums text-muted">{index + 1}.</span>
+      <span className="flex-1 min-w-0 py-1">{label}</span>
+      <span className="flex flex-col shrink-0">
+        <button
+          type="button"
+          onClick={() => onMove(index, index - 1)}
+          disabled={index === 0}
+          aria-label={`Move ${label} up`}
+          className={arrow}
+        >
+          <ChevronUp size={16} />
+        </button>
+        <button
+          type="button"
+          onClick={() => onMove(index, index + 1)}
+          disabled={index === total - 1}
+          aria-label={`Move ${label} down`}
+          className={arrow}
+        >
+          <ChevronDown size={16} />
+        </button>
+      </span>
     </div>
   )
 }
@@ -118,6 +178,12 @@ export default function QuestionPage() {
       const newIdx = items.indexOf(String(over.id))
       return arrayMove(items, oldIdx, newIdx)
     })
+  }
+
+  // The arrows' half of the same move. Bounds are checked here as well as by disabling the
+  // buttons, so a rapid double tap at either end cannot walk an item off the list.
+  function moveOrderedItem(from: number, to: number) {
+    setOrderedItems((items) => (to < 0 || to >= items.length ? items : arrayMove(items, from, to)))
   }
 
   async function onSubmit(data: { response: string }) {
@@ -383,15 +449,30 @@ export default function QuestionPage() {
             )}
 
             {q.type === 'ORDERING' && orderedItems.length > 0 && (
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleOrderDragEnd}>
-                <SortableContext items={orderedItems} strategy={verticalListSortingStrategy}>
-                  <div className="space-y-2">
-                    {orderedItems.map((item) => (
-                      <SortableOrderItem key={item} id={item} label={item} />
-                    ))}
-                  </div>
-                </SortableContext>
-              </DndContext>
+              <div className="space-y-2">
+                {/* Said once, because neither affordance is obvious on a phone: the grip
+                    reads as decoration until you know it moves, and nothing else on the
+                    form is draggable. */}
+                <p className="text-xs text-muted">
+                  Drag the handle or use the arrows to put these in order.
+                </p>
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleOrderDragEnd}>
+                  <SortableContext items={orderedItems} strategy={verticalListSortingStrategy}>
+                    <div className="space-y-2">
+                      {orderedItems.map((item, i) => (
+                        <SortableOrderItem
+                          key={item}
+                          id={item}
+                          label={item}
+                          index={i}
+                          total={orderedItems.length}
+                          onMove={moveOrderedItem}
+                        />
+                      ))}
+                    </div>
+                  </SortableContext>
+                </DndContext>
+              </div>
             )}
 
             {submitError && (
