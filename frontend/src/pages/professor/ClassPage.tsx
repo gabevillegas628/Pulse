@@ -13,11 +13,12 @@ import Pill from '@/components/ui/Pill'
 import Switch from '@/components/ui/Switch'
 import CodeChip from '@/components/ui/CodeChip'
 import Empty from '@/components/ui/Empty'
-import { Plus, Trash2, X, ChevronLeft, ChevronDown, ChevronUp, ArrowUpDown, Download, Copy, Users, BookOpen, Settings, RefreshCw, Sparkles, TimerReset } from 'lucide-react'
+import { Plus, Trash2, X, ChevronLeft, Download, Copy, Users, BookOpen, Settings, RefreshCw, Sparkles, TimerReset } from 'lucide-react'
 import type { GradebookSession, GradebookStudentRow } from 'shared'
 import TextbookPage from '@/pages/shared/TextbookPage'
 import GradebookTable from '@/components/GradebookTable'
 import RosterTable from '@/components/RosterTable'
+import SortHeader from '@/components/ui/SortHeader'
 import StudentSessionModal from '@/components/StudentSessionModal'
 import StudentReportPanel from '@/components/StudentReportPanel'
 import { apiError } from '@/lib/errors'
@@ -122,12 +123,6 @@ export default function ClassPage() {
     mutationFn: (effortGradingDefault: boolean) =>
       api.patch(`/classes/${classId}`, { effortGradingDefault }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['class', classId] }),
-  })
-
-  const { data: rosterData } = useQuery({
-    queryKey: ['roster', classId],
-    queryFn: () => api.get(`/classes/${classId}/enrollments`).then((r) => r.data.data.enrollments),
-    enabled: tab === 'roster',
   })
 
   const { data: sectionsData } = useQuery<Section[]>({
@@ -545,24 +540,6 @@ export default function ClassPage() {
             )
           }
 
-          function SortHeader({ label, sortKey }: { label: string; sortKey: 'title' | 'date' }) {
-            const active = sessionSort.key === sortKey
-            const Icon = !active ? ArrowUpDown : sessionSort.dir === 'asc' ? ChevronUp : ChevronDown
-            return (
-              <th className="px-5 py-3">
-                <button
-                  onClick={() => toggleSort(sortKey)}
-                  className={`flex items-center gap-1 text-xs font-medium uppercase tracking-wide transition-colors ${
-                    active ? 'text-ink-2' : 'text-muted hover:text-ink-2'
-                  }`}
-                >
-                  {label}
-                  <Icon size={12} className={active ? '' : 'opacity-40'} />
-                </button>
-              </th>
-            )
-          }
-
           return (
             <div className="space-y-4">
               {/* Live banners */}
@@ -598,11 +575,11 @@ export default function ClassPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-hairline text-left">
-                        <SortHeader label="Session" sortKey="title" />
+                        <SortHeader label="Session" sortKey="title" activeKey={sessionSort.key} dir={sessionSort.dir} onSort={toggleSort} />
                         <th className="px-5 py-3 text-xs font-medium text-muted uppercase tracking-wide">Status</th>
                         <th className="px-5 py-3 text-xs font-medium text-muted uppercase tracking-wide">Questions</th>
                         <th className="px-5 py-3 text-xs font-medium text-muted uppercase tracking-wide">Participation</th>
-                        <SortHeader label="Last activity" sortKey="date" />
+                        <SortHeader label="Last activity" sortKey="date" activeKey={sessionSort.key} dir={sessionSort.dir} onSort={toggleSort} />
                         <th className="px-5 py-3"></th>
                       </tr>
                     </thead>
@@ -743,7 +720,6 @@ export default function ClassPage() {
       {tab === 'roster' && (
         <RosterTable
           classId={classId!}
-          entries={rosterData}
           sections={sections}
           onResetPassword={openReset}
           onRemove={(student) => { setRemoveError(''); setRemoveTarget(student) }}
