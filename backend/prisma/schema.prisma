@@ -124,6 +124,18 @@ model Enrollment {
   studentId  String
   classId    String
   sectionId  String?
+  // May answer in any section of this class, not only their own.
+  //
+  // Students move between sections for work and family reasons, and a professor who does not
+  // mind has no way to say so: the gate matches on `sectionId` alone, so splitting a class
+  // into sections would turn away someone sitting in the room. Set per student per class,
+  // which is the right grain — floating in one class says nothing about another.
+  //
+  // Their `sectionId` still stands and is still what the roster and the participation
+  // denominator count, so attending the other section makes the numerator there exceed the
+  // total by one. Accepted deliberately: the denominator is "registered", not "present", and
+  // only modelling attendance would fix it.
+  anySection Boolean  @default(false)
   student    Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   class      Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
   section    Section? @relation(fields: [sectionId], references: [id])

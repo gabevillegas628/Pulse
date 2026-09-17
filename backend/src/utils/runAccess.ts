@@ -30,6 +30,7 @@ export interface RunSectionRef {
 /** Just enough of an enrollment to decide. `null` means no row at all — a new student. */
 export interface EnrollmentSectionRef {
   sectionId: string | null
+  anySection: boolean
 }
 
 export function openRunFor<R extends RunSectionRef>(
@@ -47,5 +48,8 @@ export function openRunFor<R extends RunSectionRef>(
     || enrollment.sectionId === null
     // Their own section.
     || enrollment.sectionId === r.sectionId
+    // A floater: their section stands and still counts them, but the professor has said
+    // they may sit in either room. Last, so it reads as the exception it is.
+    || enrollment.anySection
   )
 }

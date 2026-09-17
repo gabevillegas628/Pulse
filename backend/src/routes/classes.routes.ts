@@ -418,19 +418,29 @@ router.patch('/:id/enrollments/:studentId/section', async (req: Request, res: Re
     const professor = (req as ProfessorRequest).professor
     const classId = p(req.params.id)
     const studentId = p(req.params.studentId)
-    const { sectionId } = z.object({ sectionId: z.string().nullable() }).parse(req.body)
+    // Both optional, and either may arrive alone: the roster sets the section from a select
+    // and the floater flag from a switch, and neither should have to restate the other.
+    const { sectionId, anySection } = z
+      .object({
+        sectionId: z.string().nullable().optional(),
+        anySection: z.boolean().optional(),
+      })
+      .parse(req.body)
 
     const cls = await prisma.class.findFirst({ where: { id: classId, ...ownedClass(professor) } })
     if (!cls) throw new AppError('Class not found', 404)
 
-    if (sectionId !== null) {
+    if (sectionId) {
       const section = await prisma.section.findFirst({ where: { id: sectionId, classId } })
       if (!section) throw new AppError('Section not found in this class', 404)
     }
 
     const enrollment = await prisma.enrollment.update({
       where: { studentId_classId: { studentId, classId } },
-      data: { sectionId },
+      data: {
+        ...(sectionId !== undefined && { sectionId }),
+        ...(anySection !== undefined && { anySection }),
+      },
     })
     res.json({ success: true, data: { enrollment } })
   } catch (err) {

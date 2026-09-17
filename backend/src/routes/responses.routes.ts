@@ -44,7 +44,7 @@ router.get('/questions/by-code/:code', requireStudent, async (req: Request, res:
       // Session question: need an OPEN run that includes this student's section
       const enrollment = await prisma.enrollment.findUnique({
         where: { studentId_classId: { studentId: student.id, classId: question.session.classId } },
-        select: { sectionId: true },
+        select: { sectionId: true, anySection: true },
       })
       const openRun = openRunFor(question.session.runs, enrollment)
       if (!openRun) throw new AppError('This session is not open', 409)
@@ -106,7 +106,7 @@ router.get('/student/questions/:id', requireStudent, async (req: Request, res: R
       // Get student's enrollment to check section
       const enrollment = await prisma.enrollment.findUnique({
         where: { studentId_classId: { studentId: student.id, classId: sess.classId } },
-        select: { sectionId: true },
+        select: { sectionId: true, anySection: true },
       })
       // Check there's an OPEN run this student may answer
       const openRun = openRunFor(sess.runs, enrollment)
@@ -264,7 +264,7 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
       // Get student's section for run matching
       const enrollment = await prisma.enrollment.findUnique({
         where: { studentId_classId: { studentId: student.id, classId: sess.classId } },
-        select: { sectionId: true },
+        select: { sectionId: true, anySection: true },
       })
       const openRun = openRunFor(sess.runs, enrollment)
       if (!openRun) throw new AppError('Session is not open', 409, 'SESSION_CLOSED')

@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import Pill from '@/components/ui/Pill'
 import Empty from '@/components/ui/Empty'
+import Switch from '@/components/ui/Switch'
 import { ChevronDown, KeyRound, Trash2, Users } from 'lucide-react'
 import type { StudentStats, ActivitySession } from 'shared'
 import { statusPill } from '@/lib/status'
@@ -31,6 +32,8 @@ interface RosterEntry {
   student: RosterStudent
   stats: StudentStats
   section: { id: string; name: string } | null
+  /** May answer in any section of this class, not only their own. */
+  anySection: boolean
 }
 
 interface Props {
@@ -49,6 +52,11 @@ export default function RosterTable({ classId, entries, sections, onResetPasswor
 
   async function assignSection(studentId: string, sectionId: string | null) {
     await api.patch(`/classes/${classId}/enrollments/${studentId}/section`, { sectionId })
+    qc.invalidateQueries({ queryKey: ['roster', classId] })
+  }
+
+  async function setAnySection(studentId: string, anySection: boolean) {
+    await api.patch(`/classes/${classId}/enrollments/${studentId}/section`, { anySection })
     qc.invalidateQueries({ queryKey: ['roster', classId] })
   }
 
@@ -99,14 +107,28 @@ export default function RosterTable({ classId, entries, sections, onResetPasswor
                   <td className="px-5 py-3.5 text-ink-2">{e.student.email}</td>
                   {hasSections && (
                     <td className="px-5 py-3.5" onClick={(ev) => ev.stopPropagation()}>
-                      <select
-                        value={e.section?.id ?? ''}
-                        onChange={(ev) => assignSection(e.student.id, ev.target.value || null)}
-                        className="text-xs border border-hairline rounded px-1.5 py-1 bg-surface text-ink-2 focus:outline-none focus:ring-1 focus:ring-signal"
-                      >
-                        <option value="">— unassigned</option>
-                        {sections.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                      </select>
+                      <div className="flex items-center gap-2.5">
+                        <select
+                          value={e.section?.id ?? ''}
+                          onChange={(ev) => assignSection(e.student.id, ev.target.value || null)}
+                          className="text-xs border border-hairline rounded px-1.5 py-1 bg-surface text-ink-2 focus:outline-none focus:ring-1 focus:ring-signal"
+                        >
+                          <option value="">— unassigned</option>
+                          {sections.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                        {/* Beside the select rather than in it: a floater still has a home
+                            section, and that is what the roster and the participation
+                            denominator count. Folding the two into one control would make a
+                            floater read as unassigned. */}
+                        <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                          <Switch
+                            checked={e.anySection}
+                            onChange={() => setAnySection(e.student.id, !e.anySection)}
+                            ariaLabel={`${e.student.netId} may answer in any section`}
+                          />
+                          <span className="text-xs text-muted whitespace-nowrap">any</span>
+                        </label>
+                      </div>
                     </td>
                   )}
                   <td className="px-5 py-3.5 text-ink-2">
