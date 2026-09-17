@@ -415,8 +415,29 @@ router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
       const t = q.responses[0] ? new Date(q.responses[0].submittedAt).getTime() : 0
       if (t > latest) { latest = t; activeQuestionId = q.id }
     }
-    // Before anyone has answered, show the first question rather than nothing.
-    if (!activeQuestionId) activeQuestionId = session.questions[0]?.id ?? null
+    // Nothing has been answered yet in this opening, and what that means depends on whether
+    // the session is new or resumed.
+    //
+    // Opened for the first time, it should show its first question. That is the
+    // zero-configuration behaviour working: the room is about to be asked it, and a slide
+    // naming the question with an empty grid beneath it is exactly right.
+    //
+    // Reopened for a section that has answered before, it must not. The professor resumes
+    // after the last question asked, so falling back to question one puts a question the
+    // room finished days ago on the wall at full size, at zero, under a grid of unlit
+    // seats — which reads as the class being asked it again. Withhold the pointer instead
+    // and let the first answer say where the lecture actually is; the page paints a plain
+    // "session open" until it does.
+    //
+    // Only reached before the first answer of an opening, so the extra read costs nothing
+    // for the rest of the lecture.
+    if (!activeQuestionId) {
+      const answeredEarlier = await prisma.response.findFirst({
+        where: { question: { sessionId: session.id }, runId: { not: run.id } },
+        select: { id: true },
+      })
+      if (!answeredEarlier) activeQuestionId = session.questions[0]?.id ?? null
+    }
 
     const themesByQuestion = await readThemeSetsForRun(run.id, session.questions, session.class)
 

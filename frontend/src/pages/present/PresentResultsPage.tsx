@@ -363,7 +363,12 @@ export default function PresentResultsPage() {
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
-  const question = session?.questions.find((q) => q.id === activeId) ?? session?.questions[0]
+  // Having no active question is a state rather than a gap. The server withholds one when a
+  // resumed opening has not been answered yet, so nothing here may quietly fall back to the
+  // first question — that fallback is the server's to make, and in this case it declined.
+  const question = activeId
+    ? session?.questions.find((q) => q.id === activeId) ?? session?.questions[0]
+    : undefined
   const answered = question?.responses.length ?? 0
   const enrolled = session?.enrolledCount ?? 0
   const pct = enrolled > 0 ? Math.round((answered / enrolled) * 100) : 0
@@ -515,6 +520,8 @@ export default function PresentResultsPage() {
         </>
       ) : phase === 'live' && question && idle ? (
         <Waiting question={question} answered={answered} />
+      ) : phase === 'live' && !question ? (
+        <Ready />
       ) : (
         <Placeholder phase={phase} message={message} />
       )}
@@ -548,6 +555,32 @@ function Waiting({ question, answered }: { question: LiveQuestion; answered: num
         style={{ fontSize: 'clamp(9px, 1.3vw, 22px)', opacity: 0.55, marginTop: 'clamp(6px, 1vw, 18px)' }}
       >
         Last: {question.title || question.text} · {answered} {answered === 1 ? 'response' : 'responses'}
+      </p>
+    </div>
+  )
+}
+
+/**
+ * Open, and nothing asked yet.
+ *
+ * Stands in for the first question on a session being resumed. A room that answered
+ * questions one and two last week is about to be asked question three, so naming question
+ * one on the wall — at full size, at zero, above a grid of unlit seats — would say it is
+ * being asked again. The server withholds the pointer in exactly that case and this holds
+ * the slide until an answer says where the lecture is, which is the same thing that decides
+ * it for the rest of the session.
+ *
+ * Deliberately says nothing about which question is next: nothing here knows, and guessing
+ * is how the wall ends up wrong in the one way it must never be.
+ */
+function Ready() {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center text-center gap-2">
+      <p className="font-semibold" style={{ fontSize: 'clamp(16px, 3vw, 56px)' }}>
+        Session open
+      </p>
+      <p className="text-muted" style={{ fontSize: 'clamp(11px, 1.8vw, 34px)' }}>
+        Results appear as soon as the first answer arrives
       </p>
     </div>
   )
