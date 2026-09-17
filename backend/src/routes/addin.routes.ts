@@ -334,10 +334,18 @@ router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
 
+    // The section travels with the run because an opening is not always the whole class:
+    // it decides the denominator below, and it lets the slide name the room it describes.
     const run = await prisma.sessionRun.findFirst({
       where: { status: 'OPEN', ...ownedSessionRun(professor) },
       orderBy: { openedAt: 'desc' },
-      select: { id: true, sessionId: true, openedAt: true },
+      select: {
+        id: true,
+        sessionId: true,
+        openedAt: true,
+        sectionId: true,
+        section: { select: { name: true } },
+      },
     })
     if (!run) return res.json({ success: true, data: { session: null } })
 
@@ -369,6 +377,20 @@ router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
             liveThemes: true,
             autoClose: true,
             responses: {
+              // This opening only.
+              //
+              // A session reopened for the next section used to arrive carrying every
+              // answer the previous one gave: the counter started at last week's total, the
+              // active question was wherever that lecture happened to finish, and the
+              // distribution on the wall described a room that had already gone home.
+              // Nobody in a lecture hall can tell a live result from a stale one, which is
+              // the one thing this endpoint exists to never be wrong about.
+              //
+              // Every response has always been stamped with the run that received it.
+              // Nothing here was reading it. Everything downstream — the counter, the
+              // active question, the idle rule on the page — derives from this array, so
+              // this is the whole of the fix.
+              where: { runId: run.id },
               orderBy: { submittedAt: 'desc' },
               // No student relation: identity must not reach the projector.
               select: {
@@ -450,6 +472,14 @@ router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
       }
     })
 
+    // The denominator is the room in front of you, not the course. A run opened for one
+    // section is answered by that section alone, so counting the whole class showed a
+    // thirty-person section as "12 / 90" and drew sixty seats nobody present could fill.
+    // A section belongs to exactly one class, so the section alone identifies the roster.
+    const enrolledCount = run.sectionId
+      ? await prisma.enrollment.count({ where: { sectionId: run.sectionId } })
+      : session.class._count.enrollments
+
     res.json({
       success: true,
       data: {
@@ -457,7 +487,10 @@ router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
           id: session.id,
           title: session.title,
           className: session.class.name,
-          enrolledCount: session.class._count.enrollments,
+          enrolledCount,
+          // null when the run is open to the whole class, which is also when there is
+          // nothing to distinguish and so nothing worth saying on the slide.
+          sectionName: run.section?.name ?? null,
           questions,
         },
         activeQuestionId,

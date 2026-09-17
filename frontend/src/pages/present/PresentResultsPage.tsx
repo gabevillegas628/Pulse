@@ -63,7 +63,10 @@ interface LiveSession {
   id: string
   title: string
   className: string
+  /** Section-scoped when this opening is one section's, class-wide otherwise. */
   enrolledCount: number
+  /** null when the opening is for the whole class. */
+  sectionName: string | null
   questions: LiveQuestion[]
 }
 
@@ -108,6 +111,8 @@ export default function PresentResultsPage() {
   const joinedRef = useRef<string | null>(null)
   const connectedRef = useRef(false)
   const sessionIdRef = useRef<string | null>(null)
+  // Which opening is on screen, so a socket push belonging to another one can be told apart.
+  const runIdRef = useRef<string | null>(null)
   const fetchRef = useRef<() => void>(() => {})
 
   // The last moment the room did anything. Taken across the whole session rather than off
@@ -145,7 +150,11 @@ export default function PresentResultsPage() {
       try {
         const res = await api.get('/addin/live')
         if (cancelled) return
-        const data = res.data.data as { session: LiveSession | null; activeQuestionId: string | null }
+        const data = res.data.data as {
+          session: LiveSession | null
+          activeQuestionId: string | null
+          runId: string | null
+        }
 
         // flushSync, because React's asynchronous commit does not reliably run in an
         // unfocused add-in frame: state updated but the DOM did not, until a click forced
@@ -154,10 +163,12 @@ export default function PresentResultsPage() {
           if (!data.session) {
             setSession(null)
             sessionIdRef.current = null
+            runIdRef.current = null
             setPhase('no-session')
           } else {
             setSession(data.session)
             sessionIdRef.current = data.session.id
+            runIdRef.current = data.runId
             // Always take the server's answer. It is derived from the most recent response,
             // so it is authoritative; the socket only fills the gaps between polls.
             setActiveId(data.activeQuestionId)
@@ -272,13 +283,29 @@ export default function PresentResultsPage() {
 
     socket.on('new_response', (payload: {
       questionId: string
-      response: { id: string; responseText: string; wordCount: number; isFlagged: boolean; submittedAt: string; aiScore: number | null }
+      response: {
+        id: string
+        /** The opening that received this answer. See the guard below. */
+        runId: string | null
+        responseText: string
+        wordCount: number
+        isFlagged: boolean
+        submittedAt: string
+        aiScore: number | null
+      }
       // The reset, carried alongside the answer that caused it. Waiting for the next poll
       // would put the bar's jump up to six seconds after the answer that bought the time,
       // which is long enough to break the connection the room is meant to draw.
       closesAt: number | null
       closeWindowMs: number | null
     }) => {
+      // An answer belongs to the opening that received it, and the room is only ever shown
+      // one. The server refuses a second run while one is open, so this window is narrow —
+      // a push already in flight as one section's run closes and the next one opens — but
+      // what it prevents is a count on a wall that includes a room which has already left.
+      // The socket room is the session, not the run, so nothing else separates them.
+      if (runIdRef.current && payload.response.runId !== runIdRef.current) return
+
       // The socket payload also carries the student; deliberately not destructured or
       // stored, so identity cannot reach the projector even by accident.
       const { id, responseText, wordCount, isFlagged, submittedAt, aiScore } = payload.response
@@ -361,7 +388,9 @@ export default function PresentResultsPage() {
         <div className="flex items-center gap-2 min-w-0">
           <PulseMark size={18} color="var(--signal-bright)" />
           <span className="text-muted truncate" style={{ fontSize: 'clamp(10px, 1.6vw, 28px)' }}>
-            {session ? `${session.className} · ${session.title}` : 'Pulse'}
+            {session
+              ? `${session.className} · ${session.title}${session.sectionName ? ` · Section ${session.sectionName}` : ''}`
+              : 'Pulse'}
           </span>
         </div>
         {phase === 'live' && (
