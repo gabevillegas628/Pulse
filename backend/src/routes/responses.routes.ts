@@ -9,6 +9,7 @@ import { themesEnabled, scheduleThemeWork } from '../services/themes.service.js'
 
 import { gradeSession } from '../utils/scoring.js'
 import { upsertEnrollment } from '../utils/enrollment.js'
+import { openRunFor } from '../utils/runAccess.js'
 import { p } from '../utils/params.js'
 import { toInchi } from '../utils/indigo.js'
 import { autoCloseEnabled, isOpen, touch, clockState } from '../services/clock.service.js'
@@ -45,10 +46,7 @@ router.get('/questions/by-code/:code', requireStudent, async (req: Request, res:
         where: { studentId_classId: { studentId: student.id, classId: question.session.classId } },
         select: { sectionId: true },
       })
-      const studentSectionId = enrollment?.sectionId ?? null
-      const openRun = question.session.runs.find(
-        (r) => r.sectionId === null || r.sectionId === studentSectionId
-      )
+      const openRun = openRunFor(question.session.runs, enrollment)
       if (!openRun) throw new AppError('This session is not open', 409)
       if (autoCloseEnabled(question, question.session.class) && !isOpen(openRun.id, question.id)) {
         throw new AppError('This question has closed', 409)
@@ -110,19 +108,17 @@ router.get('/student/questions/:id', requireStudent, async (req: Request, res: R
         where: { studentId_classId: { studentId: student.id, classId: sess.classId } },
         select: { sectionId: true },
       })
-      const studentSectionId = enrollment?.sectionId ?? null
-
-      // Check there's an OPEN run for this student's section
-      const openRun = sess.runs.find(
-        (r) => r.sectionId === null || r.sectionId === studentSectionId
-      )
+      // Check there's an OPEN run this student may answer
+      const openRun = openRunFor(sess.runs, enrollment)
       if (!openRun) throw new AppError('Question not found', 404)
       if (autoCloseEnabled(question, sess.class) && !isOpen(openRun.id, question.id)) {
         throw new AppError('This question has closed', 409)
       }
 
-      // Auto-enroll
-      await upsertEnrollment(student.id, sess.classId, null)
+      // Auto-enroll, into the section this run is teaching. Passing null here is what left
+      // students unassigned and locked out of every later targeted run; `upsertEnrollment`
+      // only fills a section in when there is none, so nobody is ever moved.
+      await upsertEnrollment(student.id, sess.classId, openRun.sectionId)
 
       const alreadyAnswered = !!(await prisma.response.findUnique({
         where: { questionId_studentId: { questionId: question.id, studentId: student.id } },
@@ -270,11 +266,7 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
         where: { studentId_classId: { studentId: student.id, classId: sess.classId } },
         select: { sectionId: true },
       })
-      const studentSectionId = enrollment?.sectionId ?? null
-
-      const openRun = sess.runs.find(
-        (r) => r.sectionId === null || r.sectionId === studentSectionId
-      )
+      const openRun = openRunFor(sess.runs, enrollment)
       if (!openRun) throw new AppError('Session is not open', 409, 'SESSION_CLOSED')
 
       // The countdown ran out on this question. Checked here rather than only in the
@@ -323,8 +315,8 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
       // an answer lands, not up to six seconds later.
       const clock = timed ? clockState(openRun.id, questionId) : null
 
-      // Auto-enroll
-      await upsertEnrollment(student.id, sess.classId, null)
+      // Auto-enroll, into this run's section — see the same call on the fetch path.
+      await upsertEnrollment(student.id, sess.classId, openRun.sectionId)
 
       getIo().to(`${sess.id}:professor`).emit('new_response', {
         student: { id: student.id, netId: student.netId },
