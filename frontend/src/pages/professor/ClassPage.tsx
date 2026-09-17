@@ -13,14 +13,16 @@ import Pill from '@/components/ui/Pill'
 import Switch from '@/components/ui/Switch'
 import CodeChip from '@/components/ui/CodeChip'
 import Empty from '@/components/ui/Empty'
-import { Plus, Trash2, X, ChevronLeft, ChevronDown, ChevronUp, ArrowUpDown, Download, KeyRound, Copy, Users, BookOpen, Settings, RefreshCw, Sparkles, TimerReset } from 'lucide-react'
-import type { StudentStats, ActivitySession, GradebookSession, GradebookStudentRow } from 'shared'
+import { Plus, Trash2, X, ChevronLeft, ChevronDown, ChevronUp, ArrowUpDown, Download, Copy, Users, BookOpen, Settings, RefreshCw, Sparkles, TimerReset } from 'lucide-react'
+import type { GradebookSession, GradebookStudentRow } from 'shared'
 import TextbookPage from '@/pages/shared/TextbookPage'
 import GradebookTable from '@/components/GradebookTable'
+import RosterTable from '@/components/RosterTable'
 import StudentSessionModal from '@/components/StudentSessionModal'
 import StudentReportPanel from '@/components/StudentReportPanel'
 import { apiError } from '@/lib/errors'
 import { downloadCsv } from '@/lib/downloadCsv'
+import { statusPill } from '@/lib/status'
 
 
 interface Assignment {
@@ -58,14 +60,6 @@ interface Section {
   joinCode: string
 }
 
-type PillVariant = 'live' | 'good' | 'warn' | 'muted'
-function statusPill(status: string) {
-  const map: Record<string, PillVariant> = {
-    OPEN: 'good', DRAFT: 'warn', CLOSED: 'muted', ARCHIVED: 'muted',
-  }
-  return map[status] ?? 'muted'
-}
-
 const CLASS_TABS = [
   { key: 'sessions',     label: 'Class Sessions' },
   { key: 'assignments',  label: 'Assignments' },
@@ -100,8 +94,6 @@ export default function ClassPage() {
   const [newPassword, setNewPassword] = useState('')
   const [resetError, setResetError] = useState('')
   const [resetSuccess, setResetSuccess] = useState(false)
-  const [expandedStudent, setExpandedStudent] = useState<string | null>(null)
-  const [activityCache, setActivityCache] = useState<Record<string, ActivitySession[]>>({})
   const [showAddSection, setShowAddSection] = useState(false)
   const [newSectionName, setNewSectionName] = useState('')
   const [sectionLoading, setSectionLoading] = useState(false)
@@ -188,11 +180,6 @@ export default function ClassPage() {
     } finally {
       setSectionLoading(false)
     }
-  }
-
-  async function assignSection(studentId: string, sectionId: string | null) {
-    await api.patch(`/classes/${classId}/enrollments/${studentId}/section`, { sectionId })
-    qc.invalidateQueries({ queryKey: ['roster', classId] })
   }
 
   const removeMutation = useMutation({
@@ -754,136 +741,13 @@ export default function ClassPage() {
 
       {/* Roster tab */}
       {tab === 'roster' && (
-        !rosterData ? (
-          <Empty icon={Users} message="Loading roster…" />
-        ) : rosterData.length === 0 ? (
-          <Empty icon={Users} message="No students enrolled yet." />
-        ) : (
-          <div className="bg-surface border border-hairline rounded-[14px] overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-hairline text-left">
-                  <th className="px-5 py-3 text-xs font-medium text-muted uppercase tracking-wide">NetID</th>
-                  <th className="px-5 py-3 text-xs font-medium text-muted uppercase tracking-wide">Email</th>
-                  {sections.length > 0 && <th className="px-5 py-3 text-xs font-medium text-muted uppercase tracking-wide">Section</th>}
-                  <th className="px-5 py-3 text-xs font-medium text-muted uppercase tracking-wide">Participation</th>
-                  <th className="px-5 py-3"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {rosterData.map((e: { student: Student; stats: StudentStats; section: { id: string; name: string } | null }) => {
-                  const isExpanded = expandedStudent === e.student.id
-                  const activity = activityCache[e.student.id]
-
-                  async function toggleExpand() {
-                    if (isExpanded) { setExpandedStudent(null); return }
-                    setExpandedStudent(e.student.id)
-                    if (!activityCache[e.student.id]) {
-                      const res = await api.get(`/classes/${classId}/students/${e.student.id}/activity`)
-                      setActivityCache((prev) => ({ ...prev, [e.student.id]: res.data.data.sessions }))
-                    }
-                  }
-
-                  return (
-                    <>
-                      <tr
-                        key={e.student.id}
-                        onClick={toggleExpand}
-                        className="border-t border-hairline hover:bg-surface-2 cursor-pointer"
-                      >
-                        <td className="px-5 py-3.5 font-medium text-ink flex items-center gap-1.5">
-                          <ChevronDown size={14} className={`text-hairline-strong transition-transform shrink-0 ${isExpanded ? 'rotate-180' : ''}`} />
-                          {e.student.netId}
-                        </td>
-                        <td className="px-5 py-3.5 text-ink-2">{e.student.email}</td>
-                        {sections.length > 0 && (
-                          <td className="px-5 py-3.5" onClick={(ev) => ev.stopPropagation()}>
-                            <select
-                              value={e.section?.id ?? ''}
-                              onChange={(ev) => assignSection(e.student.id, ev.target.value || null)}
-                              className="text-xs border border-hairline rounded px-1.5 py-1 bg-surface text-ink-2 focus:outline-none focus:ring-1 focus:ring-signal"
-                            >
-                              <option value="">— unassigned</option>
-                              {sections.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                            </select>
-                          </td>
-                        )}
-                        <td className="px-5 py-3.5 text-ink-2">
-                          {e.stats.totalClosedSessions > 0 ? (
-                            <span className={e.stats.sessionsParticipated === 0 ? 'text-muted' : ''}>
-                              {e.stats.sessionsParticipated}/{e.stats.totalClosedSessions} sessions
-                            </span>
-                          ) : (
-                            <span className="text-hairline-strong">—</span>
-                          )}
-                        </td>
-                        <td className="px-5 py-3.5 text-right" onClick={(ev) => ev.stopPropagation()}>
-                          <div className="flex items-center justify-end gap-3">
-                            <button
-                              onClick={() => openReset(e.student)}
-                              className="flex items-center gap-1.5 text-xs text-muted hover:text-signal transition-colors"
-                            >
-                              <KeyRound size={13} /> Reset password
-                            </button>
-                            <button
-                              onClick={() => { setRemoveError(''); setRemoveTarget(e.student) }}
-                              className="flex items-center gap-1.5 text-xs text-muted hover:text-red-500 transition-colors"
-                            >
-                              <Trash2 size={13} /> Remove
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-
-                      {isExpanded && (
-                        <tr key={`${e.student.id}-detail`} className="border-t border-hairline bg-surface-2">
-                          <td colSpan={sections.length > 0 ? 5 : 4} className="px-5 py-4">
-                            {!activity ? (
-                              <p className="text-xs text-muted">Loading…</p>
-                            ) : activity.length === 0 ? (
-                              <p className="text-xs text-muted">No sessions yet.</p>
-                            ) : (
-                              <div className="space-y-3">
-                                {activity.map((session) => (
-                                  <div key={session.id}>
-                                    <div className="flex items-center gap-2 mb-1.5">
-                                      <span className="text-xs font-medium text-ink-2">{session.title}</span>
-                                      <Pill variant={statusPill(session.status)}>
-                                        {session.status.charAt(0) + session.status.slice(1).toLowerCase()}
-                                      </Pill>
-                                    </div>
-                                    <div className="flex flex-wrap gap-2">
-                                      {session.questions.map((q) => (
-                                        <span
-                                          key={q.id}
-                                          title={q.text + (q.response ? `\n"${q.response.responseText}"` : '')}
-                                          className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${
-                                            q.response
-                                              ? 'border-good/30 bg-good-soft text-good'
-                                              : 'border-hairline bg-surface text-muted'
-                                          }`}
-                                        >
-                                          Q{q.number} {q.response ? '✓' : '—'}
-                                          {q.response && q.type === 'FREE_TEXT' && (
-                                            <span className="text-good">{q.response.wordCount}w</span>
-                                          )}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      )}
-                    </>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )
+        <RosterTable
+          classId={classId!}
+          entries={rosterData}
+          sections={sections}
+          onResetPassword={openReset}
+          onRemove={(student) => { setRemoveError(''); setRemoveTarget(student) }}
+        />
       )}
 
       {/* Textbook tab */}
