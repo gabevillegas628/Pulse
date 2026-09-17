@@ -426,7 +426,13 @@ export default function SessionPage() {
               <Button
                 variant="primary"
                 onClick={() => {
-                  if (sectionsData && sectionsData.length > 1) {
+                  // Any section at all means the choice has to be made, not just two or
+                  // more. A class with exactly one section used to skip this and open an
+                  // all-sections run every time, so its students accumulated no section —
+                  // and the day a second section was added, the whole roster was locked out
+                  // of every targeted run at once. The server now refuses a sectionless run
+                  // for such a class, so asking is also the only thing that works.
+                  if (sectionsData && sectionsData.length > 0) {
                     setShowSectionModal(true)
                   } else {
                     openRunMutation.mutate(null)
@@ -777,13 +783,10 @@ export default function SessionPage() {
                     Section {s.name}
                   </button>
                 ))}
-                <button
-                  onClick={() => openRunMutation.mutate(null)}
-                  disabled={openRunMutation.isPending}
-                  className="w-full text-left px-4 py-3 rounded-[14px] border border-hairline hover:border-hairline-strong hover:bg-surface-2 text-muted transition-colors text-sm disabled:opacity-50"
-                >
-                  All sections
-                </button>
+                {/* No "all sections" any more. The server refuses a sectionless run for a
+                    class that has sections, so offering it here would be offering an error
+                    — and the state it used to create is the one this whole change exists to
+                    make unreachable. */}
               </div>
             </Card>
           </div>

@@ -298,12 +298,33 @@ router.post('/sessions/:id/runs', requireProfessor, async (req: Request, res: Re
 
     const session = await prisma.session.findFirst({
       where: { id: p(req.params.id), ...ownedSession(professor) },
-      include: { runs: true },
+      include: { runs: true, class: { select: { _count: { select: { sections: true } } } } },
     })
     if (!session) throw new AppError('Session not found', 404)
 
     const hasOpenRun = session.runs.some((r) => r.status === 'OPEN')
     if (hasOpenRun) throw new AppError('A run is already open for this session', 409)
+
+    // A class with sections must say which one it is teaching.
+    //
+    // An all-sections run is the one thing that cannot be reasoned about: it admits every
+    // student, so answering it enrols a newcomer with no section at all — and an
+    // unassigned student is then refused by every targeted run afterwards, silently and
+    // for good. The join door already refuses the class-wide code for this exact reason;
+    // this closes the same hole on the run side, so the ambiguous state stops being
+    // representable rather than merely being handled everywhere it leaks to.
+    //
+    // The cost is a plenary: every section answering one run together. Smaller than it
+    // sounds, since the guard above already forbids two runs of a session being open at
+    // once, so sections could never answer simultaneously anyway.
+    //
+    // Existing all-sections runs are untouched. This is a rule about opening a new one.
+    if (session.class._count.sections > 0 && !body.sectionId) {
+      throw new AppError(
+        'This class has sections, so a session must be opened for one of them.',
+        400
+      )
+    }
 
     if (body.sectionId) {
       const section = await prisma.section.findFirst({
