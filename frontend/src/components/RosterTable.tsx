@@ -7,6 +7,8 @@ import Switch from '@/components/ui/Switch'
 import SortHeader from '@/components/ui/SortHeader'
 import { ChevronDown, KeyRound, Search, Trash2, Users } from 'lucide-react'
 import type { StudentStats, ActivitySession } from 'shared'
+import { sessionTotal } from '@/components/ScoreChip'
+import { formatScore, toneFor } from '@/components/session/ScoreBadge'
 import { statusPill } from '@/lib/status'
 
 /**
@@ -317,21 +319,36 @@ export default function RosterTable({ classId, sections, onResetPassword, onRemo
                                     <Pill variant={statusPill(session.status)}>
                                       {session.status.charAt(0) + session.status.slice(1).toLowerCase()}
                                     </Pill>
+                                    {(() => {
+                                      const total = sessionTotal(session.questions)
+                                      return total.max > 0 && (
+                                        <span className="text-xs font-mono text-muted">{total.earned}/{total.max} pt</span>
+                                      )
+                                    })()}
                                   </div>
                                   <div className="flex flex-wrap gap-2">
                                     {session.questions.map((q) => (
                                       <span
                                         key={q.id}
                                         title={q.text + (q.response ? `\n"${q.response.responseText}"` : '')}
+                                        // A graded question shows its score. An ungraded one only says it was
+                                        // answered, in a neutral colour: this used to be a green ✓ for any
+                                        // answer, and fifteen answers read as fifteen correct beside a
+                                        // gradebook showing 10/10.
                                         className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${
-                                          q.response
-                                            ? 'border-good/30 bg-good-soft text-good'
+                                          q.counted && q.score !== null
+                                            ? toneFor(q.score)
+                                            : q.response
+                                            ? 'border-hairline-strong bg-surface text-ink-2'
                                             : 'border-hairline bg-surface text-muted'
                                         }`}
                                       >
-                                        Q{q.number} {q.response ? '✓' : '—'}
+                                        Q{q.number}{' '}
+                                        {q.counted && q.score !== null
+                                          ? <span className="font-mono">{formatScore(q.score)}</span>
+                                          : q.response ? 'answered' : '—'}
                                         {q.response && q.type === 'FREE_TEXT' && (
-                                          <span className="text-good">{q.response.wordCount}w</span>
+                                          <span className="opacity-70">{q.response.wordCount}w</span>
                                         )}
                                       </span>
                                     ))}

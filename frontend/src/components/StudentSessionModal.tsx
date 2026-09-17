@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { api } from '@/api/client'
 import type { ActivitySession, GradebookSession } from 'shared'
+import ScoreChip from '@/components/ScoreChip'
 
 interface Props {
   classId: string
@@ -9,19 +10,6 @@ interface Props {
   netId: string
   session: GradebookSession
   onClose: () => void
-}
-
-function scoreChip(score: number) {
-  const color = score >= 1.0
-    ? 'bg-good-soft text-good border-good/20'
-    : score >= 0.5
-    ? 'bg-warn-soft text-warn border-warn/20'
-    : 'bg-red-100 text-red-600 border-red-200'
-  return (
-    <span className={`text-xs font-mono font-medium px-2 py-0.5 rounded-full border ${color}`}>
-      {score.toFixed(1)} pt
-    </span>
-  )
 }
 
 export default function StudentSessionModal({ classId, studentId, netId, session, onClose }: Props) {
@@ -73,7 +61,7 @@ export default function StudentSessionModal({ classId, studentId, netId, session
               {q.response ? (
                 <div className="ml-7 flex items-start justify-between gap-3">
                   <p className="text-sm text-ink leading-relaxed flex-1">{q.response.responseText}</p>
-                  {q.counted && q.score !== null && scoreChip(q.score)}
+                  {q.counted && <ScoreChip score={q.score} counted />}
                 </div>
               ) : (
                 <p className="ml-7 text-sm text-hairline-strong italic">No response</p>

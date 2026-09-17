@@ -20,7 +20,7 @@ export function formatScore(score: number): string {
  * Deliberately a threshold rather than the exact-match it used to be: `=== 0.5 ? warn :
  * red` painted every custom score red, so 0.75 looked like a zero.
  */
-function toneFor(score: number): string {
+export function toneFor(score: number): string {
   if (score >= 1) return 'bg-good-soft text-good border-good/20'
   if (score > 0) return 'bg-warn-soft text-warn border-warn/20'
   return 'bg-red-100 text-red-600 border-red-200'

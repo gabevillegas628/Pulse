@@ -865,15 +865,6 @@ router.get('/:id/grades/json', async (req: Request, res: Response, next: NextFun
     const participationSessions = sessions
     const homeworkSessions = assignments
 
-    const participationMax = participationSessions.reduce((sum, s) => {
-      return sum + gradeSession('IN_CLASS', s.questions.map((q) => ({
-        id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance, unit: q.unit,
-        totalResponseCount: q.responses.length,
-        hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
-        studentResponse: null,
-      }))).max
-    }, 0)
-
     const hwMax = homeworkSessions.reduce((sum, a) => {
       return sum + gradeSession('HOMEWORK', a.questions.map((q) => ({
         id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance, unit: q.unit,
@@ -921,6 +912,13 @@ router.get('/:id/grades/json', async (req: Request, res: Response, next: NextFun
         }
       })
 
+      // Summed from this student's own cells. It used to be one class-wide figure counting
+      // every presented question, so a student whose section never ran a session saw cells
+      // adding to 8/8 under a total of 8/10.
+      const participationMax = participationSessions.reduce((sum, s) => {
+        const score = scores.find((sc) => sc.sessionId === s.id)
+        return sum + (score?.max ?? 0)
+      }, 0)
       const participationTotal = participationSessions.reduce((sum, s) => {
         const score = scores.find((sc) => sc.sessionId === s.id)
         return sum + (score?.earned ?? 0)
@@ -999,15 +997,6 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
     const assignments = cls.assignments as unknown as GradebookItem[]
     const enrollments = cls.enrollments as unknown as Array<GradeEnrollment & { section: { id: string; name: string } | null }>
 
-    const participationMax = sessions.reduce((sum, s) => {
-      return sum + gradeSession('IN_CLASS', s.questions.map((q) => ({
-        id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance, unit: q.unit,
-        totalResponseCount: q.responses.length,
-        hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
-        studentResponse: null,
-      }))).max
-    }, 0)
-
     const homeworkMax = assignments.reduce((sum, a) => {
       return sum + gradeSession('HOMEWORK', a.questions.map((q) => ({
         id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance, unit: q.unit,
@@ -1023,7 +1012,7 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
     const header = [
       'NetID', 'Section',
       ...participationHeaders,
-      'Participation Total', `Participation Max (${participationMax})`,
+      'Participation Total', 'Participation Max',
       ...homeworkHeaders,
       'HW Total', `HW Max (${homeworkMax})`,
     ].join(',')
@@ -1033,7 +1022,9 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
       const sectionName = enrollment.section?.name ?? ''
       const studentSectionId = enrollment.section?.id ?? null
 
-      const pTotals = sessions.map((sess) => {
+      // The max is per student, as in the JSON gradebook: it depends on which sessions ran
+      // for this student's section.
+      const pResults = sessions.map((sess) => {
         const relevantRunIds = new Set(
           (sess.runs ?? [])
             .filter((r) => r.sectionId === null || r.sectionId === studentSectionId)
@@ -1045,8 +1036,10 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
           sectionResponseCount: relevantRunIds.size > 0 ? q.responses.length : 0,
           hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
           studentResponse: q.responses.find((r) => r.studentId === student.id) ?? null,
-        }))).earned
+        })))
       })
+      const pTotals = pResults.map((r) => r.earned)
+      const participationMax = pResults.reduce((sum, r) => sum + r.max, 0)
 
       const hwTotals = assignments.map((asgn) =>
         gradeSession('HOMEWORK', asgn.questions.map((q) => ({
