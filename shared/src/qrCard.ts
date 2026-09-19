@@ -33,8 +33,13 @@ export async function renderQrCard(options: QrCardOptions): Promise<HTMLCanvasEl
   // 22px, one projected 1672 came back as 1692, 1675 and 1472 in a single lecture.
   const codeTargetSize = 48
   const codeFamily = '"Courier New", monospace'
-  const qTextFont = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
-  const lineH = 28
+  // The question is sized to fill its column rather than fixed, because most questions
+  // are short enough that a fixed size left the card mostly empty — wasted legibility
+  // for the back of the room. 20 is the old fixed size and stays the floor.
+  const qTextMinSize = 20, qTextMaxSize = 36
+  const qTextFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+  const qTextFont = (size: number) => `bold ${size}px ${qTextFamily}`
+  const qLineH = (size: number) => Math.round(size * 1.4)
 
   const img = new Image()
   img.src = qrDataUrl
@@ -75,8 +80,25 @@ export async function renderQrCard(options: QrCardOptions): Promise<HTMLCanvasEl
   // and clip the code — the failure the previous hardcoded 26 was one edit away from.
   const codeH = Math.ceil(codeSize * 1.2)
 
-  const qLines = wrapText(questionText, rightWidth, qTextFont)
+  // The QR column fixes the card's natural height, so grow the question text until it
+  // is the tallest thing that still fits beside it. Below the floor we stop fitting and
+  // let the card grow (and then clip) exactly as it did before.
   const leftH = pad + qrSize + 8 + codeH + pad
+  const qTextBudget = leftH - pad - pad
+  let qTextSize = qTextMinSize
+  let qLines = wrapText(questionText, rightWidth, qTextFont(qTextMinSize))
+  for (let size = qTextMaxSize; size > qTextMinSize; size--) {
+    const font = qTextFont(size)
+    const lines = wrapText(questionText, rightWidth, font)
+    if (lines.length * qLineH(size) > qTextBudget) continue
+    // wrapText cannot break inside a word, so a term too long to fit the column at this
+    // size would be drawn past the card edge and clipped. Fall to a size where it fits.
+    m.font = font
+    if (lines.some((line) => m.measureText(line).width > rightWidth)) continue
+    qTextSize = size; qLines = lines; break
+  }
+  const lineH = qLineH(qTextSize)
+
   const rightH = pad + qLines.length * lineH + pad
   const H = Math.min(Math.max(leftH, rightH), maxCardH)
 
@@ -147,7 +169,7 @@ export async function renderQrCard(options: QrCardOptions): Promise<HTMLCanvasEl
   const textBlockH = visibleLines.length * lineH
   let ry = oy + (H - textBlockH) / 2
 
-  ctx.fillStyle = '#111827'; ctx.font = qTextFont
+  ctx.fillStyle = '#111827'; ctx.font = qTextFont(qTextSize)
   for (const line of visibleLines) { ctx.fillText(line, ox + tx, ry); ry += lineH }
 
   ctx.restore()
