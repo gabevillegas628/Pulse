@@ -713,7 +713,9 @@ export default function SessionPage() {
               question={activeQuestion}
               gradeReasons={gradeReasons}
               filter={activeFilter}
-              isScorePending={overrideScoreMutation.isPending}
+              pendingResponseId={overrideScoreMutation.isPending
+                ? overrideScoreMutation.variables?.responseId ?? null
+                : null}
               onScoreChange={(responseId, aiScore) => overrideScoreMutation.mutate({
                 questionId: activeQuestion.id,
                 responseId,

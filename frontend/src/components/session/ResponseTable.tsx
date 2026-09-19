@@ -62,7 +62,12 @@ interface Props {
   gradeReasons: Record<string, string>
   filter: ResponseFilter
   onScoreChange: (responseId: string, aiScore: number) => void
-  isScorePending: boolean
+  /**
+   * The one response whose score is being written, if any. Deliberately narrower than the
+   * mutation's own `isPending`: that dimmed and froze every pill in the table on every
+   * click, which is a whole column flickering through a grading pass.
+   */
+  pendingResponseId: string | null
 }
 
 /**
@@ -83,7 +88,7 @@ interface Props {
  * windowing dependency to a page this redesign just finished simplifying.
  */
 export default function ResponseTable({
-  question, gradeReasons, filter, onScoreChange, isScorePending,
+  question, gradeReasons, filter, onScoreChange, pendingResponseId,
 }: Props) {
   const [sort, setSort] = useState<Sort>({ key: 'score', dir: 'asc' })
   const [query, setQuery] = useState('')
@@ -188,17 +193,17 @@ export default function ResponseTable({
                         )}
                       </span>
                     </td>
+                    {/* Unscored rows get the same pill with nothing lit, rather than the
+                        em dash they used to get. The dash was the one row you could not
+                        grade by hand — and on a partly graded question those are exactly
+                        the rows still wanting a decision. */}
                     <td className="px-3 py-2 whitespace-nowrap">
-                      {score === null ? (
-                        <span className="text-xs text-hairline-strong font-mono">—</span>
-                      ) : (
-                        <ScoreBadge
-                          score={score}
-                          reason={why}
-                          pending={isScorePending}
-                          onChange={(aiScore) => onScoreChange(r.id, aiScore)}
-                        />
-                      )}
+                      <ScoreBadge
+                        score={score}
+                        reason={why}
+                        pending={pendingResponseId === r.id}
+                        onChange={(aiScore) => onScoreChange(r.id, aiScore)}
+                      />
                     </td>
                     <td className="px-3 py-2 text-xs text-hairline-strong font-mono whitespace-nowrap">
                       {new Date(r.submittedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
