@@ -16,23 +16,54 @@ export function formatScore(score: number): string {
 }
 
 /**
- * The same number with nothing in it that does not distinguish one score from another:
- * `½` rather than `0.5`, `1` rather than `1.0`. Every preset is one glyph wide.
+ * A score that is none of the presets, minus the leading zero every score in the pill
+ * shares: `.75` rather than `0.75`.
  *
- * Only for the pill, where four labels sit side by side and the leading zero every one of
- * them shares is pure width. `formatScore` stays as it is — a chip standing on its own
- * elsewhere in the app has no neighbours to be read against, and `1.0 pt` says "out of
- * one" in a way `1 pt` does not.
- *
- * A score that is none of the presets keeps its decimal, minus the leading zero. Halves
- * are a mark someone chooses by name; `0.7` is a measurement, and `⁷⁄₁₀` would be showing
- * off rather than reading faster.
+ * Only for the pill. `formatScore` stays as it is — a chip standing on its own elsewhere
+ * in the app has no neighbours to be read against, and `1.0 pt` says "out of one" in a way
+ * `1 pt` does not.
  */
 function compactScore(score: number): string {
-  if (score === 1) return '1'
-  if (score === 0.5) return '½'
   if (score === 0) return '0'
-  return formatScore(score).replace(/^0/, '')
+  return formatScore(score).replace(/^0\./, '.')
+}
+
+/** What each preset means, for the tooltip that teaches the marks. */
+const PRESET_TITLE: Record<number, string> = {
+  0: 'No credit',
+  0.5: 'Half credit',
+  1: 'Full credit',
+}
+
+/**
+ * How full the mark is: an empty ring, a half-filled disc, a solid disc.
+ *
+ * Drawn here rather than taken from lucide, which strokes rather than fills — its
+ * `Contrast` renders the half as an outline, and filling it solid-fills the outer ring
+ * too. Three shapes of our own are smaller than the workaround would have been, and they
+ * size to the row instead of to an icon grid.
+ *
+ * `currentColor` throughout, so a segment's tone colours the mark along with its text and
+ * the shapes stay legible at 13px where `½` did not — a vulgar fraction is two numerals
+ * stacked inside one character cell, which is too much to ask of this size.
+ */
+function ScoreMark({ value }: { value: number }) {
+  return (
+    <svg viewBox="0 0 16 16" width={13} height={13} aria-hidden="true" focusable="false" className="block">
+      {/* One ring for all three, so the marks share an outline and differ only in what is
+          filled inside it. The bare D and the crescent were both tried and both lost: with
+          the ring gone the half stops being half *of* anything, and the row reads as three
+          unrelated shapes rather than one filling up. */}
+      <circle
+        cx="8" cy="8" r="6"
+        fill={value >= 1 ? 'currentColor' : 'none'}
+        stroke="currentColor"
+        strokeWidth="1.75"
+      />
+      {/* The right half, noon round to six o'clock, inside that ring. */}
+      {value > 0 && value < 1 && <path d="M8 2a6 6 0 0 1 0 12z" fill="currentColor" />}
+    </svg>
+  )
 }
 
 /**
@@ -68,7 +99,12 @@ interface Props {
 }
 
 /**
- * A response's score, as a segmented pill: 0, 0.5, 1.0, and a panel for anything else.
+ * A response's score, as a segmented pill: none, half, full, and a panel for anything else.
+ *
+ * The three marks are drawn rather than written. `0 ½ 1` was the tighter idea and `½` was
+ * illegible at this size — a vulgar fraction is two numerals stacked inside one character
+ * cell, which is a lot to ask of 12px. A ring, a half disc and a solid disc carry the same
+ * three values in shapes that survive being small, and read as a progression besides.
  *
  * The three marks that account for nearly every grade are one click each, in place, with
  * nothing laid over the table. That is the whole point of the shape — this used to be a
@@ -141,15 +177,14 @@ export default function ScoreBadge({ score, reason, onChange, pending, disabled 
             disabled={inert}
             aria-pressed={score === v}
             aria-label={`Give ${formatScore(v)}`}
-            // No shared minimum width: `0` and `1` are one glyph and `.5` is two, so
-            // matching them all to the widest spends a third of the pill on nothing.
+            title={`${PRESET_TITLE[v]} — ${formatScore(v)}`}
             className={cn(
-              'px-2.5 py-0.5 text-xs font-mono font-medium text-center transition-colors',
+              'px-2 py-1 flex items-center justify-center transition-colors',
               score === v ? fillFor(v) : 'text-muted hover:bg-surface-2 hover:text-ink-2',
               inert && 'cursor-not-allowed',
             )}
           >
-            {compactScore(v)}
+            <ScoreMark value={v} />
           </button>
         ))}
 
@@ -165,7 +200,7 @@ export default function ScoreBadge({ score, reason, onChange, pending, disabled 
           }
           title={reason ? 'Why this score — and set another' : 'Set another score'}
           className={cn(
-            'py-0.5 flex items-center justify-center text-xs font-mono font-medium transition-colors',
+            'py-1 flex items-center justify-center text-xs font-mono font-medium transition-colors',
             // Upright dots need barely any width; a number in this slot needs as much as
             // the presets beside it.
             customScore !== null ? 'px-2.5' : 'px-1.5',
