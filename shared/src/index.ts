@@ -313,9 +313,17 @@ export interface AdminStudentSummary {
 }
 
 export interface ClassWithCounts extends Class {
-  _count: { sessions: number; enrollments: number }
-  sessions: Array<{ id: string; title: string; status: string; createdAt: string }>
+  _count: { enrollments: number; sections: number }
+  sectionCount: number
+  /** Distinct sessions with at least one answered run */
+  sessionsRun: number
+  /** When the most recent answered run opened */
+  lastTaughtAt: string | null
+  /** Mean over each session × section of its responders ÷ that section's enrollment */
   participationRate: number | null
+  /** The same per-session rates, oldest first, last 10. `label` is the session title (+ section) */
+  participationTrend: Array<{ label: string; rate: number }>
+  liveSessions: Array<{ id: string; title: string }>
 }
 
 export interface UpcomingAssignment {

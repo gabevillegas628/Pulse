@@ -62,6 +62,17 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   }
 })
 
+/** One session as taught to one section (or to the whole class, when it has none). */
+interface TaughtStat {
+  sessionId: string
+  title: string
+  sectionName: string | null
+  isOpen: boolean
+  lastAnsweredAt: Date
+  respondents: number
+  enrolled: number
+}
+
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
@@ -69,48 +80,80 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       where: ownedClass(professor),
       orderBy: { createdAt: 'desc' },
       include: {
-        _count: { select: { sessions: true, enrollments: true } },
-        sessions: {
-          orderBy: { createdAt: 'desc' }, take: 1,
-          select: {
-            id: true, title: true, status: true, createdAt: true,
-            runs: { where: { status: 'OPEN' }, select: { id: true }, take: 1 },
-          },
-        },
+        _count: { select: { enrollments: true, sections: true } },
       },
     })
 
-    // Participation rate: avg of (distinct responders / enrolled) per session with closed runs
     const classIds = classes.map((c) => c.id)
-    let participationMap: Record<string, number | null> = {}
+    const taughtByClass = new Map<string, TaughtStat[]>()
+    let liveRuns: Array<{ id: string; openedAt: Date; session: { id: string; title: string; classId: string } }> = []
     if (classIds.length > 0) {
-      const rows = await prisma.$queryRaw<Array<{ classId: string; participationRate: number | null }>>(
-        Prisma.sql`
-          SELECT sub."classId",
-            AVG(sub.respondents::float / NULLIF(sub.enrolled, 0)) AS "participationRate"
-          FROM (
-            SELECT s.id, s."classId",
-              COUNT(DISTINCT r."studentId") AS respondents,
-              (SELECT COUNT(*) FROM "Enrollment" e WHERE e."classId" = s."classId") AS enrolled
-            FROM "Session" s
-            JOIN "SessionRun" sr ON sr."sessionId" = s.id AND sr.status IN ('CLOSED', 'ARCHIVED')
-            LEFT JOIN "Response" r ON r."runId" = sr.id
-            WHERE s."classId" IN (${Prisma.join(classIds)})
-            GROUP BY s.id, s."classId"
-          ) sub
-          GROUP BY sub."classId"
-        `
-      )
-      for (const row of rows) {
-        participationMap[row.classId] = row.participationRate != null ? Number(row.participationRate) : null
+      const [taughtRows, live] = await Promise.all([
+        // Participation per session per section, pooling all of that pair's runs — the
+        // same unit the class page's session list uses. Not per run: a professor with
+        // two sections that were never set up in Pulse reopens the same session for
+        // each, so any one run holds half the room and would read as ~50%.
+        //
+        // The denominator is the section's own enrollment, or the whole class when the
+        // runs carry no section. Pairs nobody answered are dropped: those runs are tests
+        // or misclicks, and counting them would call them 0% class meetings.
+        prisma.$queryRaw<Array<TaughtStat & { classId: string }>>(Prisma.sql`
+          SELECT s."classId", s.id AS "sessionId", s.title, MAX(sec.name) AS "sectionName",
+            BOOL_OR(sr.status = 'OPEN') AS "isOpen",
+            MAX(sr."openedAt") FILTER (WHERE r.id IS NOT NULL) AS "lastAnsweredAt",
+            COUNT(DISTINCT r."studentId")::int AS respondents,
+            (SELECT COUNT(*) FROM "Enrollment" e
+              WHERE e."classId" = s."classId"
+                AND (sr."sectionId" IS NULL OR e."sectionId" = sr."sectionId"))::int AS enrolled
+          FROM "SessionRun" sr
+          JOIN "Session" s ON s.id = sr."sessionId"
+          LEFT JOIN "Section" sec ON sec.id = sr."sectionId"
+          LEFT JOIN "Response" r ON r."runId" = sr.id
+          WHERE s."classId" IN (${Prisma.join(classIds)})
+          GROUP BY s."classId", s.id, sr."sectionId"
+          HAVING COUNT(r.id) > 0
+          ORDER BY "lastAnsweredAt" ASC
+        `),
+        // Any open run, not just one on the newest session: a term authored up front
+        // teaches older sessions all the time.
+        prisma.sessionRun.findMany({
+          where: { status: 'OPEN', session: { classId: { in: classIds } } },
+          orderBy: { openedAt: 'desc' },
+          select: { id: true, openedAt: true, session: { select: { id: true, title: true, classId: true } } },
+        }),
+      ])
+      for (const row of taughtRows) {
+        const list = taughtByClass.get(row.classId) ?? []
+        list.push(row)
+        taughtByClass.set(row.classId, list)
       }
+      liveRuns = live
     }
 
-    const result = classes.map((c) => ({
-      ...c,
-      participationRate: participationMap[c.id] ?? null,
-      sessions: c.sessions.map(({ runs, ...s }) => ({ ...s, isLive: runs.length > 0 })),
-    }))
+    const result = classes.map((c) => {
+      const taught = taughtByClass.get(c.id) ?? []
+      // Not while live: that rate is still climbing.
+      // Capped at 1 because a student allowed in any section counts in their own
+      // section's denominator but can answer in another (see Enrollment.anySection).
+      const points = taught
+        .filter((t) => !t.isOpen && t.enrolled > 0)
+        .map((t) => ({
+          label: t.sectionName ? `${t.title} · ${t.sectionName}` : t.title,
+          rate: Math.min(1, t.respondents / t.enrolled),
+        }))
+      const rates = points.map((p) => p.rate)
+      const live = liveRuns.filter((r) => r.session.classId === c.id)
+      return {
+        ...c,
+        sectionCount: c._count.sections,
+        sessionsRun: new Set(taught.map((t) => t.sessionId)).size,
+        lastTaughtAt: taught.length > 0 ? taught[taught.length - 1].lastAnsweredAt : null,
+        participationRate: rates.length > 0 ? rates.reduce((a, b) => a + b, 0) / rates.length : null,
+        participationTrend: points.slice(-10),
+        // One entry per session, even when two sections have it open at once
+        liveSessions: [...new Map(live.map((r) => [r.session.id, { id: r.session.id, title: r.session.title }])).values()],
+      }
+    })
 
     res.json({ success: true, data: { classes: result } })
   } catch (err) {
