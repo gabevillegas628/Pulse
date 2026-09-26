@@ -19,7 +19,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { api } from '@/api/client'
 import RichTextRenderer from '@/components/RichTextRenderer'
 import StructureRenderer from '@/components/StructureRenderer'
-import { ChevronLeft, ChevronRight, Check, Clock, GripVertical, Save, Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Check, Clock, GripVertical, Save, Loader2 } from 'lucide-react'
 import { Editor } from 'ketcher-react'
 import { RemoteStructServiceProvider } from 'ketcher-core'
 import type { Ketcher } from 'ketcher-core'
@@ -78,23 +78,75 @@ type DisplayItem =
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function SortableOrderItem({ id, label, disabled }: { id: string; label: string; disabled: boolean }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+/**
+ * One row of an ordering answer. The same row as QuestionPage's, which explains the
+ * choices: `touch-none` on the grip is what lets a drag start on a phone at all (dnd-kit
+ * gives up the moment the browser claims the gesture for scrolling), the grip is sized
+ * for a fingertip, and the arrows are the keyboard, screen-reader and one-handed way in.
+ */
+function SortableOrderItem({
+  id,
+  label,
+  index,
+  total,
+  disabled,
+  onMove,
+}: {
+  id: string
+  label: string
+  index: number
+  total: number
+  disabled: boolean
+  onMove: (from: number, to: number) => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled })
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
+  const arrow =
+    'p-1.5 rounded-md text-muted hover:bg-surface-2 active:bg-surface-2 disabled:opacity-25 disabled:hover:bg-transparent'
+  if (disabled) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-2.5 border border-hairline rounded-[14px] text-sm text-ink bg-surface opacity-60">
+        <span className="shrink-0 font-mono tabular-nums text-muted">{index + 1}.</span>
+        <span className="flex-1 min-w-0">{label}</span>
+      </div>
+    )
+  }
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`flex items-center gap-2 px-3 py-2.5 border rounded-[14px] text-sm text-ink bg-surface ${
-        disabled ? 'border-hairline opacity-60' : 'border-hairline-strong cursor-grab active:cursor-grabbing'
-      }`}
+      className="flex items-center gap-1 pl-1 pr-1.5 py-1 border border-hairline-strong rounded-[14px] text-sm text-ink bg-surface"
     >
-      {!disabled && (
-        <span {...attributes} {...listeners} className="text-hairline-strong hover:text-muted">
-          <GripVertical size={14} />
-        </span>
-      )}
-      {label}
+      <span
+        {...attributes}
+        {...listeners}
+        aria-label={`Reorder ${label}`}
+        className="touch-none shrink-0 p-2.5 text-hairline-strong hover:text-muted cursor-grab active:cursor-grabbing"
+      >
+        <GripVertical size={18} />
+      </span>
+      <span className="shrink-0 font-mono tabular-nums text-muted">{index + 1}.</span>
+      <span className="flex-1 min-w-0 py-1">{label}</span>
+      <span className="flex flex-col shrink-0">
+        <button
+          type="button"
+          onClick={() => onMove(index, index - 1)}
+          disabled={index === 0}
+          aria-label={`Move ${label} up`}
+          className={arrow}
+        >
+          <ChevronUp size={16} />
+        </button>
+        <button
+          type="button"
+          onClick={() => onMove(index, index + 1)}
+          disabled={index === total - 1}
+          aria-label={`Move ${label} down`}
+          className={arrow}
+        >
+          <ChevronDown size={16} />
+        </button>
+      </span>
     </div>
   )
 }
@@ -487,25 +539,41 @@ export default function AssignmentPage() {
           let order: string[] = []
           try { order = JSON.parse(answers[q.id] ?? '[]') } catch { order = q.options! }
           if (!order.length) order = q.options!
+          // Drag and arrows both land here. Bounds are checked as well as the arrows being
+          // disabled, so a rapid double tap at either end cannot walk an item off the list.
+          const move = (from: number, to: number) => {
+            if (isDisabled || from === -1 || to < 0 || to >= order.length) return
+            setAnswer(q.id, JSON.stringify(arrayMove(order, from, to)))
+          }
           return (
-            <DndContext sensors={sensors} collisionDetection={closestCenter}
-              onDragEnd={(event: DragEndEvent) => {
-                if (isDisabled) return
-                const { active, over } = event
-                if (!over || active.id === over.id) return
-                const oldIdx = order.indexOf(active.id as string)
-                const newIdx = order.indexOf(over.id as string)
-                if (oldIdx === -1 || newIdx === -1) return
-                const next = arrayMove(order, oldIdx, newIdx)
-                setAnswer(q.id, JSON.stringify(next))
-              }}
-            >
-              <SortableContext items={order} strategy={verticalListSortingStrategy}>
-                <div className="space-y-2">
-                  {order.map((item) => <SortableOrderItem key={item} id={item} label={item} disabled={isDisabled} />)}
-                </div>
-              </SortableContext>
-            </DndContext>
+            <div className="space-y-2">
+              {!isDisabled && (
+                <p className="text-xs text-muted">Drag the handle or use the arrows to put these in order.</p>
+              )}
+              <DndContext sensors={sensors} collisionDetection={closestCenter}
+                onDragEnd={(event: DragEndEvent) => {
+                  const { active, over } = event
+                  if (!over || active.id === over.id) return
+                  move(order.indexOf(active.id as string), order.indexOf(over.id as string))
+                }}
+              >
+                <SortableContext items={order} strategy={verticalListSortingStrategy}>
+                  <div className="space-y-2">
+                    {order.map((item, i) => (
+                      <SortableOrderItem
+                        key={item}
+                        id={item}
+                        label={item}
+                        index={i}
+                        total={order.length}
+                        disabled={isDisabled}
+                        onMove={move}
+                      />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
+            </div>
           )
         })()}
 

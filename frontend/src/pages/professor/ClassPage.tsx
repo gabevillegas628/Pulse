@@ -618,7 +618,8 @@ export default function ClassPage() {
                                   deleteSessionMutation.mutate(s.id)
                                 }}
                                 disabled={deleteSessionMutation.isPending}
-                                className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-hairline-strong hover:text-red-500 disabled:opacity-30"
+                                // Hidden until hover only where hover exists; a touchscreen never hovers
+                                className="[@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-hairline-strong hover:text-red-500 disabled:opacity-30"
                                 title="Delete session"
                               >
                                 <Trash2 size={14} />
@@ -667,7 +668,8 @@ export default function ClassPage() {
                     deleteAssignmentMutation.mutate(a.id)
                   }}
                   disabled={deleteAssignmentMutation.isPending}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 px-4 py-5 text-hairline-strong hover:text-red-500 disabled:opacity-30"
+                  // Hidden until hover only where hover exists; a touchscreen never hovers
+                  className="[@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity shrink-0 px-4 py-5 text-hairline-strong hover:text-red-500 disabled:opacity-30"
                   title="Delete assignment"
                 >
                   <Trash2 size={15} />
