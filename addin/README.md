@@ -65,9 +65,16 @@ If you ever see the pane render but not respond, check the response headers on
 
 ## Sideloading
 
-Everything below assumes the add-in is deployed and
-`https://<your-pulse-host>/addin/manifest.xml` opens in a browser. Check that first —
-if it 404s, nothing else will work.
+There are two manifests, one per piece, and both go through the same steps into the same
+catalog folder:
+
+| Add-in | Manifest | Shows in the Add-ins dialog as |
+|---|---|---|
+| Task pane | `https://<your-pulse-host>/addin/manifest.xml` | **Pulse** |
+| Live Results object | `https://<your-pulse-host>/addin/results-manifest.xml` | **Pulse Live Results** |
+
+Everything below assumes the add-in is deployed and both URLs open in a browser. Check that
+first — if they 404, nothing else will work.
 
 **Fair warning: this process is genuinely fiddly.** It is not you. Office's sideloading
 story for desktop is a network share, a Trust Center entry, and a full app restart, with
@@ -88,7 +95,7 @@ no useful error message when any of the three is wrong. Traps worth knowing up f
 - **PowerPoint must be fully quit and reopened**, not just the window closed. Trust Center
   changes are read once at startup.
 - **The add-in appearing but doing nothing** is usually a Content-Security-Policy problem
-  on the server, not a sideloading problem. See *Server requirements* below.
+  on the server, not a sideloading problem. See *Server requirements* above.
 
 ### Windows
 
@@ -111,7 +118,7 @@ cd addin\scripts
 .\setup-windows.ps1 -PulseUrl https://pulse.recommate.net
 ```
 
-It creates the folder, shares it, downloads the manifest into it, and registers it as a
+It creates the folder, shares it, downloads both manifests into it, and registers it as a
 trusted catalog. Run it in an **elevated** PowerShell (right-click PowerShell → *Run as
 administrator*) and it does everything; run it unelevated and it will do the rest but ask
 you to make the share by hand, because creating a Windows share needs admin.
@@ -122,8 +129,9 @@ Then restart PowerPoint and skip to *Insert the add-in* below.
 
 1. **Make a folder.** Anywhere. `C:\PulseAddinCatalog` is fine.
 
-2. **Put the manifest in it.** Open `https://<your-pulse-host>/addin/manifest.xml`,
-   save it into that folder. The filename doesn't matter; the extension must stay `.xml`.
+2. **Put both manifests in it.** Open `https://<your-pulse-host>/addin/manifest.xml` and
+   `https://<your-pulse-host>/addin/results-manifest.xml`, and save each into that folder.
+   The filenames don't matter as long as they differ; the extension must stay `.xml`.
 
 3. **Share the folder with yourself.**
    - In File Explorer, right-click the folder → **Properties**
@@ -155,14 +163,18 @@ Then restart PowerPoint and skip to *Insert the add-in* below.
 
 - **Home** tab → **Add-ins** → **Advanced**
 - Click **SHARED FOLDER** at the top of the dialog
-- Select **Pulse** → **Add**
+- **Task pane:** select **Pulse** → **Add**. It also adds a **Pulse** group to the Home tab.
+- **Live Results:** open the same dialog again, select **Pulse Live Results** → **Add**, and
+  size it on the slide. There is no ribbon button for this one — see
+  [Why it has no ribbon button](#why-it-has-no-ribbon-button).
 
 (On older builds this dialog is under *Insert* → *My Add-ins* instead.)
 
 #### When it doesn't appear
 
 - PowerPoint wasn't fully restarted — quit it entirely, not just the window
-- The manifest isn't in the shared folder, or got saved as `.txt`
+- That manifest isn't in the shared folder, or got saved as `.txt`. If only one of the two
+  shows up, the other manifest is the one missing.
 - The share doesn't resolve — paste `\\COMPUTER\FolderName` into File Explorer's address
   bar; if it doesn't open, the share isn't set up
 - The catalog was added as an `https://.../manifest.xml` URL rather than a folder path
@@ -181,9 +193,11 @@ Simpler — no sharing, just a folder Office already watches.
 
    Create the `wef` folder if it isn't there.
 
-2. Save `https://<your-pulse-host>/addin/manifest.xml` into it.
+2. Save both `https://<your-pulse-host>/addin/manifest.xml` and
+   `https://<your-pulse-host>/addin/results-manifest.xml` into it.
 
-3. Restart PowerPoint, then **Insert** → **My Add-ins** → **Pulse**.
+3. Restart PowerPoint, then **Insert** → **My Add-ins** → **Pulse** for the task pane, and
+   **Pulse Live Results** for the slide object.
 
 ### Removing it
 
@@ -192,8 +206,8 @@ Clear the Office cache — see
 
 ## Live results on a slide
 
-Sideload `https://<your-pulse-host>/addin/results-manifest.xml` the same way as the task pane
-manifest — drop it in the same catalog folder, no extra Trust Center work. Then
+Installed alongside the task pane — see [Sideloading](#sideloading). Its manifest goes in the
+same catalog folder, with no extra Trust Center work. Then
 **Home → Add-ins → Advanced → SHARED FOLDER → Pulse Live Results**, and size it on the slide.
 
 ### Why it has no ribbon button

@@ -12,7 +12,8 @@
     1. Creates the catalog folder.
     2. Shares it (needs an elevated shell - if not elevated it tells you the two
        clicks to do it by hand).
-    3. Downloads the manifest from your Pulse server into it.
+    3. Downloads both manifests from your Pulse server into it: the task pane and
+       the Live Results slide object.
     4. Registers the folder as a Trusted Add-in Catalog for your user, which is
        the same thing as clicking through File > Options > Trust Center.
 
@@ -94,32 +95,39 @@ if ($existing) {
   exit 1
 }
 
-# -- 3. Manifest --------------------------------------------------------------
-Write-Step 3 "Download the manifest from $PulseUrl"
-$manifestUrl = "$PulseUrl/addin/manifest.xml"
-$manifestPath = Join-Path $FolderPath 'pulse-manifest.xml'
-try {
-  Invoke-WebRequest -Uri $manifestUrl -OutFile $manifestPath -UseBasicParsing
-} catch {
-  Write-Warn2 "Could not download $manifestUrl"
-  Write-Warn2 $_.Exception.Message
-  Write-Warn2 "Is the add-in deployed? Check that $manifestUrl opens in a browser."
-  exit 1
-}
-
-# Sanity-check it, so a 404 HTML page doesn't get mistaken for a manifest.
-try {
-  [xml]$m = Get-Content $manifestPath -Raw
-  $source = $m.OfficeApp.DefaultSettings.SourceLocation.DefaultValue
-  Write-Ok "manifest saved to $manifestPath"
-  Write-Host "        task pane: $source"
-  if ($source -notlike 'https://*') {
-    Write-Warn2 "Task pane URL is not HTTPS. Office refuses add-in content over plain HTTP."
-    Write-Warn2 "Set BASE_URL on the Pulse server to its https:// origin and re-run."
+# -- 3. Manifests -------------------------------------------------------------
+# Two add-ins, two manifests, one catalog folder: the task pane, and the Live Results
+# object that renders on a slide during the show.
+Write-Step 3 "Download the manifests from $PulseUrl"
+$manifests = @(
+  @{ Name = 'task pane';    Url = "$PulseUrl/addin/manifest.xml";         File = 'pulse-manifest.xml' },
+  @{ Name = 'Live Results'; Url = "$PulseUrl/addin/results-manifest.xml"; File = 'pulse-results-manifest.xml' }
+)
+foreach ($entry in $manifests) {
+  $manifestPath = Join-Path $FolderPath $entry.File
+  try {
+    Invoke-WebRequest -Uri $entry.Url -OutFile $manifestPath -UseBasicParsing
+  } catch {
+    Write-Warn2 "Could not download $($entry.Url)"
+    Write-Warn2 $_.Exception.Message
+    Write-Warn2 "Is the add-in deployed? Check that $($entry.Url) opens in a browser."
+    exit 1
   }
-} catch {
-  Write-Warn2 "Downloaded file is not valid XML - the server probably returned an error page."
-  exit 1
+
+  # Sanity-check it, so a 404 HTML page doesn't get mistaken for a manifest.
+  try {
+    [xml]$m = Get-Content $manifestPath -Raw
+    $source = $m.OfficeApp.DefaultSettings.SourceLocation.DefaultValue
+    Write-Ok "$($entry.Name) manifest saved to $manifestPath"
+    Write-Host "        loads: $source"
+    if ($source -notlike 'https://*') {
+      Write-Warn2 "$($entry.Name) URL is not HTTPS. Office refuses add-in content over plain HTTP."
+      Write-Warn2 "Set BASE_URL on the Pulse server to its https:// origin and re-run."
+    }
+  } catch {
+    Write-Warn2 "$($entry.File) is not valid XML - the server probably returned an error page."
+    exit 1
+  }
 }
 
 # -- 4. Trust the catalog -----------------------------------------------------
@@ -167,11 +175,13 @@ Next, in PowerPoint:
      (Trust Center changes are only read at startup.)
   2. Home tab -> Add-ins -> Advanced
   3. Click SHARED FOLDER at the top of the dialog
-  4. Select "Pulse" and click Add
+  4. Select "Pulse" and click Add (the task pane)
+  5. For live results on a slide: same dialog, select "Pulse Live Results", click Add,
+     and size it on the slide. Copy-paste it to other slides like any shape.
 
-If "Pulse" does not appear, the usual causes are:
+If "Pulse" or "Pulse Live Results" does not appear, the usual causes are:
   - PowerPoint was not fully restarted
-  - the manifest is not in $FolderPath
+  - the manifests are not in $FolderPath
   - the share does not resolve: paste $uncPath into File Explorer and check it opens
 
 To remove the add-in later, clear the Office cache:
