@@ -4,8 +4,8 @@
 
 @layer base {
   :root {
-    --font-ui: 'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
-    --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+    --font-ui: 'Hanken Grotesk Variable', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, monospace;
 
     --signal: #ee4d2e;
     --signal-bright: #ff5a36;

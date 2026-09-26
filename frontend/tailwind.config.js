@@ -19,8 +19,8 @@ export default {
         sm: '9px',
       },
       fontFamily: {
-        sans: ['"Hanken Grotesk"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-        mono: ['"JetBrains Mono"', 'ui-monospace', 'SF Mono', 'monospace'],
+        sans: ['"Hanken Grotesk Variable"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        mono: ['"JetBrains Mono Variable"', 'ui-monospace', 'SF Mono', 'monospace'],
       },
       boxShadow: {
         card: 'var(--shadow-card)',

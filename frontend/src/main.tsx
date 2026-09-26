@@ -6,6 +6,11 @@ import { ProfessorAuthProvider } from '@/context/ProfessorAuthContext'
 import { StudentAuthProvider } from '@/context/StudentAuthContext'
 import { startTokenWatchdog } from '@/lib/tokenWatchdog'
 import App from './App'
+// Bundled, not linked from Google Fonts: production CSP allows fonts and stylesheets from
+// 'self' only, so the Google links were refused and every real user got system fonts.
+// Also one less third-party request on podium wifi.
+import '@fontsource-variable/hanken-grotesk/wght.css'
+import '@fontsource-variable/jetbrains-mono/wght.css'
 import './styles/globals.css'
 import 'ketcher-react/dist/index.css'
 
