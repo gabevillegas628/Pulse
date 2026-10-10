@@ -10,7 +10,8 @@ import { CSS } from '@dnd-kit/utilities'
 import { GripVertical, Plus, Trash2 } from 'lucide-react'
 import { api } from '@/api/client'
 import { calcResponseScore } from '@/lib/scoring'
-import type { QuestionWithResponses, SessionDetail } from 'shared'
+import type { QuestionWithResponses, SessionDetail, SessionRun } from 'shared'
+import { countedQuestion, isFullySkipped } from '@/lib/skips'
 
 /** Sidebar label: the professor-set title, else a trimmed snippet of the question text. */
 export function questionLabel(q: { title?: string | null; text: string }): string {
@@ -29,7 +30,10 @@ const SCORABLE = ['FREE_TEXT', 'MULTIPLE_CHOICE', 'YES_NO', 'NUMERIC']
  * the response count in a colour you had to decode. The colour stays as the glance; this
  * is what it meant.
  */
-function gradingSummary(q: QuestionWithResponses): { label: string; tone: string } | null {
+function gradingSummary(full: QuestionWithResponses, runs: SessionRun[]): { label: string; tone: string } | null {
+  // A skipped question is not work left to do, however many answered it anyway.
+  if (isFullySkipped(full, runs)) return { label: 'skipped', tone: 'text-muted' }
+  const q = countedQuestion(full, runs)
   const n = q.responses.length
   if (n === 0) return null
   if (!SCORABLE.includes(q.type)) {
@@ -43,6 +47,7 @@ function gradingSummary(q: QuestionWithResponses): { label: string; tone: string
 
 interface RowProps {
   question: QuestionWithResponses
+  runs: SessionRun[]
   index: number
   isActive: boolean
   canReorder: boolean
@@ -53,7 +58,7 @@ interface RowProps {
 }
 
 function Row({
-  question, index, isActive, canReorder, canDelete, isDeleting, onSelect, onDelete,
+  question, runs, index, isActive, canReorder, canDelete, isDeleting, onSelect, onDelete,
 }: RowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: question.id, disabled: !canReorder })
@@ -62,7 +67,7 @@ function Row({
     transition,
     opacity: isDragging ? 0.5 : 1,
   }
-  const summary = gradingSummary(question)
+  const summary = gradingSummary(question, runs)
 
   return (
     <li ref={setNodeRef} style={style} className="group relative">
@@ -117,6 +122,8 @@ function Row({
 interface Props {
   sessionId: string
   questions: QuestionWithResponses[]
+  /** The session's runs, to tell which answers came from a section that skipped. */
+  runs: SessionRun[]
   activeIndex: number
   onSelect: (index: number) => void
   /** A run is open. Structural edits wait for it to close. */
@@ -137,7 +144,7 @@ interface Props {
  * a professor says out loud, and renumbering mid-lecture makes a liar of them.
  */
 export default function QuestionSidebar({
-  sessionId, questions, activeIndex, onSelect, isLive, isArchived, isDeleting, onAdd, onDelete,
+  sessionId, questions, runs, activeIndex, onSelect, isLive, isArchived, isDeleting, onAdd, onDelete,
 }: Props) {
   const qc = useQueryClient()
   const canEditStructure = !isLive && !isArchived
@@ -192,6 +199,7 @@ export default function QuestionSidebar({
                   <Row
                     key={q.id}
                     question={q}
+                    runs={runs}
                     index={i}
                     isActive={activeIndex === i}
                     canReorder={canEditStructure && questions.length > 1}

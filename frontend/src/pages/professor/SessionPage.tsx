@@ -20,6 +20,8 @@ import GradingToolbar, { type ResponseFilter } from '@/components/session/Gradin
 import ThemesPanel from '@/components/session/ThemesPanel'
 import QuestionDialog from '@/components/session/QuestionDialog'
 import QuestionSidebar, { questionLabel } from '@/components/session/QuestionSidebar'
+import SkipControl from '@/components/session/SkipControl'
+import { countedQuestion, isFullySkipped } from '@/lib/skips'
 import ResponseTable from '@/components/session/ResponseTable'
 import ConfirmDialog, { type DialogRequest } from '@/components/ui/ConfirmDialog'
 import Popover from '@/components/ui/Popover'
@@ -157,10 +159,12 @@ export default function SessionPage() {
 
   const fullCreditMutation = useMutation({
     mutationFn: (questionId: string) => {
-      const question = qc.getQueryData<SessionDetail>(['session', sessionId])?.questions.find(q => q.id === questionId)
-      if (!question) throw new Error('Question not found')
+      const session = qc.getQueryData<SessionDetail>(['session', sessionId])
+      const question = session?.questions.find(q => q.id === questionId)
+      if (!session || !question) throw new Error('Question not found')
+      // Only the answers that count: a skipped section's are not anyone's to credit.
       return Promise.all(
-        question.responses.map(r =>
+        countedQuestion(question, session.runs).responses.map(r =>
           api.patch(`/sessions/${sessionId}/questions/${questionId}/responses/${r.id}`, { aiScore: 1.0 })
         )
       )
@@ -172,7 +176,8 @@ export default function SessionPage() {
           ...prev,
           questions: prev.questions.map((q) => {
             if (q.id !== questionId) return q
-            return { ...q, responses: q.responses.map(r => ({ ...r, aiScore: 1.0, aiReason: null })) }
+            const credited = new Set(countedQuestion(q, prev.runs).responses.map((r) => r.id))
+            return { ...q, responses: q.responses.map(r => credited.has(r.id) ? { ...r, aiScore: 1.0, aiReason: null } : r) }
           }),
         }
       })
@@ -349,8 +354,15 @@ export default function SessionPage() {
 
   if (isLoading || !data) return <ProfessorLayout><Empty message="Loading session…" /></ProfessorLayout>
 
-  const totalResponses = data.questions.reduce((sum, q) => sum + q.responses.length, 0)
-  const activeQuestion = data.questions[activeTab] as QuestionWithResponses | undefined
+  const totalResponses = data.questions.reduce((sum, q) => sum + countedQuestion(q, data.runs).responses.length, 0)
+  const fullQuestion = data.questions[activeTab] as QuestionWithResponses | undefined
+  // What the page shows and grades: the question less any answers from a section that
+  // skipped it. Those are kept, and come back the moment it is unskipped.
+  const activeQuestion = fullQuestion && countedQuestion(fullQuestion, data.runs)
+  const setAside = fullQuestion && activeQuestion
+    ? fullQuestion.responses.length - activeQuestion.responses.length
+    : 0
+  const activeSkipped = !!fullQuestion && isFullySkipped(fullQuestion, data.runs)
   // Themes belong to a question and a run, so only show a set that matches the question
   // in view. Whether the panel is open is the panel's business, not the page's.
   const themesForQuestion =
@@ -486,6 +498,7 @@ export default function SessionPage() {
         <QuestionSidebar
           sessionId={sessionId!}
           questions={data.questions as QuestionWithResponses[]}
+          runs={data.runs}
           activeIndex={activeTab}
           onSelect={setActiveTab}
           isLive={isLive}
@@ -520,6 +533,11 @@ export default function SessionPage() {
                   <span className="text-xs bg-surface text-ink-2 border border-hairline font-medium px-1.5 py-0.5 rounded">
                     {questionTypeLabel(activeQuestion.type)}
                   </span>
+                  {activeSkipped && (
+                    <span className="text-xs bg-warn-soft text-ink border border-warn font-medium px-1.5 py-0.5 rounded">
+                      Skipped
+                    </span>
+                  )}
                 </div>
                 {activeQuestion.title && (
                   <p className="text-sm font-semibold text-ink mb-1">{activeQuestion.title}</p>
@@ -566,6 +584,7 @@ export default function SessionPage() {
                       {reopenMutation.isSuccess && !reopenMutation.isPending ? 'Clock restarted' : 'Give them more time'}
                     </Button>
                   )}
+                  <SkipControl sessionId={sessionId!} question={activeQuestion} runs={data.runs} />
                 </div>
                 {reopenMutation.isError && (
                   <p className="text-xs text-red-500 mt-2">Could not change that — try again.</p>
@@ -703,10 +722,19 @@ export default function SessionPage() {
           />
 
 
+          {setAside > 0 && activeQuestion.responses.length > 0 && (
+            <p className="text-xs text-muted mb-3">
+              {setAside} response{setAside !== 1 ? 's' : ''} from a skipped section {setAside !== 1 ? 'are' : 'is'} kept
+              but not shown, graded or counted.
+            </p>
+          )}
+
           {/* The responses, as a table. Sorted worst-score-first, because those are the
               ones a person has to look at. */}
           {activeQuestion.responses.length === 0 ? (
-            <Empty message="No responses yet" />
+            <Empty message={setAside > 0
+              ? `Skipped. ${setAside} response${setAside !== 1 ? 's' : ''} came in anyway; ${setAside !== 1 ? 'they are' : 'it is'} kept but not graded or counted.`
+              : 'No responses yet'} />
           ) : (
             <ResponseTable
               key={`responses-${activeQuestion.id}`}

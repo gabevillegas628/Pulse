@@ -7,7 +7,7 @@ import { AppError } from '../middleware/error.middleware.js'
 import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
 import { ownedClass, ownedSession } from '../utils/ownership.js'
 import { getIo } from '../socket.js'
-import { gradeSession } from '../utils/scoring.js'
+import { gradeSession, sectionResponseCount } from '../utils/scoring.js'
 import { generateUniqueCode } from '../utils/codes.js'
 import { attachQuestionQrs } from '../utils/qr.js'
 import { p } from '../utils/params.js'
@@ -81,7 +81,8 @@ router.get('/classes/:classId/sessions', requireProfessor, async (req: Request, 
       },
     })
 
-    // Distinct respondent count per session (across all runs)
+    // Distinct respondent count per session (across all runs). Answers to a question
+    // skipped in the run's section are not participation, as on the class card.
     const sessionIds = sessions.map((s) => s.id)
     let respondentMap: Record<string, number> = {}
     if (sessionIds.length > 0) {
@@ -91,6 +92,10 @@ router.get('/classes/:classId/sessions', requireProfessor, async (req: Request, 
           FROM "Session" s
           LEFT JOIN "SessionRun" sr ON sr."sessionId" = s.id
           LEFT JOIN "Response" r ON r."runId" = sr.id
+            AND NOT EXISTS (
+              SELECT 1 FROM "QuestionSkip" k
+              WHERE k."questionId" = r."questionId" AND k."sectionId" IS NOT DISTINCT FROM sr."sectionId"
+            )
           WHERE s.id IN (${Prisma.join(sessionIds)})
           GROUP BY s.id
         `
@@ -140,6 +145,7 @@ router.get('/sessions/:id', requireProfessor, async (req: Request, res: Response
               include: { student: { select: { id: true, netId: true } } },
               orderBy: { submittedAt: 'desc' },
             },
+            skips: { select: { sectionId: true } },
           },
         },
       },
@@ -224,6 +230,7 @@ router.get('/sessions/:id/export', requireProfessor, async (req: Request, res: R
           orderBy: { order: 'asc' },
           include: {
             responses: { select: { studentId: true, responseText: true, wordCount: true, aiScore: true, runId: true } },
+            skips: { select: { sectionId: true } },
           },
         },
       },
@@ -238,13 +245,7 @@ router.get('/sessions/:id/export', requireProfessor, async (req: Request, res: R
     const runIds = session.runs.map((r) => r.id)
 
     const rows = students.map(({ student, sectionId }) => {
-      // Relevant runs for this student's section
-      const relevantRunIds = session.runs
-        .filter((r) => r.sectionId === null || r.sectionId === sectionId)
-        .map((r) => r.id)
-
       const gradeResult = gradeSession('IN_CLASS', session.questions.map((q) => {
-        const sectionResponses = q.responses.filter((r) => relevantRunIds.includes(r.runId ?? ''))
         return {
           id: q.id,
           type: q.type,
@@ -252,7 +253,9 @@ router.get('/sessions/:id/export', requireProfessor, async (req: Request, res: R
           tolerance: q.tolerance,
           unit: q.unit,
           totalResponseCount: q.responses.filter((r) => runIds.includes(r.runId ?? '')).length,
-          sectionResponseCount: sectionResponses.length,
+          sectionResponseCount: sectionResponseCount(
+            q.responses, session.runs, sectionId, q.skips.map((s) => s.sectionId),
+          ),
           hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
           studentResponse: q.responses.find((r) => r.studentId === student.id) ?? null,
         }

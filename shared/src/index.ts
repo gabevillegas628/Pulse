@@ -273,6 +273,12 @@ export interface ResponseWithStudent extends Response {
 
 export interface QuestionWithResponses extends Question {
   responses: ResponseWithStudent[]
+  /**
+   * Sections this question was skipped in; null stands for runs opened for everyone.
+   * Answers that arrived through those sections' runs are kept but count for nothing.
+   * Present on session questions only.
+   */
+  skips?: Array<{ sectionId: string | null }>
 }
 
 export interface SessionDetail extends Session {

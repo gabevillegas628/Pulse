@@ -116,6 +116,7 @@ model Section {
   createdAt   DateTime     @default(now())
   enrollments Enrollment[]
   runs        SessionRun[]
+  skips       QuestionSkip[]
 
   @@index([classId])
 }
@@ -280,10 +281,34 @@ model Question {
   effortGrading Boolean?
   responses     Response[]
   themeSets     ThemeSet[]
+  skips         QuestionSkip[]
 
   @@index([sessionId])
   @@index([assignmentId])
   @@index([groupId])
+}
+
+// A session question the professor decided not to ask in a section, after the slide with
+// its QR code was already in the deck. Answers that arrive anyway are kept but count for
+// nothing: not as presented, not in the max, not as participation, not as work to score.
+//
+// Keyed to the section rather than the run, because a section is what grading groups by
+// and what a professor thinks in. A run is only a press of Open, and a close-and-reopen
+// mid-lecture would otherwise shed the skip and let stray answers count again.
+//
+// sectionId is null for runs opened for everyone, which is every run in a class without
+// sections. Deliberately no unique constraint: Postgres treats nulls as distinct, so it
+// would not hold for the common case anyway. Skipping is idempotent by construction — the
+// route clears before it writes, and every reader asks only whether a row exists.
+model QuestionSkip {
+  id         String   @id @default(cuid())
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  sectionId  String?
+  section    Section? @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@index([questionId])
 }
 
 model Response {

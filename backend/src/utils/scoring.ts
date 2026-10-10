@@ -192,6 +192,59 @@ function isGraded(
   return correctAnswer !== null
 }
 
+// ─── Was it presented? ────────────────────────────────────────────────────────
+
+/** A run, by the section it was opened for: null when it was opened for everyone. */
+export interface RunSection {
+  id: string
+  sectionId: string | null
+}
+
+/**
+ * How many of a question's answers show it was put to a student in `sectionId`.
+ *
+ * The one place every grade path decides this, so the gradebook, its CSV, the student
+ * report and the student's own grade pages cannot disagree with the session page again.
+ * They used to: the session page counted only the student's own section's answers, while
+ * the others counted every answer in the class once that section had run the session at
+ * all, so a question asked only in section B was a zero for section A in the gradebook.
+ *
+ * An answer counts when it arrived through one of `runs` (the caller decides which —
+ * closed only, or open too), that run reached this section (it was opened for it, or for
+ * everyone), and the run's section has not skipped the question.
+ *
+ * `answers` is one entry per response, or grouped rows carrying their count in `n`.
+ */
+export function sectionResponseCount(
+  answers: Iterable<{ runId: string | null; n?: number }>,
+  runs: RunSection[],
+  sectionId: string | null,
+  skippedSections: Array<string | null>,
+): number {
+  const counting = new Set(
+    runs
+      .filter((r) => r.sectionId === null || r.sectionId === sectionId)
+      .filter((r) => !skippedSections.includes(r.sectionId))
+      .map((r) => r.id),
+  )
+  let count = 0
+  for (const a of answers) {
+    if (a.runId !== null && counting.has(a.runId)) count += a.n ?? 1
+  }
+  return count
+}
+
+/** Whether a response arrived in a section that has since skipped its question. */
+export function isSkippedAnswer(
+  runId: string | null,
+  runs: RunSection[],
+  skippedSections: Array<string | null>,
+): boolean {
+  if (runId === null || skippedSections.length === 0) return false
+  const run = runs.find((r) => r.id === runId)
+  return !!run && skippedSections.includes(run.sectionId)
+}
+
 // ─── Canonical grade function ─────────────────────────────────────────────────
 
 /**

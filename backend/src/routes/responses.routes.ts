@@ -7,7 +7,8 @@ import { enrollRateLimiter } from '../middleware/login-throttle.js'
 import { getIo } from '../socket.js'
 import { themesEnabled, scheduleThemeWork } from '../services/themes.service.js'
 
-import { gradeSession } from '../utils/scoring.js'
+import { gradeSession, sectionResponseCount } from '../utils/scoring.js'
+import { runAnswerCounts } from '../utils/answerCounts.js'
 import { upsertEnrollment } from '../utils/enrollment.js'
 import { openRunFor } from '../utils/runAccess.js'
 import { p } from '../utils/params.js'
@@ -15,6 +16,16 @@ import { toInchi } from '../utils/indigo.js'
 import { autoCloseEnabled, isOpen, touch, clockState } from '../services/clock.service.js'
 
 const router = Router()
+
+const SKIPPED_MESSAGE = 'Your professor skipped this question — no need to answer it'
+
+/** The professor skipped this question for the section this run is teaching. */
+function skippedHere(
+  question: { skips: { sectionId: string | null }[] },
+  run: { sectionId: string | null },
+): boolean {
+  return question.skips.some((s) => s.sectionId === run.sectionId)
+}
 
 // ─── Question lookup by access code ──────────────────────────────────────────
 
@@ -36,6 +47,7 @@ router.get('/questions/by-code/:code', requireStudent, async (req: Request, res:
           },
         },
         assignment: { select: { id: true, status: true } },
+        skips: { select: { sectionId: true } },
       },
     })
     if (!question) throw new AppError('Code not found — check and try again', 404)
@@ -48,6 +60,7 @@ router.get('/questions/by-code/:code', requireStudent, async (req: Request, res:
       })
       const openRun = openRunFor(question.session.runs, enrollment)
       if (!openRun) throw new AppError('This session is not open', 409)
+      if (skippedHere(question, openRun)) throw new AppError(SKIPPED_MESSAGE, 409, 'QUESTION_SKIPPED')
       if (autoCloseEnabled(question, question.session.class) && !isOpen(openRun.id, question.id)) {
         throw new AppError('This question has closed', 409)
       }
@@ -93,6 +106,7 @@ router.get('/student/questions/:id', requireStudent, async (req: Request, res: R
             class: { select: { name: true } },
           },
         },
+        skips: { select: { sectionId: true } },
       },
     })
     if (!question) throw new AppError('Question not found', 404)
@@ -111,6 +125,7 @@ router.get('/student/questions/:id', requireStudent, async (req: Request, res: R
       // Check there's an OPEN run this student may answer
       const openRun = openRunFor(sess.runs, enrollment)
       if (!openRun) throw new AppError('Question not found', 404)
+      if (skippedHere(question, openRun)) throw new AppError(SKIPPED_MESSAGE, 409, 'QUESTION_SKIPPED')
       if (autoCloseEnabled(question, sess.class) && !isOpen(openRun.id, question.id)) {
         throw new AppError('This question has closed', 409)
       }
@@ -245,6 +260,7 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
             deadline: true,
           },
         },
+        skips: { select: { sectionId: true } },
       },
     })
     if (!question) throw new AppError('Question not found', 404)
@@ -268,6 +284,10 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
       })
       const openRun = openRunFor(sess.runs, enrollment)
       if (!openRun) throw new AppError('Session is not open', 409, 'SESSION_CLOSED')
+
+      // Skipped for the section this run is teaching. The slide with its QR code was still
+      // in the deck, so some of the room will try; the server is the wall, as for a close.
+      if (skippedHere(question, openRun)) throw new AppError(SKIPPED_MESSAGE, 409, 'QUESTION_SKIPPED')
 
       // The countdown ran out on this question. Checked here rather than only in the
       // UI: refusing late answers is the entire point, so a stale client tab, a
@@ -458,28 +478,22 @@ router.get('/student/classes/:classId/grades', requireStudent, async (req: Reque
               select: { responseText: true, aiScore: true },
             },
             _count: { select: { responses: true } },
+            skips: { select: { sectionId: true } },
           },
         },
       },
     })
 
     const allSessionQuestionIds = sessions.flatMap((s) => s.questions.map((q) => q.id))
-    const aiGradedSessionQIds = new Set(
-      (await prisma.response.groupBy({
+    const [aiGradedSessionQIds, answersByRun] = await Promise.all([
+      prisma.response.groupBy({
         by: ['questionId'],
         where: { questionId: { in: allSessionQuestionIds }, aiScore: { not: null } },
-      })).map((r) => r.questionId)
-    )
+      }).then((rows) => new Set(rows.map((r) => r.questionId))),
+      runAnswerCounts(allSessionQuestionIds),
+    ])
 
     const sessionResults = sessions.map((session) => {
-      // Runs relevant to this student's section
-      const relevantRunIds = session.runs
-        .filter((r) => r.sectionId === null || r.sectionId === studentSectionId)
-        .map((r) => r.id)
-
-      // Build section response count map
-      // We need to query this per-question — but for the grade list, use total count approach
-      // with sectionResponseCount being the number of responses in relevant runs
       const qs = session.questions as Array<typeof session.questions[number] & { _count: { responses: number } }>
       const gradeResult = gradeSession('IN_CLASS', qs.map((q) => ({
         id: q.id,
@@ -488,7 +502,9 @@ router.get('/student/classes/:classId/grades', requireStudent, async (req: Reque
         tolerance: q.tolerance,
         unit: q.unit,
         totalResponseCount: q._count.responses,
-        sectionResponseCount: relevantRunIds.length > 0 ? undefined : 0, // will be refined below
+        sectionResponseCount: sectionResponseCount(
+          answersByRun.get(q.id) ?? [], session.runs, studentSectionId, q.skips.map((s) => s.sectionId),
+        ),
         hasAnyAiScore: aiGradedSessionQIds.has(q.id),
         studentResponse: q.responses[0] ?? null,
       })))
@@ -586,6 +602,7 @@ router.get('/student/sessions/:sessionId/grades', requireStudent, async (req: Re
               select: { responseText: true, aiScore: true, submittedAt: true },
             },
             _count: { select: { responses: true } },
+            skips: { select: { sectionId: true } },
           },
         },
       },
@@ -599,22 +616,11 @@ router.get('/student/sessions/:sessionId/grades', requireStudent, async (req: Re
     if (!enrollment) throw new AppError('Not enrolled in this class', 403)
 
     const studentSectionId = enrollment.sectionId
-    const relevantRunIds = session.runs
-      .filter((r) => r.sectionId === null || r.sectionId === studentSectionId)
-      .map((r) => r.id)
-
-    // Build section-aware response counts
-    let sectionResponseCounts: Map<string, number> = new Map()
-    if (relevantRunIds.length > 0) {
-      const counts = await prisma.response.groupBy({
-        by: ['questionId'],
-        where: { questionId: { in: session.questions.map((q) => q.id) }, runId: { in: relevantRunIds } },
-        _count: { id: true },
-      })
-      for (const c of counts) {
-        sectionResponseCounts.set(c.questionId, c._count.id)
-      }
-    }
+    const answersByRun = await runAnswerCounts(session.questions.map((q) => q.id))
+    const sectionResponseCounts = new Map(session.questions.map((q) => [
+      q.id,
+      sectionResponseCount(answersByRun.get(q.id) ?? [], session.runs, studentSectionId, q.skips.map((s) => s.sectionId)),
+    ]))
 
     const aiGradedQuestionIds = new Set(
       (await prisma.response.groupBy({

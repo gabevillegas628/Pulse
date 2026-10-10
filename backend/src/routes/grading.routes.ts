@@ -9,6 +9,7 @@ import { Viewer, ownedAssignmentQuestion, ownedSessionQuestion } from '../utils/
 import { getIo } from '../socket.js'
 import { logger } from '../utils/logger.js'
 import { p } from '../utils/params.js'
+import { isSkippedAnswer } from '../utils/scoring.js'
 import { bootstrapThemeSet, readThemeSet, latestRunId, scheduleThemeWork } from '../services/themes.service.js'
 
 const anthropic = new Anthropic({ apiKey: config.anthropicApiKey })
@@ -242,25 +243,32 @@ router.post('/sessions/:sessionId/questions/:questionId/grade', requireProfessor
       include: {
         session: {
           include: {
-            runs: { where: { status: { in: ['CLOSED', 'ARCHIVED'] } } },
+            // Every run, open included, so each answer can be placed in its section.
+            runs: { select: { id: true, sectionId: true, status: true } },
             class: { select: { effortGradingDefault: true } },
           },
         },
         responses: { include: { student: { select: { id: true, netId: true } } } },
+        skips: { select: { sectionId: true } },
       },
     })
     if (!question) throw new AppError('Question not found', 404)
     if (question.type !== 'FREE_TEXT') throw new AppError('AI grading only applies to FREE_TEXT questions', 400)
-    if (question.session!.runs.length === 0)
+    if (!question.session!.runs.some((r) => r.status === 'CLOSED' || r.status === 'ARCHIVED'))
       throw new AppError('Session must have at least one closed run before grading', 400)
 
     const gradingMode = (question.effortGrading ?? question.session!.class.effortGradingDefault)
       ? 'effort' as const
       : 'understanding' as const
 
+    // Answers from a section that skipped this question count for nothing, so grading
+    // them would spend tokens on scores no one sees.
+    const skippedSections = question.skips.map((s) => s.sectionId)
+    const runs = question.session!.runs
+    const live = question.responses.filter((r) => !isSkippedAnswer(r.runId, runs, skippedSections))
     const responses = mode === 'ungraded'
-      ? question.responses.filter((r) => r.aiScore === null)
-      : question.responses
+      ? live.filter((r) => r.aiScore === null)
+      : live
 
     if (responses.length === 0) throw new AppError('No responses to grade', 400)
 

@@ -178,6 +178,56 @@ router.post('/sessions/:sessionId/questions/:questionId/reopen', requireProfesso
   }
 })
 
+/**
+ * Skip a question for one section, or take the skip back.
+ *
+ * For the question that was cut for time while its QR code stayed in the deck. Answers
+ * that arrive anyway are kept, and unskipping restores them exactly; while skipped they
+ * count for nothing, and new ones are refused. `sectionId` null means the runs opened
+ * for everyone, which is every run in a class without sections.
+ */
+router.put('/sessions/:sessionId/questions/:questionId/skip', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+    const { sectionId, skipped } = z.object({
+      sectionId: z.string().nullable(),
+      skipped: z.boolean(),
+    }).parse(req.body)
+
+    const question = await prisma.question.findFirst({
+      where: {
+        id: p(req.params.questionId),
+        sessionId: p(req.params.sessionId),
+        ...ownedSessionQuestion(professor),
+      },
+      select: { id: true, session: { select: { classId: true } } },
+    })
+    if (!question) throw new AppError('Question not found', 404)
+
+    if (sectionId !== null) {
+      const section = await prisma.section.findFirst({
+        where: { id: sectionId, classId: question.session!.classId },
+        select: { id: true },
+      })
+      if (!section) throw new AppError('Section not found in this class', 404)
+    }
+
+    // Clear first, then write: a double-click or a retry leaves one row, not two.
+    await prisma.$transaction([
+      prisma.questionSkip.deleteMany({ where: { questionId: question.id, sectionId } }),
+      ...(skipped ? [prisma.questionSkip.create({ data: { questionId: question.id, sectionId } })] : []),
+    ])
+
+    const skips = await prisma.questionSkip.findMany({
+      where: { questionId: question.id },
+      select: { sectionId: true },
+    })
+    res.json({ success: true, data: { skips } })
+  } catch (err) {
+    next(err)
+  }
+})
+
 // Create a question group for a session
 router.post('/sessions/:id/groups', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {

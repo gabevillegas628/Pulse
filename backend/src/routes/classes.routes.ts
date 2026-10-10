@@ -8,7 +8,8 @@ import { AppError } from '../middleware/error.middleware.js'
 import { clearLoginThrottle } from '../middleware/login-throttle.js'
 import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
 import { ownedClass } from '../utils/ownership.js'
-import { gradeSession } from '../utils/scoring.js'
+import { gradeSession, sectionResponseCount } from '../utils/scoring.js'
+import { runAnswerCounts } from '../utils/answerCounts.js'
 import { generateUniqueCode } from '../utils/codes.js'
 import { p } from '../utils/params.js'
 
@@ -97,6 +98,9 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
         // The denominator is the section's own enrollment, or the whole class when the
         // runs carry no section. Pairs nobody answered are dropped: those runs are tests
         // or misclicks, and counting them would call them 0% class meetings.
+        //
+        // Answers to a question this section skipped are not participation: they are the
+        // students who answered a question the professor told the room to ignore.
         prisma.$queryRaw<Array<TaughtStat & { classId: string }>>(Prisma.sql`
           SELECT s."classId", s.id AS "sessionId", s.title, MAX(sec.name) AS "sectionName",
             BOOL_OR(sr.status = 'OPEN') AS "isOpen",
@@ -109,6 +113,10 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
           JOIN "Session" s ON s.id = sr."sessionId"
           LEFT JOIN "Section" sec ON sec.id = sr."sectionId"
           LEFT JOIN "Response" r ON r."runId" = sr.id
+            AND NOT EXISTS (
+              SELECT 1 FROM "QuestionSkip" k
+              WHERE k."questionId" = r."questionId" AND k."sectionId" IS NOT DISTINCT FROM sr."sectionId"
+            )
           WHERE s."classId" IN (${Prisma.join(classIds)})
           GROUP BY s."classId", s.id, sr."sectionId"
           HAVING COUNT(r.id) > 0
@@ -568,6 +576,9 @@ interface Participation {
  * cannot both match and COUNT(*) cannot double-count. COUNT(DISTINCT) ignores nulls, so
  * assignment answers drop out of the session tally on their own. The ::int casts matter:
  * COUNT and ROUND return bigint and numeric, and both reach JSON as values it refuses.
+ *
+ * Answers to a question skipped in the section whose run they arrived through are left
+ * out, as on the class card. Homework answers have no run and are never skipped.
  */
 async function participationByStudent(classId: string): Promise<Participation[]> {
   return prisma.$queryRaw<Participation[]>`
@@ -580,7 +591,13 @@ async function participationByStudent(classId: string): Promise<Participation[]>
     JOIN "Question" q ON q."id" = r."questionId"
     LEFT JOIN "Session" s ON s."id" = q."sessionId"
     LEFT JOIN "Assignment" a ON a."id" = q."assignmentId"
-    WHERE s."classId" = ${classId} OR a."classId" = ${classId}
+    LEFT JOIN "SessionRun" sr ON sr."id" = r."runId"
+    WHERE (s."classId" = ${classId} OR a."classId" = ${classId})
+      AND NOT EXISTS (
+        SELECT 1 FROM "QuestionSkip" k
+        WHERE sr."id" IS NOT NULL
+          AND k."questionId" = r."questionId" AND k."sectionId" IS NOT DISTINCT FROM sr."sectionId"
+      )
     GROUP BY r."studentId"
   `
 }
@@ -663,6 +680,7 @@ router.get('/:id/students/:studentId/activity', async (req: Request, res: Respon
                 select: { responseText: true, wordCount: true, isFlagged: true, submittedAt: true, aiScore: true },
               },
               _count: { select: { responses: true } },
+              skips: { select: { sectionId: true } },
             },
           },
         },
@@ -689,19 +707,21 @@ router.get('/:id/students/:studentId/activity', async (req: Request, res: Respon
     const allAssignmentQuestionIds = assignments.flatMap((a) => a.questions.map((q) => q.id))
     const allQuestionIds = [...allSessionQuestionIds, ...allAssignmentQuestionIds]
 
-    const aiGradedQuestionIds = new Set(
-      (await prisma.response.groupBy({
+    const [aiGradedQuestionIds, answersByRun] = await Promise.all([
+      prisma.response.groupBy({
         by: ['questionId'],
         where: { questionId: { in: allQuestionIds }, aiScore: { not: null } },
-      })).map((r) => r.questionId)
-    )
+      }).then((rows) => new Set(rows.map((r) => r.questionId))),
+      // Everyone's answers, counted per run, for deciding which questions this student's
+      // section was actually asked.
+      runAnswerCounts(allSessionQuestionIds),
+    ])
 
     const isClosed = (status: string) => status === 'CLOSED' || status === 'ARCHIVED'
 
     const sessionResults = sessions.map((session) => {
       const qs = session.questions as Array<typeof session.questions[number] & { _count: { responses: number } }>
 
-      // Section-aware: only count responses in relevant runs for this student's section
       const relevantRunIds = session.runs
         .filter((r) => r.sectionId === null || r.sectionId === studentSectionId)
         .map((r) => r.id)
@@ -714,7 +734,9 @@ router.get('/:id/students/:studentId/activity', async (req: Request, res: Respon
             tolerance: q.tolerance,
             unit: q.unit,
             totalResponseCount: q._count.responses,
-            sectionResponseCount: relevantRunIds.length > 0 ? q._count.responses : 0,
+            sectionResponseCount: sectionResponseCount(
+              answersByRun.get(q.id) ?? [], session.runs, studentSectionId, q.skips.map((s) => s.sectionId),
+            ),
             hasAnyAiScore: aiGradedQuestionIds.has(q.id),
             studentResponse: q.responses[0] ?? null,
           })))
@@ -832,7 +854,9 @@ type GradeQuestion = {
   correctAnswer: string | null
   tolerance: number | null
   unit: string | null
-  responses: { studentId: string; responseText: string; aiScore: number | null }[]
+  // runId and skips are selected for session questions only; assignments have neither.
+  responses: { studentId: string; responseText: string; aiScore: number | null; runId?: string | null }[]
+  skips?: { sectionId: string | null }[]
 }
 
 type GradebookItem = {
@@ -875,7 +899,8 @@ router.get('/:id/grades/json', async (req: Request, res: Response, next: NextFun
             questions: {
               orderBy: { order: 'asc' },
               include: {
-                responses: { select: { studentId: true, responseText: true, aiScore: true } },
+                responses: { select: { studentId: true, responseText: true, aiScore: true, runId: true } },
+                skips: { select: { sectionId: true } },
               },
             },
           },
@@ -931,15 +956,13 @@ router.get('/:id/grades/json', async (req: Request, res: Response, next: NextFun
       const scores = allSessions.map((item) => {
         if (item.type === 'IN_CLASS') {
           const sess = item as GradebookItem & { runs: Array<{ id: string; sectionId: string | null }> }
-          const relevantRunIds = new Set(
-            (sess.runs ?? [])
-              .filter((r) => r.sectionId === null || r.sectionId === studentSectionId)
-              .map((r) => r.id)
-          )
           const result = gradeSession('IN_CLASS', sess.questions.map((q) => ({
             id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance, unit: q.unit,
             totalResponseCount: q.responses.length,
-            sectionResponseCount: relevantRunIds.size > 0 ? q.responses.length : 0,
+            sectionResponseCount: sectionResponseCount(
+              q.responses.map((r) => ({ runId: r.runId ?? null })),
+              sess.runs ?? [], studentSectionId, (q.skips ?? []).map((s) => s.sectionId),
+            ),
             hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
             studentResponse: q.responses.find((r) => r.studentId === student.id) ?? null,
           })))
@@ -1015,7 +1038,8 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
             questions: {
               orderBy: { order: 'asc' },
               include: {
-                responses: { select: { studentId: true, responseText: true, aiScore: true } },
+                responses: { select: { studentId: true, responseText: true, aiScore: true, runId: true } },
+                skips: { select: { sectionId: true } },
               },
             },
           },
@@ -1068,15 +1092,13 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
       // The max is per student, as in the JSON gradebook: it depends on which sessions ran
       // for this student's section.
       const pResults = sessions.map((sess) => {
-        const relevantRunIds = new Set(
-          (sess.runs ?? [])
-            .filter((r) => r.sectionId === null || r.sectionId === studentSectionId)
-            .map((r) => r.id)
-        )
         return gradeSession('IN_CLASS', sess.questions.map((q) => ({
           id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance, unit: q.unit,
           totalResponseCount: q.responses.length,
-          sectionResponseCount: relevantRunIds.size > 0 ? q.responses.length : 0,
+          sectionResponseCount: sectionResponseCount(
+            q.responses.map((r) => ({ runId: r.runId ?? null })),
+            sess.runs ?? [], studentSectionId, (q.skips ?? []).map((s) => s.sectionId),
+          ),
           hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
           studentResponse: q.responses.find((r) => r.studentId === student.id) ?? null,
         })))
