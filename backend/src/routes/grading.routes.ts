@@ -299,8 +299,15 @@ router.patch('/sessions/:sessionId/questions/:questionId/responses/:responseId',
     })
     if (!question) throw new AppError('Question not found', 404)
 
+    // The question check proves ownership only if the response is one of its answers.
+    const owned = await prisma.response.findFirst({
+      where: { id: p(req.params.responseId), questionId: question.id },
+      select: { id: true },
+    })
+    if (!owned) throw new AppError('Response not found', 404)
+
     const response = await prisma.response.update({
-      where: { id: p(req.params.responseId) },
+      where: { id: owned.id },
       // Clear the AI reason: it justified the grader's score, not the one just set by hand.
       data: { aiScore, aiReason: null },
     })
@@ -426,8 +433,15 @@ router.patch('/assignments/:assignmentId/questions/:questionId/responses/:respon
     })
     if (!question) throw new AppError('Question not found', 404)
 
+    // The question check proves ownership only if the response is one of its answers.
+    const owned = await prisma.response.findFirst({
+      where: { id: p(req.params.responseId), questionId: question.id },
+      select: { id: true },
+    })
+    if (!owned) throw new AppError('Response not found', 404)
+
     const response = await prisma.response.update({
-      where: { id: p(req.params.responseId) },
+      where: { id: owned.id },
       // Clear the AI reason: it justified the grader's score, not the one just set by hand.
       data: { aiScore, aiReason: null },
     })
