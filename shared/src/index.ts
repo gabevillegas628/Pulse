@@ -396,7 +396,7 @@ export interface ActivityQuestion {
   type: string
   number: number
   correctAnswer: string | null
-  response: { responseText: string; wordCount: number; isFlagged: boolean; submittedAt: string; aiScore: number | null } | null
+  response: { id: string; responseText: string; wordCount: number; isFlagged: boolean; submittedAt: string; aiScore: number | null } | null
   /** Score computed by gradeSession (null for open/unscored sessions) */
   score: number | null
   /** Whether this question was graded and counts toward earned/max */

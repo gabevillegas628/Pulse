@@ -96,6 +96,8 @@ interface Props {
   onChange: (score: number) => void
   pending?: boolean
   disabled?: boolean
+  /** Which side the panel opens on. Left for a pill near the right edge of its container. */
+  panelSide?: 'right' | 'left'
 }
 
 /**
@@ -116,7 +118,7 @@ interface Props {
  * grader's reasoning. A custom score is shown *in* that segment rather than behind it, so
  * a 0.75 still reads as 0.75 from the table.
  */
-export default function ScoreBadge({ score, reason, onChange, pending, disabled }: Props) {
+export default function ScoreBadge({ score, reason, onChange, pending, disabled, panelSide = 'right' }: Props) {
   const [open, setOpen] = useState(false)
   const [custom, setCustom] = useState('')
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -225,7 +227,8 @@ export default function ScoreBadge({ score, reason, onChange, pending, disabled 
             // controls of the rows below — in a dense table that is the column you are
             // working along, so the picker was hiding its own next target. To the right it
             // lands on the time and answer columns instead.
-            'absolute left-full top-0 ml-1.5 z-30 bg-surface border border-hairline rounded-[14px] shadow-pop p-3',
+            'absolute top-0 z-30 bg-surface border border-hairline rounded-[14px] shadow-pop p-3',
+            panelSide === 'left' ? 'right-full mr-1.5' : 'left-full ml-1.5',
             // `white-space` inherits, and this pill sits in a table cell set to
             // `whitespace-nowrap` to keep the pill itself on one line. Without resetting it
             // here the reason below refused to wrap and ran out of the panel. Set on the

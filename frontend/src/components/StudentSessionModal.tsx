@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { api } from '@/api/client'
 import type { ActivitySession, GradebookSession } from 'shared'
-import ScoreChip from '@/components/ScoreChip'
+import QuestionScore from '@/components/QuestionScore'
 
 interface Props {
   classId: string
@@ -61,7 +61,7 @@ export default function StudentSessionModal({ classId, studentId, netId, session
               {q.response ? (
                 <div className="ml-7 flex items-start justify-between gap-3">
                   <p className="text-sm text-ink leading-relaxed flex-1">{q.response.responseText}</p>
-                  {q.counted && <ScoreChip score={q.score} counted />}
+                  {q.counted && <QuestionScore classId={classId} studentId={studentId} item={session} question={q} />}
                 </div>
               ) : (
                 <p className="ml-7 text-sm text-hairline-strong italic">No response</p>

@@ -24,7 +24,6 @@ export default function SortHeader<K extends string>({
   label, sortKey, activeKey, dir, onSort,
 }: Props<K>) {
   const active = activeKey === sortKey
-  const Icon = !active ? ArrowUpDown : dir === 'asc' ? ChevronUp : ChevronDown
   return (
     <th className="px-5 py-3">
       <button
@@ -34,8 +33,14 @@ export default function SortHeader<K extends string>({
         }`}
       >
         {label}
-        <Icon size={12} className={active ? '' : 'opacity-40'} />
+        <SortIcon active={active} dir={dir} />
       </button>
     </th>
   )
+}
+
+/** The icon alone, for headings whose cell carries more than a label (the gradebook's). */
+export function SortIcon({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
+  const Icon = !active ? ArrowUpDown : dir === 'asc' ? ChevronUp : ChevronDown
+  return <Icon size={12} className={`shrink-0 ${active ? '' : 'opacity-40'}`} />
 }

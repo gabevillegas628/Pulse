@@ -2,7 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { api } from '@/api/client'
 import type { ActivitySession } from 'shared'
-import ScoreChip, { sessionTotal } from '@/components/ScoreChip'
+import { sessionTotal } from '@/components/ScoreChip'
+import QuestionScore from '@/components/QuestionScore'
 
 interface Props {
   classId: string
@@ -49,13 +50,13 @@ export default function StudentReportPanel({ classId, studentId, netId, onClose 
               {participation.length > 0 && (
                 <section>
                   <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-3">Participation</p>
-                  <SessionList sessions={participation} />
+                  <SessionList classId={classId} studentId={studentId} sessions={participation} />
                 </section>
               )}
               {homework.length > 0 && (
                 <section>
                   <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-3">Homework</p>
-                  <SessionList sessions={homework} />
+                  <SessionList classId={classId} studentId={studentId} sessions={homework} />
                 </section>
               )}
             </div>
@@ -66,7 +67,7 @@ export default function StudentReportPanel({ classId, studentId, netId, onClose 
   )
 }
 
-function SessionList({ sessions }: { sessions: ActivitySession[] }) {
+function SessionList({ classId, studentId, sessions }: { classId: string; studentId: string; sessions: ActivitySession[] }) {
   return (
     <div className="space-y-5">
       {sessions.map((session) => {
@@ -91,7 +92,7 @@ function SessionList({ sessions }: { sessions: ActivitySession[] }) {
                   {q.response ? (
                     <div className="ml-7 flex items-start justify-between gap-2">
                       <p className="text-sm text-ink leading-relaxed flex-1">{q.response.responseText}</p>
-                      <ScoreChip score={q.score} counted={q.counted} />
+                      <QuestionScore classId={classId} studentId={studentId} item={session} question={q} />
                     </div>
                   ) : (
                     <p className="ml-7 text-xs text-hairline-strong italic">No response</p>

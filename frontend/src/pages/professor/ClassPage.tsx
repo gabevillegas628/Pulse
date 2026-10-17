@@ -336,15 +336,20 @@ export default function ClassPage() {
   return (
     <ProfessorLayout>
       {/* Page header */}
-      <div className="mb-6">
-        <Link to="/professor" className="flex items-center gap-1 text-sm text-muted hover:text-ink mb-4 transition-colors">
+      <div className="mb-4">
+        <Link to="/professor" className="flex items-center gap-1 text-sm text-muted hover:text-ink mb-2 transition-colors">
           <ChevronLeft size={16} /> All classes
         </Link>
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-ink">{data?.name}</h1>
-            {data?.description && <p className="text-muted text-sm mt-0.5">{data.description}</p>}
-            <div className="flex items-center gap-2 mt-2">
+            {/* Description beside the name, baseline-aligned; a long one wraps under it. */}
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+              <h1 className="text-2xl font-bold text-ink">{data?.name}</h1>
+              {data?.description && <p className="text-muted text-sm">{data.description}</p>}
+            </div>
+            {/* Join code and sections share one line: they are the same kind of fact (how
+                students get in), and stacked they cost the header a row it did not need. */}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-2">
               <span className="text-xs text-muted">Join code</span>
               <CodeChip>{data?.joinCode}</CodeChip>
               {/*
@@ -357,10 +362,8 @@ export default function ClassPage() {
               {sections.length > 0 && (
                 <span className="text-xs text-warn">Give students their section code instead</span>
               )}
-            </div>
 
-            {/* Sections */}
-            <div className="flex flex-wrap items-center gap-2 mt-2">
+              <span className="text-hairline-strong mx-1" aria-hidden="true">·</span>
               <Users size={13} className="text-muted shrink-0" />
               {sections.length === 0 ? (
                 <span className="text-xs text-muted">No sections</span>
@@ -425,7 +428,7 @@ export default function ClassPage() {
         tabs={CLASS_TABS as unknown as { key: string; label: string }[]}
         active={tab}
         onChange={(k) => setTab(k as typeof tab)}
-        className="mb-6"
+        className="mb-5"
       />
 
       {/* Class Sessions tab */}
@@ -688,6 +691,7 @@ export default function ClassPage() {
         ) : (
           <>
             <GradebookTable
+              classId={classId!}
               sessions={gradebookData.sessions}
               students={gradebookData.students}
               onCellClick={(studentId, sessionId) => setSelectedCell({ studentId, sessionId })}

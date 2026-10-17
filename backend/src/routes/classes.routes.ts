@@ -677,7 +677,7 @@ router.get('/:id/students/:studentId/activity', async (req: Request, res: Respon
             include: {
               responses: {
                 where: { studentId },
-                select: { responseText: true, wordCount: true, isFlagged: true, submittedAt: true, aiScore: true },
+                select: { id: true, responseText: true, wordCount: true, isFlagged: true, submittedAt: true, aiScore: true },
               },
               _count: { select: { responses: true } },
               skips: { select: { sectionId: true } },
@@ -694,7 +694,7 @@ router.get('/:id/students/:studentId/activity', async (req: Request, res: Respon
             include: {
               responses: {
                 where: { studentId },
-                select: { responseText: true, wordCount: true, isFlagged: true, submittedAt: true, aiScore: true },
+                select: { id: true, responseText: true, wordCount: true, isFlagged: true, submittedAt: true, aiScore: true },
               },
               _count: { select: { responses: true } },
             },
