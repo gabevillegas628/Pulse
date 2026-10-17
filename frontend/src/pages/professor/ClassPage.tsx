@@ -183,6 +183,7 @@ export default function ClassPage() {
       // The roster shrank, and so did the enrolment count the class header and the
       // participation denominators are drawn from.
       qc.invalidateQueries({ queryKey: ['roster', classId] })
+      qc.invalidateQueries({ queryKey: ['gradebook', classId] })
       qc.invalidateQueries({ queryKey: ['class', classId] })
       setRemoveTarget(null)
       setRemoveError('')

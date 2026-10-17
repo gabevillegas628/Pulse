@@ -8,7 +8,7 @@ import { AppError } from '../middleware/error.middleware.js'
 import { clearLoginThrottle } from '../middleware/login-throttle.js'
 import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
 import { ownedClass } from '../utils/ownership.js'
-import { gradeSession, sectionResponseCount } from '../utils/scoring.js'
+import { gradeSession, isSkippedAnswer, sectionResponseCount } from '../utils/scoring.js'
 import { runAnswerCounts } from '../utils/answerCounts.js'
 import { generateUniqueCode } from '../utils/codes.js'
 import { p } from '../utils/params.js'
@@ -865,7 +865,9 @@ type GradebookItem = {
   type: 'IN_CLASS' | 'HOMEWORK'
   questions: GradeQuestion[]
   // For sessions: runs for section-aware grading
-  runs?: Array<{ id: string; sectionId: string | null }>
+  runs?: Array<{ id: string; sectionId: string | null; closedAt?: Date | null }>
+  createdAt: Date
+  deadline?: Date | null
 }
 
 type GradeEnrollment = {
@@ -894,7 +896,7 @@ router.get('/:id/grades/json', async (req: Request, res: Response, next: NextFun
           include: {
             runs: {
               where: { status: { in: ['CLOSED' as const, 'ARCHIVED' as const] } },
-              select: { id: true, sectionId: true },
+              select: { id: true, sectionId: true, closedAt: true },
             },
             questions: {
               orderBy: { order: 'asc' },
@@ -942,16 +944,34 @@ router.get('/:id/grades/json', async (req: Request, res: Response, next: NextFun
       }))).max
     }, 0)
 
+    // When the item happened, for column headers: a session's last close, since a session is
+    // often built long before it is run; an assignment's deadline. Creation is the fallback.
+    const itemDate = (s: GradebookItem): string => {
+      const closes = (s.runs ?? []).map((r) => r.closedAt?.getTime() ?? 0).filter((t) => t > 0)
+      if (closes.length > 0) return new Date(Math.max(...closes)).toISOString()
+      return (s.deadline ?? s.createdAt).toISOString()
+    }
+
     const gradebookSessions = allSessions.map((s) => ({
       id: s.id,
       title: s.title,
       type: s.type,
       questionCount: s.questions.length,
+      date: itemDate(s),
     }))
 
     const students = enrollments.map((enrollment) => {
       const student = enrollment.student
       const studentSectionId = (enrollment.section as { id: string; name: string } | null)?.id ?? null
+
+      // Questions this student answered at all. A 0 earned cannot tell "absent" from "answered
+      // and scored nothing", and those are different conversations to have with a student.
+      // An answer to a question its section skipped is a stray, not attendance.
+      const answeredIn = (item: GradebookItem) =>
+        item.questions.filter((q) => q.responses.some((r) =>
+          r.studentId === student.id &&
+          !isSkippedAnswer(r.runId ?? null, item.runs ?? [], (q.skips ?? []).map((s) => s.sectionId)),
+        )).length
 
       const scores = allSessions.map((item) => {
         if (item.type === 'IN_CLASS') {
@@ -966,7 +986,7 @@ router.get('/:id/grades/json', async (req: Request, res: Response, next: NextFun
             hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
             studentResponse: q.responses.find((r) => r.studentId === student.id) ?? null,
           })))
-          return { sessionId: item.id, earned: result.earned, max: result.max }
+          return { sessionId: item.id, earned: result.earned, max: result.max, answered: answeredIn(item) }
         } else {
           const result = gradeSession('HOMEWORK', item.questions.map((q) => ({
             id: q.id, type: q.type, correctAnswer: q.correctAnswer, tolerance: q.tolerance, unit: q.unit,
@@ -974,7 +994,7 @@ router.get('/:id/grades/json', async (req: Request, res: Response, next: NextFun
             hasAnyAiScore: q.responses.some((r) => r.aiScore !== null),
             studentResponse: q.responses.find((r) => r.studentId === student.id) ?? null,
           })))
-          return { sessionId: item.id, earned: result.earned, max: result.max }
+          return { sessionId: item.id, earned: result.earned, max: result.max, answered: answeredIn(item) }
         }
       })
 

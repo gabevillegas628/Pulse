@@ -33,3 +33,9 @@ CloudFlareAPI.png
 
 # Raw load-test run artifacts (regenerable; summaries live in the commit log)
 backend/loadtest-results/
+
+# Local-only tooling: line-count reports, the prod-to-dev clone script, and the
+# 2026-09-18 theme-batch forensics. Kept on this machine, not in the repo.
+.VSCodeCounter/
+backend/scripts/clone-prod-to-dev.ps1
+backend/scripts/theme-batch-forensics.ts

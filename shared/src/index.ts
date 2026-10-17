@@ -465,6 +465,8 @@ export interface GradebookSession {
   title: string
   type: 'IN_CLASS' | 'HOMEWORK'
   questionCount: number
+  /** ISO. A session's last close, an assignment's deadline; creation if neither. */
+  date?: string
 }
 
 /** A student row in the professor gradebook */
@@ -472,7 +474,8 @@ export interface GradebookStudentRow {
   studentId: string
   netId: string
   section: string | null
-  scores: Array<{ sessionId: string; earned: number; max: number }>
+  /** `answered` counts questions with any response, so absent and scored-zero differ. */
+  scores: Array<{ sessionId: string; earned: number; max: number; answered?: number }>
   participationTotal: number
   participationMax: number
   hwTotal: number
