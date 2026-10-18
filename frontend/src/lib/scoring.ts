@@ -1,5 +1,5 @@
 import { unit as mathUnit } from 'mathjs'
-import type { ResponseWithStudent } from 'shared'
+import { blanksScore, parseBlankList, type ResponseWithStudent } from 'shared'
 
 const NUM_RE = /^([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s*(.*)$/
 
@@ -110,6 +110,10 @@ export function calcResponseScore(
       return correctArr.length === studentArr.length &&
         correctArr.every((v, i) => v === studentArr[i]) ? 1.0 : 0.5
     } catch { return 0 }
+  }
+  if (q.type === 'BLANKS') {
+    if (!q.correctAnswer) return null
+    return blanksScore(r.responseText, q.correctAnswer, parseBlankList(q.correctAnswer).length)
   }
   if (q.type === 'STRUCTURE') {
     if (r.aiScore !== null) return r.aiScore

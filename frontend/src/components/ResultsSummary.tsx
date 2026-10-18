@@ -1,5 +1,5 @@
 import { Check } from 'lucide-react'
-import type { QuestionWithResponses } from 'shared'
+import { blankVerdicts, parseBlankList, type QuestionWithResponses } from 'shared'
 import NumericDots from '@/components/NumericDots'
 
 /**
@@ -455,6 +455,94 @@ export default function ResultsSummary({ question, variant = 'panel' }: Props) {
               explanation on screen. */}
           {unreadable > 0 && ` · ${unreadable} unreadable`}
         </p>
+      </div>
+    )
+  }
+
+  if (type === 'BLANKS') {
+    // One row per blank, each with a share and the room's commonest answers.
+    //
+    // The verdicts come from one of two places, and the difference is the key. The
+    // professor's panel has it and judges each answer itself. The projector does not —
+    // `/addin/live` withholds the key — so the server ships a verdict per blank on every
+    // answer instead, the way NUMERIC ships `inKeyGroup`. Either way, a blank with no key
+    // has no verdicts, and its bar falls back to where the room agrees.
+    const prompts = options ?? []
+    const rows = responses.map((r) => {
+      const shipped = (r as { blankVerdicts?: Array<boolean | null> }).blankVerdicts
+      return {
+        answers: parseBlankList(r.responseText),
+        verdicts: shipped ?? blankVerdicts(r.responseText ?? '', correctAnswer, prompts.length),
+      }
+    })
+    const TOP = stage ? 3 : 4
+
+    return (
+      <div className={card} style={column}>
+        {prompts.map((prompt, i) => {
+          // Grouped loosely so "Scaphoid" and "scaphoid " are one answer, shown in the
+          // spelling the most people used.
+          const groups = new Map<string, { label: string; count: number; close: boolean | null; spellings: Map<string, number> }>()
+          let attempted = 0
+          let close = 0
+          let keyed = false
+          for (const row of rows) {
+            const a = row.answers[i]?.trim() ?? ''
+            const v = row.verdicts[i] ?? null
+            if (v !== null) keyed = true
+            if (!a) continue
+            attempted++
+            if (v === true) close++
+            const norm = a.toLowerCase().replace(/\s+/g, ' ')
+            const g = groups.get(norm) ?? { label: a, count: 0, close: v, spellings: new Map() }
+            g.count++
+            g.spellings.set(a, (g.spellings.get(a) ?? 0) + 1)
+            groups.set(norm, g)
+          }
+          const top = [...groups.values()]
+            .map((g) => ({ ...g, label: [...g.spellings].sort((x, y) => y[1] - x[1])[0][0] }))
+            .sort((x, y) => y.count - x.count)
+            .slice(0, TOP)
+          const barCount = keyed ? close : top[0]?.count ?? 0
+          const pct = total > 0 ? Math.round((barCount / total) * 100) : 0
+          return (
+            <div key={i}>
+              <div className="flex items-center justify-between mb-1 gap-2" style={{ fontSize: t.label }}>
+                <span className="truncate flex items-center gap-1 min-w-0 text-ink-2">
+                  <span className="text-muted font-mono shrink-0">{i + 1}.</span>
+                  <span className="truncate">{prompt}</span>
+                </span>
+                <span className="text-muted shrink-0 font-mono tabular-nums" style={{ fontSize: t.count }}>
+                  {keyed ? `${pct}% close` : `${attempted}/${total}`}
+                </span>
+              </div>
+              <div className="bg-surface-2 rounded-full overflow-hidden" style={{ height: t.bar }}>
+                <div
+                  className={`h-full rounded-full bar-grow transition-all duration-500 ${keyed ? 'bg-good' : 'bg-signal'}`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              {top.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1.5">
+                  {top.map((g) => (
+                    <span
+                      key={g.label}
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border ${
+                        g.close === true ? 'bg-good-soft border-good/20 text-good' : 'bg-surface border-hairline text-ink-2'
+                      }`}
+                      style={{ fontSize: t.note }}
+                    >
+                      {g.close === true && <Check size={10} style={checkStyle} className="shrink-0" />}
+                      <span className="truncate max-w-[16rem]">{g.label}</span>
+                      <span className="text-muted font-mono tabular-nums">{g.count}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
+        <p className="text-muted font-mono" style={{ fontSize: t.note }}>{total} response{total !== 1 ? 's' : ''}</p>
       </div>
     )
   }

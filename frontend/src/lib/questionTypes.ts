@@ -11,6 +11,7 @@ export const QUESTION_TYPES = [
   { value: 'MULTI_SELECT', label: 'Multi-select' },
   { value: 'ORDERING', label: 'Ordering' },
   { value: 'NUMERIC', label: 'Numeric' },
+  { value: 'BLANKS', label: 'Fill in the blanks' },
   { value: 'STRUCTURE', label: 'Structure', hint: 'drawing' },
   { value: 'RATING', label: 'Rating', hint: '1–5' },
   { value: 'YES_NO', label: 'Yes / No' },
@@ -33,4 +34,18 @@ export function questionTypeLabel(type: string): string {
 /** Fuller name, for a picker where the choice is still being made. */
 export function questionTypeChoiceLabel(type: typeof QUESTION_TYPES[number]): string {
   return 'hint' in type && type.hint ? `${type.label} (${type.hint})` : type.label
+}
+
+/**
+ * A stored answer as a person reads it. Multi-select, ordering and blanks answers are
+ * stored as JSON arrays, which is what the grade views were printing.
+ */
+export function readableAnswer(type: string, text: string): string {
+  if (type !== 'MULTI_SELECT' && type !== 'ORDERING' && type !== 'BLANKS') return text
+  let arr: unknown
+  try { arr = JSON.parse(text) } catch { return text }
+  if (!Array.isArray(arr)) return text
+  if (type === 'ORDERING') return arr.join(' → ')
+  if (type === 'BLANKS') return arr.map((a, i) => `${i + 1}. ${String(a).trim() || '—'}`).join('  ·  ')
+  return arr.join(', ')
 }

@@ -13,6 +13,7 @@ import { upsertEnrollment } from '../utils/enrollment.js'
 import { openRunFor } from '../utils/runAccess.js'
 import { p } from '../utils/params.js'
 import { toInchi } from '../utils/indigo.js'
+import { BLANK_ANSWER_MAX } from 'shared'
 import { autoCloseEnabled, isOpen, touch, clockState } from '../services/clock.service.js'
 
 const router = Router()
@@ -221,6 +222,22 @@ router.get('/student/questions/:id', requireStudent, async (req: Request, res: R
 
 // ─── Response submission ──────────────────────────────────────────────────────
 
+/**
+ * A fill-in-the-blank answer as it is stored: one trimmed string per blank.
+ *
+ * The form always sends the right shape; this is the wall for everything else, because
+ * the grader and the projector both index into the array by blank.
+ */
+function blanksAnswer(raw: string, count: number): string {
+  let arr: unknown
+  try { arr = JSON.parse(raw) } catch { throw new AppError('Answer each blank', 400) }
+  if (!Array.isArray(arr) || arr.length !== count || !arr.every((v) => typeof v === 'string'))
+    throw new AppError('Answer each blank', 400)
+  const answers = (arr as string[]).map((v) => v.trim().slice(0, BLANK_ANSWER_MAX))
+  if (!answers.some(Boolean)) throw new AppError('Fill in at least one blank', 400)
+  return JSON.stringify(answers)
+}
+
 // Student: submit or auto-save a question response
 router.post('/responses', requireStudent, async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -267,7 +284,9 @@ router.post('/responses', requireStudent, async (req: Request, res: Response, ne
 
     const storedText = (question.type as string) === 'STRUCTURE'
       ? await toInchi(responseText)
-      : responseText
+      : (question.type as string) === 'BLANKS'
+        ? blanksAnswer(responseText, ((question.options as string[] | null) ?? []).length)
+        : responseText
 
     const wordCount = question.type === 'FREE_TEXT'
       ? responseText.trim().split(/\s+/).filter(Boolean).length

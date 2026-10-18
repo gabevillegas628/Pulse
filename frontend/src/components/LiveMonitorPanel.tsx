@@ -21,7 +21,7 @@ interface Props {
 
 type Mode = 'themes' | 'wall'
 
-const CHART_TYPES = new Set(['MULTIPLE_CHOICE', 'RATING', 'YES_NO', 'MULTI_SELECT', 'NUMERIC', 'ORDERING', 'STRUCTURE'])
+const CHART_TYPES = new Set(['MULTIPLE_CHOICE', 'RATING', 'YES_NO', 'MULTI_SELECT', 'NUMERIC', 'ORDERING', 'STRUCTURE', 'BLANKS'])
 
 export default function LiveMonitorPanel({
   question, questionNumber, totalQuestions, sessionTitle,

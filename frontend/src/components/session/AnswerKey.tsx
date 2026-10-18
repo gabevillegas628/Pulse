@@ -4,14 +4,14 @@ import { Check, ChevronDown, ChevronUp, Lock } from 'lucide-react'
 import { api } from '@/api/client'
 import { apiError } from '@/lib/errors'
 import StructureKeyField from '@/components/StructureKeyField'
-import type { QuestionWithResponses } from 'shared'
+import { parseBlankList, type QuestionWithResponses } from 'shared'
 
 /**
  * Types the backend lets a professor key while a run is open, because for these the
  * answer is authoring metadata rather than something the room is racing to guess.
  * Mirrors `bypassClosedCheck` in `questions.routes.ts` — keep the two in step.
  */
-const EDITABLE_WHILE_LIVE = ['NUMERIC', 'ORDERING', 'STRUCTURE']
+const EDITABLE_WHILE_LIVE = ['NUMERIC', 'ORDERING', 'STRUCTURE', 'BLANKS']
 
 interface Props {
   sessionId: string
@@ -61,6 +61,10 @@ export default function AnswerKey({ sessionId, question, isLive, effortOn }: Pro
     question.tolerance != null ? String(question.tolerance) : '',
   )
   const [numUnit, setNumUnit] = useState(question.unit ?? '')
+  const [blankDrafts, setBlankDrafts] = useState<string[]>(() => {
+    const key = parseBlankList(question.correctAnswer)
+    return opts(question).map((_, i) => key[i] ?? '')
+  })
   const [error, setError] = useState('')
 
   const save = useMutation({
@@ -257,6 +261,38 @@ export default function AnswerKey({ sessionId, question, isLive, effortOn }: Pro
             placeholder="Unit (optional)"
             className={`w-32 ${inputCls}`}
           />
+        </div>
+      )}
+
+      {question.type === 'BLANKS' && (
+        <div className="flex flex-col gap-1.5">
+          <p className="text-[11px] text-muted">
+            Close counts: case, typos, word order and generic words like "end" or "fossa" are
+            forgiven. Separate accepted alternatives with /. A blank left empty takes any attempt.
+          </p>
+          {opts(question).map((prompt, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <span className="text-xs font-mono text-hairline-strong w-4 shrink-0">{i + 1}</span>
+              <span className="text-sm text-ink-2 w-1/2 min-w-0 truncate" title={prompt}>{prompt}</span>
+              <input
+                value={blankDrafts[i] ?? ''}
+                disabled={locked}
+                onChange={(e) => {
+                  const next = [...blankDrafts]
+                  next[i] = e.target.value
+                  setBlankDrafts(next)
+                }}
+                onBlur={() => {
+                  const next = blankDrafts.map((d) => d.trim())
+                  const stored = parseBlankList(question.correctAnswer)
+                  if (next.every((d, j) => d === (stored[j] ?? ''))) return
+                  setKey(next.some(Boolean) ? JSON.stringify(next) : null)
+                }}
+                placeholder="answer / alternative"
+                className={`flex-1 min-w-0 ${inputCls}`}
+              />
+            </div>
+          ))}
         </div>
       )}
 

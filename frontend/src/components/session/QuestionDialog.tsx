@@ -11,7 +11,7 @@ import {
   QUESTION_TYPES, hasOptions, questionTypeLabel, questionTypeChoiceLabel,
   type QuestionTypeValue,
 } from '@/lib/questionTypes'
-import type { QuestionWithResponses } from 'shared'
+import { BLANKS_MAX, type QuestionWithResponses } from 'shared'
 
 const inputCls =
   'w-full border border-hairline rounded-sm px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal'
@@ -35,7 +35,8 @@ interface Props {
  * creation, because changing it would orphan the options and re-interpret every answer
  * already given — so it shows as a chip rather than a picker. And a numeric key is offered
  * at creation only, because until the question exists there is no `AnswerKey` on the page
- * to set it from; once it does, that is the one place it lives.
+ * to set it from; once it does, that is the one place it lives. Fill-in-the-blank keys
+ * follow the same rule: typed beside each prompt here, then kept in `AnswerKey`.
  */
 export default function QuestionDialog({ sessionId, question, onClose }: Props) {
   const qc = useQueryClient()
@@ -51,6 +52,8 @@ export default function QuestionDialog({ sessionId, question, onClose }: Props) 
   const [options, setOptions] = useState<string[]>(
     (question?.options as string[] | null) ?? ['', ''],
   )
+  // One answer per prompt for a new BLANKS question, kept index-aligned with `options`.
+  const [blankKeys, setBlankKeys] = useState<string[]>([''])
   const [imageUrl, setImageUrl] = useState<string | null>(question?.imageUrl ?? null)
   const [numAnswer, setNumAnswer] = useState('')
   const [numTolerance, setNumTolerance] = useState('')
@@ -59,6 +62,7 @@ export default function QuestionDialog({ sessionId, question, onClose }: Props) 
 
   const originalImage = question?.imageUrl ?? null
   const typeHasOptions = hasOptions(type)
+  const isBlanks = type === 'BLANKS'
 
   /**
    * Leave without saving, taking any upload that was never attached with us.
@@ -75,14 +79,21 @@ export default function QuestionDialog({ sessionId, question, onClose }: Props) 
   const save = useMutation({
     mutationFn: () => {
       const cleanOptions = options.map((o) => o.trim()).filter(Boolean)
+      // Prompts and their answers travel as a pair, so dropping an empty prompt drops its
+      // answer with it rather than shifting every later answer onto the wrong blank.
+      const blankRows = options
+        .map((o, i) => ({ prompt: o.trim(), answer: (blankKeys[i] ?? '').trim() }))
+        .filter((r) => r.prompt)
 
       if (!isEdit) {
         return api.post(`/sessions/${sessionId}/questions`, {
           title: title.trim() || undefined,
           text: text.trim(),
           type,
-          options: typeHasOptions ? cleanOptions : undefined,
-          correctAnswer: type === 'NUMERIC' && numAnswer.trim() ? numAnswer.trim() : undefined,
+          options: typeHasOptions ? cleanOptions : isBlanks ? blankRows.map((r) => r.prompt) : undefined,
+          correctAnswer: type === 'NUMERIC' && numAnswer.trim() ? numAnswer.trim()
+            : isBlanks && blankRows.some((r) => r.answer) ? JSON.stringify(blankRows.map((r) => r.answer))
+            : undefined,
           tolerance: type === 'NUMERIC' && numTolerance.trim() ? parseFloat(numTolerance) : undefined,
           unit: type === 'NUMERIC' && numUnit.trim() ? numUnit.trim() : undefined,
           imageUrl: imageUrl ?? undefined,
@@ -96,7 +107,7 @@ export default function QuestionDialog({ sessionId, question, onClose }: Props) 
       if (newTitle !== (question.title ?? null)) payload.title = newTitle
       if (text.trim() !== question.text) payload.text = text.trim()
       if (imageUrl !== originalImage) payload.imageUrl = imageUrl
-      if (typeHasOptions) {
+      if (typeHasOptions || isBlanks) {
         const original = (question.options as string[] | null) ?? []
         const changed =
           cleanOptions.length !== original.length || cleanOptions.some((o, i) => o !== original[i])
@@ -112,7 +123,9 @@ export default function QuestionDialog({ sessionId, question, onClose }: Props) 
       setError(apiError(e, isEdit ? 'Failed to save question' : 'Failed to add question')),
   })
 
-  const optionsValid = !typeHasOptions || options.filter((o) => o.trim()).length >= 2
+  const optionsValid = isBlanks
+    ? options.some((o) => o.trim())
+    : !typeHasOptions || options.filter((o) => o.trim()).length >= 2
   const canSave = text.trim().length > 0 && optionsValid && !save.isPending
 
   return (
@@ -165,6 +178,7 @@ export default function QuestionDialog({ sessionId, question, onClose }: Props) 
                 setType(next)
                 // Starting fresh: options from a previous type mean nothing to this one.
                 if (hasOptions(next)) setOptions(['', ''])
+                if (next === 'BLANKS') { setOptions(['']); setBlankKeys(['']) }
               }}
               className={inputCls}
             >
@@ -209,6 +223,68 @@ export default function QuestionDialog({ sessionId, question, onClose }: Props) 
               >
                 <Plus size={12} /> Add option
               </button>
+            </div>
+          )}
+
+          {isBlanks && (
+            <div className="space-y-2">
+              <p className="text-xs text-muted font-medium">
+                Blanks{!isEdit && <span className="font-normal"> — the answer is optional; separate alternatives with /</span>}
+              </p>
+              {options.map((opt, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <span className="text-xs font-mono text-hairline-strong w-4 shrink-0 pt-2.5">{i + 1}</span>
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <input
+                      value={opt}
+                      onChange={(e) => {
+                        const next = [...options]
+                        next[i] = e.target.value
+                        setOptions(next)
+                      }}
+                      placeholder="Prompt, e.g. Which fossa holds the olecranon?"
+                      className="w-full border border-hairline rounded-sm px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
+                    />
+                    {!isEdit && (
+                      <input
+                        value={blankKeys[i] ?? ''}
+                        onChange={(e) => {
+                          const next = [...blankKeys]
+                          next[i] = e.target.value
+                          setBlankKeys(next)
+                        }}
+                        placeholder="Answer, e.g. olecranon fossa / olecranon"
+                        className="w-full border border-hairline rounded-sm px-3 py-1.5 text-xs bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
+                      />
+                    )}
+                  </div>
+                  <button
+                    onClick={() => {
+                      setOptions(options.filter((_, j) => j !== i))
+                      setBlankKeys(blankKeys.filter((_, j) => j !== i))
+                    }}
+                    disabled={options.length <= 1}
+                    aria-label={`Remove blank ${i + 1}`}
+                    className="text-hairline-strong hover:text-red-400 disabled:opacity-30 transition-colors pt-2.5"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+              {options.length < BLANKS_MAX && (
+                <button
+                  onClick={() => { setOptions([...options, '']); setBlankKeys([...blankKeys, '']) }}
+                  className="flex items-center gap-1 text-xs text-signal hover:text-[var(--signal-bright)] mt-1 transition-colors"
+                >
+                  <Plus size={12} /> Add blank
+                </button>
+              )}
+              {isEdit && (
+                <p className="text-xs text-muted leading-snug">
+                  Answers are set from the answer key on the page behind this dialog. A blank
+                  keeps its answer as long as its wording is unchanged.
+                </p>
+              )}
             </div>
           )}
 

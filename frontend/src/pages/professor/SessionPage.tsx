@@ -642,7 +642,9 @@ export default function SessionPage() {
                 place, and the gate the backend actually applies rather than a stricter
                 invented one. */}
             <AnswerKey
-              key={`answer-key-${activeQuestion.id}`}
+              // The prompts ride in the key for blanks: editing them reshapes the key server
+              // side, and the drafts here are seeded once from props.
+              key={`answer-key-${activeQuestion.id}-${activeQuestion.type === 'BLANKS' ? JSON.stringify(activeQuestion.options) : ''}`}
               sessionId={sessionId!}
               question={activeQuestion}
               isLive={isLive}

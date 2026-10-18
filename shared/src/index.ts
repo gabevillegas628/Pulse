@@ -1,6 +1,8 @@
 // Browser-only card renderer. Safe to re-export: nothing runs at import time, and
 // the backend never calls it.
 export * from './qrCard.js'
+// Pure functions, no DOM: the backend grades with the same matcher the screens display.
+export * from './blanks.js'
 
 // Enums
 
@@ -20,6 +22,7 @@ export enum QuestionType {
   MULTI_SELECT = 'MULTI_SELECT',
   ORDERING = 'ORDERING',
   STRUCTURE = 'STRUCTURE',
+  BLANKS = 'BLANKS',
 }
 
 // Entities

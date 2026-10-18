@@ -1,4 +1,5 @@
 import { unit as mathUnit } from 'mathjs'
+import { blanksScore, parseBlankList } from 'shared'
 
 function parseValueUnit(s: string): [number, string] {
   const m = s.trim().match(/^([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s*(.*)$/)
@@ -164,6 +165,13 @@ function scoreResponse(
     if (!correctAnswer) return 1.0
     if (!response.responseText) return 0
     return response.responseText === correctAnswer ? 1.0 : 0.5
+  }
+
+  if (qType === 'BLANKS') {
+    if (!correctAnswer) return 1.0
+    // The key has an entry per prompt, so its length is the blank count. Lenient by
+    // design — see shared/src/blanks.ts.
+    return blanksScore(response.responseText, correctAnswer, parseBlankList(correctAnswer).length)
   }
 
   return 1.0 // RATING — participation credit regardless of value

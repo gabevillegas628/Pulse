@@ -84,7 +84,7 @@ Students enter a number. Graded against a professor-set answer ± tolerance.
 ## When the answer key can be changed
 
 `PATCH /sessions/:id/questions/:qid` refuses a `correctAnswer` change **while a run is
-open**, except for `NUMERIC`, `ORDERING` and `STRUCTURE`, which are exempt because their
+open**, except for `NUMERIC`, `ORDERING`, `STRUCTURE` and `BLANKS`, which are exempt because their
 key is authoring metadata rather than something the room is racing to guess
 (`bypassClosedCheck` in `questions.routes.ts`).
 
@@ -151,6 +151,42 @@ Students draw a chemical structure using the JSME molecule editor. Stored as a S
 - **`correctAnswer` restriction** — exempt from the open-run gate, like NUMERIC and ORDERING
 - **Student input** — JSME editor (`@loschmidt/jsme-react`); `disabled` after submission shows the drawn structure read-only. SMILES string stored in `responseText`.
 - **Implementation note** — JSME loads its JS from CDN on first render (lazy-loaded in React via `Suspense`). Equivalence checking **is** implemented, against the Indigo service that runs as its own container and is reached through the app's authenticated `/api/indigo` proxy. An earlier version of this document called it out of scope; that has not been true for some time.
+
+---
+
+### `BLANKS`
+Fill in the blanks: several short prompts answered in one go. In-class sessions only for
+now; the assignment routes and pickers do not offer it.
+
+- **`options`** — `string[]`, the prompts, one per blank (1–10). Each is shown with its own
+  input. Editing them carries each blank's key entry along by matching wording, so a
+  reorder keeps the key and a new prompt starts unkeyed.
+- **`correctAnswer`** — JSON string of a `string[]`, one entry per prompt, accepted
+  alternatives separated by `/` (e.g. `'["capitulum / capitellum","olecranon fossa"]'`).
+  An empty entry leaves that blank unkeyed; all empty is stored as null. Exempt from the
+  open-run gate, like NUMERIC: the key never reaches a student, and adding a spelling after
+  seeing the room's answers is when it gets edited.
+- **`tolerance` / `unit`** — unused
+- **Student answer** — JSON string of a `string[]` the same length as `options`, each
+  trimmed and at most 200 characters. Some blanks may be empty; all empty is refused.
+- **Matching** — lenient on purpose (`shared/src/blanks.ts`, used by backend grading and
+  every screen). Ignores case, accents, punctuation, small words (the, of, and…) and a
+  trailing plural; forgives one typo on 4–5 letter words, two on 6–9, a fifth of the length
+  beyond. Word by word and in any order, so a list counts however it is ordered. Generic
+  structural nouns ("end", "fossa", "process"…) may be left off — "acromial" for
+  "acromial end" — but not swapped: "olecranon process" does not match "olecranon fossa".
+  Extra words are allowed up to the key's own count plus one, so a sentence around the
+  answer counts and a list of guesses does not. Known cost: near-identical terms
+  (ilium/ileum) match each other.
+- **Grading** — per blank: 1 if close, 0.5 for a non-matching attempt, 0 if empty, 1 for any
+  attempt on an unkeyed blank; the question score is the average. No key at all → full
+  credit, and not counted until a key is set, like the other keyed types. Manual override
+  wins as always.
+- **Projector** — answers are withheld by `/addin/live` until at least 75% of the room
+  (students who have answered anything in this run) has answered **and** answers have
+  paused for 10 seconds (`services/reveal.service.ts`). The count keeps moving meanwhile.
+  Once revealed it stays revealed for the run. Revealed answers carry a per-blank
+  `blankVerdicts` array instead of the key.
 
 ---
 

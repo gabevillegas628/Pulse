@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { readableAnswer } from '@/lib/questionTypes'
 import { useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { api } from '@/api/client'
@@ -47,7 +48,7 @@ function QuestionBlock({ q, index }: { q: GradeQuestion; index: number }) {
       {q.response ? (
         <div className="ml-7 space-y-1">
           <div className="flex items-start justify-between gap-3">
-            <p className="text-sm text-ink leading-relaxed flex-1">{q.response.responseText}</p>
+            <p className="text-sm text-ink leading-relaxed flex-1">{readableAnswer(q.type, q.response.responseText)}</p>
             {q.counted && scoreChip(q.score)}
           </div>
           {isWrong && (

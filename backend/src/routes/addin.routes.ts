@@ -11,6 +11,8 @@ import { customAlphabet } from 'nanoid'
 import { readThemeSetsForRun } from '../services/themes.service.js'
 import { autoCloseEnabled, clockState } from '../services/clock.service.js'
 import { withinTolerance } from '../utils/scoring.js'
+import { blanksRevealed } from '../services/reveal.service.js'
+import { blankVerdicts } from 'shared'
 
 const nanoidDigits = customAlphabet('0123456789', 4)
 
@@ -443,8 +445,27 @@ router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
 
     const now = Date.now()
 
+    // The room for the fill-in-the-blank reveal: everyone who has answered anything in this
+    // opening. Only counted when a blanks question has answers, which is rare enough that
+    // every other poll skips the query.
+    const needsRoom = session.questions.some((q) => (q.type as string) === 'BLANKS' && q.responses.length > 0)
+    const roomSize = needsRoom
+      ? (await prisma.response.groupBy({ by: ['studentId'], where: { runId: run.id } })).length
+      : 0
+
     const questions = session.questions.map((q) => {
       const isFreeText = q.type === 'FREE_TEXT'
+      const isBlanks = (q.type as string) === 'BLANKS'
+      // Hidden until most of the room is in — see reveal.service.ts. Withheld here, not in
+      // the page, for the same reason the key is: a rendering bug must not be able to leak it.
+      const answersHidden = isBlanks && !blanksRevealed(
+        run.id,
+        q.id,
+        q.responses.length,
+        roomSize,
+        q.responses[0] ? new Date(q.responses[0].submittedAt).getTime() : null,
+        now,
+      )
       const timed = autoCloseEnabled(q, session.class)
       const clock = timed ? clockState(run.id, q.id) : null
       const deadline = clock?.closesAt ?? null
@@ -470,12 +491,22 @@ router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
         // its animation rather than restarting from full.
         closeWindowMs: clock?.windowMs ?? null,
         autoCloseOn: timed,
+        answersHidden,
         // Free text answers are quasi-identifying — "as I said in office hours" names a
         // student as surely as a netID does. The projector only ever needs counts and
         // categories for them, so the words do not travel at all. Every other type needs
-        // responseText: ResultsSummary buckets choices and numbers by it.
-        responses: isFreeText
+        // responseText: ResultsSummary buckets choices and numbers by it — except blanks
+        // still behind the reveal, which travel as a count until most of the room is in.
+        responses: isFreeText || answersHidden
           ? q.responses.map(({ responseText: _drop, ...rest }) => rest)
+          // Revealed blanks carry a verdict per blank instead of the key, the same trade
+          // NUMERIC makes below: the projector can mark what was close without ever
+          // holding the answer it was close to.
+          : isBlanks
+            ? q.responses.map((r) => ({
+                ...r,
+                blankVerdicts: blankVerdicts(r.responseText, correctAnswer, ((q.options as string[] | null) ?? []).length),
+              }))
           // NUMERIC answers scatter: a room that agrees still writes 2.87, 2.9 and 2.872,
           // so the one group that matters most arrives as its widest spread. The margin
           // that decides which of them count as the same answer is the professor's, and

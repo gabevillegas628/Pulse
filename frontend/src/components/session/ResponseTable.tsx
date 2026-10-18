@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Flag, Search } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Flag, Search } from 'lucide-react'
 import { calcResponseScore } from '@/lib/scoring'
+import { readableAnswer } from '@/lib/questionTypes'
 import StructureRenderer from '@/components/StructureRenderer'
 import ScoreBadge from '@/components/session/ScoreBadge'
 import type { ResponseFilter } from '@/components/session/GradingToolbar'
-import type { QuestionWithResponses } from 'shared'
+import { blankVerdicts, parseBlankList, type QuestionWithResponses } from 'shared'
 
 type SortKey = 'score' | 'student' | 'time'
 type Sort = { key: SortKey; dir: 'asc' | 'desc' }
@@ -47,13 +48,37 @@ const LONG_ANSWER = ['FREE_TEXT', 'STRUCTURE']
  * renders structures properly; this page never did.
  */
 function formatAnswer(question: QuestionWithResponses, text: string): string {
-  if (question.type === 'MULTI_SELECT' || question.type === 'ORDERING') {
-    try {
-      const arr = JSON.parse(text)
-      if (Array.isArray(arr)) return arr.join(question.type === 'ORDERING' ? ' → ' : ', ')
-    } catch { /* stored value is not an array; show it as-is */ }
-  }
-  return text
+  return readableAnswer(question.type, text)
+}
+
+/**
+ * A fill-in-the-blank answer, one line per blank, marked where the matcher disagreed with
+ * the key. Those are the blanks worth a glance: a lenient matcher still misses a spelling
+ * nobody anticipated, and the score pill beside the row is how that gets corrected.
+ */
+function BlankAnswer({ question, text }: { question: QuestionWithResponses; text: string }) {
+  const answers = parseBlankList(text)
+  const count = (question.options as string[] | null)?.length ?? answers.length
+  const verdicts = blankVerdicts(text, question.correctAnswer, count)
+  return (
+    <ol className="space-y-0.5">
+      {Array.from({ length: count }, (_, i) => {
+        const a = answers[i]?.trim() ?? ''
+        const v = verdicts[i]
+        return (
+          <li key={i} className="flex items-baseline gap-1.5 leading-relaxed">
+            <span className="text-xs font-mono text-hairline-strong shrink-0">{i + 1}.</span>
+            {a ? (
+              <span className={v === false ? 'text-warn' : ''}>{a}</span>
+            ) : (
+              <em className="text-muted">blank</em>
+            )}
+            {a && v === true && <Check size={11} className="text-good shrink-0 self-center" />}
+          </li>
+        )
+      })}
+    </ol>
+  )
 }
 
 interface Props {
@@ -237,7 +262,9 @@ export default function ResponseTable({
                           )}
                         </>
                       ) : (
-                        <span className="leading-relaxed">{answer}</span>
+                        question.type === 'BLANKS'
+                          ? <BlankAnswer question={question} text={r.responseText} />
+                          : <span className="leading-relaxed">{answer}</span>
                       )}
                     </td>
                   </tr>

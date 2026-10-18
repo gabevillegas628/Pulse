@@ -38,6 +38,8 @@ interface LiveResponse {
   isFlagged: boolean
   submittedAt: string
   aiScore: number | null
+  /** BLANKS once revealed: whether each blank was close, in place of the key. */
+  blankVerdicts?: Array<boolean | null>
 }
 
 interface LiveQuestion {
@@ -57,6 +59,8 @@ interface LiveQuestion {
   closesAt: number | null
   /** Length of the window `closesAt` ends, so the bar can seek into its drain. */
   closeWindowMs: number | null
+  /** BLANKS only: answers withheld until most of the room is in. See reveal.service.ts. */
+  answersHidden: boolean
 }
 
 interface LiveSession {
@@ -114,6 +118,9 @@ export default function PresentResultsPage() {
   // Which opening is on screen, so a socket push belonging to another one can be told apart.
   const runIdRef = useRef<string | null>(null)
   const fetchRef = useRef<() => void>(() => {})
+  // The socket handler is bound once, so it reads the session through this.
+  const sessionRef = useRef<LiveSession | null>(null)
+  sessionRef.current = session
 
   // The last moment the room did anything. Taken across the whole session rather than off
   // the question on screen, though the two agree — the server picks the active question by
@@ -309,6 +316,12 @@ export default function PresentResultsPage() {
       // The socket payload also carries the student; deliberately not destructured or
       // stored, so identity cannot reach the projector even by accident.
       const { id, responseText, wordCount, isFlagged, submittedAt, aiScore } = payload.response
+
+      // Fill-in-the-blank answers are the server's to reveal, so the socket's copy of the
+      // words is dropped like free text's. Once revealed, the poll brings them back with
+      // their verdicts; ask for that now rather than leaving a late answer wordless.
+      const target = sessionRef.current?.questions.find((q) => q.id === payload.questionId)
+      if (target?.type === 'BLANKS' && !target.answersHidden) fetchRef.current()
       // Synchronous commit: without it the answer lands in state but never reaches the
       // screen until the object is clicked.
       flushSync(() => {
@@ -323,7 +336,7 @@ export default function PresentResultsPage() {
               // drop it here too or a dropped connection would quietly reintroduce what
               // the endpoint refuses to send. Nothing on this page renders it: free text
               // shows as counts and themes.
-              const keepText = q.type !== 'FREE_TEXT'
+              const keepText = q.type !== 'FREE_TEXT' && q.type !== 'BLANKS'
               const next: LiveResponse = {
                 id,
                 ...(keepText ? { responseText } : {}),
@@ -495,6 +508,8 @@ export default function PresentResultsPage() {
                 wordCounts={question.responses.map((r) => r.wordCount)}
                 sorting={sorting}
               />
+            ) : question.answersHidden ? (
+              <HiddenAnswers />
             ) : showThemes ? (
               <ThemeBars
                 variant="stage"
@@ -525,6 +540,26 @@ export default function PresentResultsPage() {
       ) : (
         <Placeholder phase={phase} message={message} />
       )}
+    </div>
+  )
+}
+
+/**
+ * Fill-in-the-blank answers, held back.
+ *
+ * For these the room's answers are the answers, so they wait until most of the room is in
+ * and the answers have stopped arriving. The count and the grid above keep moving, which
+ * is what tells the room the wait is on them.
+ */
+function HiddenAnswers() {
+  return (
+    <div className="flex flex-col items-center justify-center text-center gap-2 py-6">
+      <p className="font-semibold" style={{ fontSize: 'clamp(14px, 2.4vw, 44px)' }}>
+        Answers appear once most of the room is in
+      </p>
+      <p className="text-muted" style={{ fontSize: 'clamp(10px, 1.6vw, 28px)' }}>
+        Keep going — there's still time to answer
+      </p>
     </div>
   )
 }

@@ -23,6 +23,7 @@
  *   RATING           A bell centred on the correct value, or on 4 when none is set.
  *   ORDERING         The right order, near-misses an adjacent swap away, a few shuffles.
  *   NUMERIC          A cluster inside tolerance, near misses, decimal-place errors.
+ *   BLANKS           Per blank: mostly the key, typos of it, another blank's answer, gaps.
  *
  * Only FREE_TEXT costs a model call. The rest are shaped locally, so iterating on how a
  * type looks on the projector is instant and free.
@@ -187,7 +188,7 @@ Return exactly ${n}.`,
  * five-way split reads as a bug from the back of a room.
  */
 
-const OPTION_TYPES = ['MULTIPLE_CHOICE', 'MULTI_SELECT', 'ORDERING']
+const OPTION_TYPES = ['MULTIPLE_CHOICE', 'MULTI_SELECT', 'ORDERING', 'BLANKS']
 
 type Generated = { text: string; kind: string }
 
@@ -373,6 +374,36 @@ function numeric(correct: string | null, unit: string | null, tolerance: number 
   })
 }
 
+function blanks(opts: string[], correct: string | null, n: number): Generated[] {
+  // First accepted spelling per blank; a blank with no key gets a stand-in so the shape
+  // still shows, though nothing generated against it is right or wrong.
+  const key = jsonList(correct) ?? []
+  const answerFor = (i: number) => (key[i] ?? '').split('/')[0]!.trim() || `answer ${i + 1}`
+
+  // A dropped or doubled letter: what a phone keyboard does to "triquetrum".
+  function typo(s: string): string {
+    if (s.length < 4) return s
+    const i = 1 + Math.floor(Math.random() * (s.length - 2))
+    return Math.random() < 0.5 ? s.slice(0, i) + s.slice(i + 1) : s.slice(0, i) + s[i] + s.slice(i)
+  }
+
+  return Array.from({ length: n }, () => {
+    const out = opts.map((_, i) => {
+      const move = weightedPick<'right' | 'typo' | 'swap' | 'blank'>([
+        ['right', 55], ['typo', 18], ['swap', 15], ['blank', 12],
+      ])
+      if (move === 'right') return Math.random() < 0.3 ? answerFor(i).toUpperCase() : answerFor(i)
+      if (move === 'typo') return typo(answerFor(i))
+      // Right answer, wrong blank: the classic mix-up on a list of related terms.
+      if (move === 'swap' && opts.length > 1) return answerFor((i + 1 + Math.floor(Math.random() * (opts.length - 1))) % opts.length)
+      return ''
+    })
+    // The server refuses an answer with every blank empty, as the form does.
+    if (!out.some(Boolean)) out[0] = answerFor(0)
+    return { text: JSON.stringify(out), kind: key.length ? 'mixed' : 'answer' }
+  })
+}
+
 /** Whatever this question needs, by type. Only FREE_TEXT reaches for a model. */
 async function buildAnswers(
   q: { type: string; text: string; options: unknown; correctAnswer: string | null; unit: string | null; tolerance: number | null },
@@ -387,6 +418,7 @@ async function buildAnswers(
     case 'RATING': return rating(q.correctAnswer, n)
     case 'ORDERING': return ordering(opts, q.correctAnswer, n)
     case 'NUMERIC': return numeric(q.correctAnswer, q.unit, q.tolerance, n)
+    case 'BLANKS': return blanks(opts, q.correctAnswer, n)
     default: throw new Error(`Rehearsal does not know how to answer a ${q.type} question.`)
   }
 }

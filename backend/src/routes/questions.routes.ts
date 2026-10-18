@@ -10,6 +10,7 @@ import { generateQuestionQr } from '../utils/qr.js'
 import { p } from '../utils/params.js'
 import { toInchi } from '../utils/indigo.js'
 import { numericKeyProblem } from '../utils/scoring.js'
+import { BLANKS_MAX, parseBlankList } from 'shared'
 import { uploadPathSchema, deleteUploadIfUnreferenced } from '../utils/uploads.js'
 import { reopen } from '../services/clock.service.js'
 import { getIo } from '../socket.js'
@@ -26,6 +27,34 @@ const generateUniqueQuestionCode = () =>
 const router = Router()
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * A fill-in-the-blank key as it should be stored, or null for "no key".
+ *
+ * One entry per prompt, so the key's length is the blank count the grader reads. A key
+ * whose every entry is empty is no key at all, and is stored as null so the question
+ * reads as unkeyed everywhere rather than as keyed to nothing.
+ */
+function blanksKey(raw: string | null | undefined, count: number): string | null {
+  if (raw == null) return null
+  let arr: unknown
+  try { arr = JSON.parse(raw) } catch { throw new AppError('The fill-in-the-blank key must be a JSON array', 400) }
+  if (!Array.isArray(arr) || !arr.every((v) => typeof v === 'string'))
+    throw new AppError('The fill-in-the-blank key must be a JSON array of strings', 400)
+  if (arr.length !== count)
+    throw new AppError(`The key needs one entry per blank (${count})`, 400)
+  const key = (arr as string[]).map((v) => v.trim().slice(0, 500))
+  return key.some(Boolean) ? JSON.stringify(key) : null
+}
+
+/** Prompts for a fill-in-the-blank question, refused when there are none or too many. */
+function blanksPrompts(options: string[] | undefined): string[] {
+  const prompts = (options ?? []).map((o) => o.trim()).filter(Boolean)
+  if (prompts.length < 1) throw new AppError('Add at least one blank', 400)
+  if (prompts.length > BLANKS_MAX) throw new AppError(`At most ${BLANKS_MAX} blanks per question`, 400)
+  if (prompts.some((o) => o.length > 300)) throw new AppError('Keep each blank prompt under 300 characters', 400)
+  return prompts
+}
 
 type ParentType = 'session' | 'assignment'
 
@@ -58,7 +87,8 @@ router.post('/sessions/:id/questions', requireProfessor, async (req: Request, re
     const { title, text, type, options, groupId, correctAnswer, tolerance, unit, imageUrl, liveThemes, autoClose, effortGrading } = z.object({
       title: z.string().max(120).optional(),
       text: z.string().min(1),
-      type: z.enum(['FREE_TEXT', 'MULTIPLE_CHOICE', 'RATING', 'YES_NO', 'NUMERIC', 'MULTI_SELECT', 'ORDERING', 'STRUCTURE']),
+      // BLANKS is session-only for now; the assignment route's list leaves it out.
+      type: z.enum(['FREE_TEXT', 'MULTIPLE_CHOICE', 'RATING', 'YES_NO', 'NUMERIC', 'MULTI_SELECT', 'ORDERING', 'STRUCTURE', 'BLANKS']),
       options: z.array(z.string()).optional(),
       groupId: z.string().optional(),
       correctAnswer: z.string().optional(),
@@ -85,6 +115,9 @@ router.post('/sessions/:id/questions', requireProfessor, async (req: Request, re
       if (problem) throw new AppError(problem, 400)
     }
 
+    const prompts = type === 'BLANKS' ? blanksPrompts(options) : null
+    const blanksKeyValue = prompts ? blanksKey(correctAnswer, prompts.length) : null
+
     const session = await getSession(p(req.params.id), professor)
 
     // For session questions, check no OPEN run exists when editing (sessions allow edits while DRAFT or when not actively running)
@@ -106,10 +139,11 @@ router.post('/sessions/:id/questions', requireProfessor, async (req: Request, re
         title: title?.trim() || null,
         text,
         type: type as import('@prisma/client').QuestionType,
-        options: options && options.length > 0 ? options : undefined,
+        options: prompts ?? (options && options.length > 0 ? options : undefined),
         order: nextOrder,
         accessCode,
         correctAnswer: type === 'NUMERIC' ? (correctAnswer ?? null)
+          : type === 'BLANKS' ? blanksKeyValue
           : type === 'ORDERING' && options && options.length > 0 ? JSON.stringify(options)
           : type === 'MULTI_SELECT' ? (correctAnswer ?? null)
           : undefined,
@@ -334,7 +368,9 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
     const updateData: Record<string, unknown> = {}
 
     if (body.correctAnswer !== undefined) {
-      const bypassClosedCheck = ['NUMERIC', 'ORDERING', 'STRUCTURE'].includes(question.type as string)
+      // BLANKS is exempt too: its key never reaches a student, and adding an accepted
+      // spelling after seeing the room's answers is exactly when it gets edited.
+      const bypassClosedCheck = ['NUMERIC', 'ORDERING', 'STRUCTURE', 'BLANKS'].includes(question.type as string)
       if (!bypassClosedCheck && hasOpenRun)
         throw new AppError('Cannot set answer key while a run is open', 400)
       const ca = body.correctAnswer
@@ -369,7 +405,9 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
       }
       updateData.correctAnswer = (question.type as string) === 'STRUCTURE' && ca !== null
         ? await toInchi(ca)
-        : ca
+        : (question.type as string) === 'BLANKS'
+          ? blanksKey(ca, ((question.options as string[] | null) ?? []).length)
+          : ca
     }
 
     if (body.tolerance !== undefined) updateData.tolerance = body.tolerance
@@ -415,7 +453,19 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
       updateData.text = body.text
     }
 
-    if (body.options !== undefined) {
+    if (body.options !== undefined && (question.type as string) === 'BLANKS') {
+      if (body.correctAnswer !== undefined)
+        throw new AppError('Change the blanks and their key in separate saves', 400)
+      const prompts = blanksPrompts(body.options)
+      updateData.options = prompts
+      // Carry each prompt's key entry with it, matched by wording, so reordering or adding
+      // a blank keeps the answers already set and a new blank simply starts unkeyed.
+      const oldPrompts = (question.options as string[] | null) ?? []
+      const oldKey = parseBlankList(question.correctAnswer)
+      const byPrompt = new Map(oldPrompts.map((o, i) => [o, oldKey[i] ?? '']))
+      const key = prompts.map((o) => byPrompt.get(o) ?? '')
+      updateData.correctAnswer = key.some(Boolean) ? JSON.stringify(key) : null
+    } else if (body.options !== undefined) {
       const optionTypes = ['MULTIPLE_CHOICE', 'MULTI_SELECT', 'ORDERING']
       if (!optionTypes.includes(question.type as string))
         throw new AppError('This question type does not support options', 400)

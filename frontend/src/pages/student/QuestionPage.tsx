@@ -5,7 +5,7 @@ import { api, getStudentToken } from '@/api/client'
 import { useStudentAuth } from '@/context/StudentAuthContext'
 import StudentLayout from '@/components/layout/StudentLayout'
 import { io } from 'socket.io-client'
-import type { StudentQuestion } from 'shared'
+import { BLANK_ANSWER_MAX, type StudentQuestion } from 'shared'
 import { apiError, apiErrorCode } from '@/lib/errors'
 import {
   DndContext,
@@ -120,6 +120,7 @@ export default function QuestionPage() {
   const [imageZoomed, setImageZoomed] = useState(false)
   const [orderedItems, setOrderedItems] = useState<string[]>([])
   const [selectedOptions, setSelectedOptions] = useState<string[]>([])
+  const [blankAnswers, setBlankAnswers] = useState<string[]>([])
   const ketcherRef = useRef<Ketcher | null>(null)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
@@ -144,6 +145,7 @@ export default function QuestionPage() {
         }
         ketcherRef.current = null
         setSelectedOptions([])
+        setBlankAnswers(q.type === 'BLANKS' ? (q.options ?? []).map(() => '') : [])
       })
       .catch((e) => {
         setLoadError(apiError(e, 'Question not found'))
@@ -192,6 +194,7 @@ export default function QuestionPage() {
     let responseText = data.response ?? ''
     if (question.type === 'ORDERING') responseText = JSON.stringify(orderedItems)
     if (question.type === 'MULTI_SELECT') responseText = JSON.stringify(selectedOptions)
+    if (question.type === 'BLANKS') responseText = JSON.stringify(blankAnswers.map((a) => a.trim()))
     if (question.type === 'STRUCTURE') {
       // An empty canvas has no InChI; the server can only refuse it, so say so here.
       if (!ketcherRef.current || ketcherRef.current.editor.struct().isBlank()) {
@@ -269,6 +272,8 @@ export default function QuestionPage() {
   const isAnswerEmpty =
     q.type === 'ORDERING' ? false :
     q.type === 'MULTI_SELECT' ? selectedOptions.length === 0 :
+    // Some blanks may be left empty — a partial answer is still an answer — but not all.
+    q.type === 'BLANKS' ? !blankAnswers.some((a) => a.trim()) :
     q.type === 'STRUCTURE' ? false :
     q.type === 'NUMERIC' ? (() => {
       if (!responseValue?.trim()) return true
@@ -445,6 +450,40 @@ export default function QuestionPage() {
                     </label>
                   )
                 })}
+              </div>
+            )}
+
+            {q.type === 'BLANKS' && q.options && (
+              <div className="space-y-4">
+                {q.options.map((prompt, i) => (
+                  <label key={i} className="block space-y-1.5">
+                    <span className="flex gap-2 text-sm text-ink">
+                      <span className="shrink-0 font-mono tabular-nums text-muted">{i + 1}.</span>
+                      <span>{prompt}</span>
+                    </span>
+                    <input
+                      type="text"
+                      value={blankAnswers[i] ?? ''}
+                      onChange={(e) => {
+                        const next = [...blankAnswers]
+                        next[i] = e.target.value
+                        setBlankAnswers(next)
+                      }}
+                      maxLength={BLANK_ANSWER_MAX}
+                      autoComplete="off"
+                      // Return moves to the next blank instead of submitting half an answer.
+                      enterKeyHint={i < q.options!.length - 1 ? 'next' : 'done'}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter' || i === q.options!.length - 1) return
+                        e.preventDefault()
+                        const form = e.currentTarget.form
+                        const inputs = form ? Array.from(form.querySelectorAll<HTMLInputElement>('input[type="text"]')) : []
+                        inputs[inputs.indexOf(e.currentTarget) + 1]?.focus()
+                      }}
+                      className="w-full border border-hairline rounded-[14px] px-3 py-3 text-base bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
+                    />
+                  </label>
+                ))}
               </div>
             )}
 

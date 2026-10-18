@@ -248,6 +248,7 @@ enum QuestionType {
   MULTI_SELECT
   ORDERING
   STRUCTURE
+  BLANKS
 }
 
 model Question {
