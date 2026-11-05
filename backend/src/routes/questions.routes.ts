@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
+import { Prisma, type QuestionType } from '@prisma/client'
 import { customAlphabet } from 'nanoid'
 import { prisma } from '../db/index.js'
 import { AppError } from '../middleware/error.middleware.js'
@@ -351,6 +352,8 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
       autoClose: z.boolean().nullable().optional(),
       // null inherits the class default; true/false override it. FREE_TEXT only.
       effortGrading: z.boolean().nullable().optional(),
+      // Only until someone answers — see the type-change block below.
+      type: z.enum(['FREE_TEXT', 'MULTIPLE_CHOICE', 'RATING', 'YES_NO', 'NUMERIC', 'MULTI_SELECT', 'ORDERING', 'STRUCTURE', 'BLANKS']).optional(),
     }).parse(req.body)
 
     const question = await prisma.question.findFirst({
@@ -366,6 +369,44 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
     const session = question.session!
     const hasOpenRun = session.runs.length > 0
     const updateData: Record<string, unknown> = {}
+
+    // Changing type. Allowed only while nobody has answered, drafts included: an answer
+    // given to a multiple-choice question means nothing once it is numeric. Everything
+    // tied to the old type is reset — options are replaced, and the key starts empty
+    // (set it from the answer key panel afterwards), as on a freshly added question.
+    const newType = body.type !== undefined && body.type !== question.type ? body.type : null
+    if (newType) {
+      if (hasOpenRun)
+        throw new AppError('Cannot change question type while a run is open', 400)
+      if (newType === 'STRUCTURE')
+        throw new AppError('Structure questions need a mouse to draw, so they are available on assignments only', 400)
+      if (body.correctAnswer !== undefined || body.tolerance !== undefined || body.unit !== undefined)
+        throw new AppError('Change the type first, then set the answer key', 400)
+      const answered = await prisma.response.count({ where: { questionId: question.id } })
+      if (answered > 0)
+        throw new AppError('Students have already answered this question, so its type can no longer change', 409)
+
+      updateData.type = newType as QuestionType
+      if (newType === 'BLANKS') {
+        updateData.options = blanksPrompts(body.options)
+      } else if (['MULTIPLE_CHOICE', 'MULTI_SELECT', 'ORDERING'].includes(newType)) {
+        const opts = (body.options ?? []).map((o) => o.trim()).filter(Boolean)
+        if (opts.length < 2) throw new AppError('Must have at least 2 options', 400)
+        updateData.options = opts
+      } else {
+        updateData.options = Prisma.DbNull
+      }
+      // Ordering's key is the steps as authored, the same rule as on creation.
+      updateData.correctAnswer = newType === 'ORDERING' ? JSON.stringify(updateData.options) : null
+      updateData.tolerance = null
+      updateData.unit = null
+      // Free-text-only settings mean nothing on any other type.
+      if (newType !== 'FREE_TEXT') {
+        updateData.liveThemes = null
+        updateData.effortGrading = null
+      }
+    }
+    const effectiveType = (newType ?? question.type) as string
 
     if (body.correctAnswer !== undefined) {
       // BLANKS is exempt too: its key never reaches a student, and adding an accepted
@@ -453,7 +494,9 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
       updateData.text = body.text
     }
 
-    if (body.options !== undefined && (question.type as string) === 'BLANKS') {
+    if (newType) {
+      // Options were already set by the type change above.
+    } else if (body.options !== undefined && (question.type as string) === 'BLANKS') {
       if (body.correctAnswer !== undefined)
         throw new AppError('Change the blanks and their key in separate saves', 400)
       const prompts = blanksPrompts(body.options)
@@ -488,7 +531,7 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
     }
 
     if (body.liveThemes !== undefined) {
-      if (question.type !== 'FREE_TEXT')
+      if (effectiveType !== 'FREE_TEXT')
         throw new AppError('Live themes only apply to free text questions', 400)
       // Deliberately allowed while a run is open. The design intends this to be set
       // while authoring, but refusing it mid-lecture would leave a professor who forgot
@@ -505,7 +548,7 @@ router.patch('/sessions/:sessionId/questions/:questionId', requireProfessor, asy
     }
 
     if (body.effortGrading !== undefined) {
-      if (question.type !== 'FREE_TEXT')
+      if (effectiveType !== 'FREE_TEXT')
         throw new AppError('Effort grading only applies to free text questions', 400)
       // Changeable after grading has already run: seeing the scores is often what
       // tells a professor they picked the wrong stance. Switching it does not regrade

@@ -17,6 +17,7 @@
     "test:e2e:qr": "tsx scripts/e2e-qr.ts",
     "test:e2e:image": "tsx scripts/e2e-question-image.ts",
     "test:smoke:themes": "tsx scripts/smoke-themes.ts",
+    "test:smoke:type-change": "tsx scripts/smoke-type-change.ts",
     "test:smoke:socket": "tsx scripts/smoke-socket-auth.ts",
     "test:smoke:diag": "tsx scripts/smoke-diag.ts",
     "test:smoke:admin": "tsx scripts/smoke-admin.ts",

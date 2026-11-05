@@ -31,9 +31,10 @@ interface Props {
  * no way to change type. Same job, two shapes, and between them sixteen pieces of state on
  * the page.
  *
- * The differences that remain are real rather than accidental. Type is fixed after
- * creation, because changing it would orphan the options and re-interpret every answer
- * already given — so it shows as a chip rather than a picker. And a numeric key is offered
+ * The differences that remain are real rather than accidental. Type can change only until
+ * the first student answers (drafts included), because after that it would re-interpret
+ * every answer already given — so from then on it shows as a chip rather than a picker.
+ * Changing it resets the answer key, set again from `AnswerKey`. And a numeric key is offered
  * at creation only, because until the question exists there is no `AnswerKey` on the page
  * to set it from; once it does, that is the one place it lives. Fill-in-the-blank keys
  * follow the same rule: typed beside each prompt here, then kept in `AnswerKey`.
@@ -61,6 +62,11 @@ export default function QuestionDialog({ sessionId, question, onClose }: Props) 
   const [error, setError] = useState('')
 
   const originalImage = question?.imageUrl ?? null
+  const originalType = (question?.type as QuestionTypeValue | undefined) ?? null
+  const originalOptions = (question?.options as string[] | null) ?? []
+  // Mirrors the server's rule; the server is the guard.
+  const typeLocked = isEdit && question.responses.length > 0
+  const typeChanged = isEdit && type !== originalType
   const typeHasOptions = hasOptions(type)
   const isBlanks = type === 'BLANKS'
 
@@ -107,10 +113,13 @@ export default function QuestionDialog({ sessionId, question, onClose }: Props) 
       if (newTitle !== (question.title ?? null)) payload.title = newTitle
       if (text.trim() !== question.text) payload.text = text.trim()
       if (imageUrl !== originalImage) payload.imageUrl = imageUrl
-      if (typeHasOptions || isBlanks) {
-        const original = (question.options as string[] | null) ?? []
+      if (typeChanged) {
+        payload.type = type
+        if (typeHasOptions || isBlanks) payload.options = cleanOptions
+      } else if (typeHasOptions || isBlanks) {
         const changed =
-          cleanOptions.length !== original.length || cleanOptions.some((o, i) => o !== original[i])
+          cleanOptions.length !== originalOptions.length ||
+          cleanOptions.some((o, i) => o !== originalOptions[i])
         if (changed) payload.options = cleanOptions
       }
       return api.patch(`/sessions/${sessionId}/questions/${question.id}`, payload)
@@ -162,32 +171,48 @@ export default function QuestionDialog({ sessionId, question, onClose }: Props) 
             cleanupOnReplace={!isEdit}
           />
 
-          {isEdit ? (
+          {typeLocked ? (
             <p className="text-xs text-muted">
               Type:{' '}
               <span className="text-ink-2 font-medium">{questionTypeLabel(question.type)}</span>
               <span className="block mt-0.5">
-                Fixed after creation — changing it would re-interpret the answers already given.
+                Locked once students have answered — changing it would re-interpret their answers.
               </span>
             </p>
           ) : (
-            <select
-              value={type}
-              onChange={(e) => {
-                const next = e.target.value as QuestionTypeValue
-                setType(next)
-                // Starting fresh: options from a previous type mean nothing to this one.
-                if (hasOptions(next)) setOptions(['', ''])
-                if (next === 'BLANKS') { setOptions(['']); setBlankKeys(['']) }
-              }}
-              className={inputCls}
-            >
-              {/* No structure questions in a live session: Ketcher only understands a mouse,
-                  and students answer these on phones. Assignments still offer it. */}
-              {QUESTION_TYPES.filter((t) => t.value !== 'STRUCTURE').map((t) => (
-                <option key={t.value} value={t.value}>{questionTypeChoiceLabel(t)}</option>
-              ))}
-            </select>
+            <div className="space-y-1">
+              <select
+                value={type}
+                onChange={(e) => {
+                  const next = e.target.value as QuestionTypeValue
+                  const prev = type
+                  setType(next)
+                  if (isEdit && next === originalType) {
+                    // Back to where it started: restore what was saved.
+                    setOptions(originalOptions.length ? originalOptions : ['', ''])
+                  } else if (hasOptions(next)) {
+                    // Choices carry over between the choice types (multiple choice to
+                    // multi-select, say); from anything else they start fresh.
+                    if (!hasOptions(prev)) setOptions(['', ''])
+                  } else if (next === 'BLANKS') {
+                    setOptions(['']); setBlankKeys([''])
+                  }
+                }}
+                className={inputCls}
+              >
+                {/* No structure questions in a live session: Ketcher only understands a mouse,
+                    and students answer these on phones. Assignments still offer it. A
+                    question that is already one keeps it in the list so the picker can show it. */}
+                {QUESTION_TYPES.filter((t) => t.value !== 'STRUCTURE' || t.value === originalType).map((t) => (
+                  <option key={t.value} value={t.value}>{questionTypeChoiceLabel(t)}</option>
+                ))}
+              </select>
+              {typeChanged && (
+                <p className="text-xs text-muted leading-snug">
+                  Changing the type clears the answer key — set it again after saving.
+                </p>
+              )}
+            </div>
           )}
 
           {typeHasOptions && (
