@@ -24,6 +24,7 @@
     "test:smoke:autoclose": "tsx scripts/smoke-autoclose.ts",
     "test:smoke:reset": "tsx scripts/smoke-password-reset.ts",
     "test:smoke:join": "tsx scripts/smoke-join.ts",
+    "test:waiting": "tsx scripts/smoke-waiting.ts",
     "rehearse": "tsx scripts/rehearse.ts"
   },
   "prisma": {

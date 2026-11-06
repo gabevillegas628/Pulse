@@ -15,6 +15,7 @@ import { p } from '../utils/params.js'
 import { toInchi } from '../utils/indigo.js'
 import { BLANK_ANSWER_MAX } from 'shared'
 import { autoCloseEnabled, isOpen, touch, clockState } from '../services/clock.service.js'
+import { noteWaiting, noteAdmitted } from '../services/waiting.service.js'
 
 const router = Router()
 
@@ -60,7 +61,13 @@ router.get('/questions/by-code/:code', requireStudent, async (req: Request, res:
         select: { sectionId: true, anySection: true },
       })
       const openRun = openRunFor(question.session.runs, enrollment)
-      if (!openRun) throw new AppError('This session is not open', 409)
+      if (!openRun) {
+        // Remembered so the slide can offer to start it — see waiting.service.ts. The code
+        // lets the student page tell this apart from the other 409s and keep retrying.
+        noteWaiting(question.session.id, enrollment?.sectionId ?? null, student.id)
+        throw new AppError('This session is not open', 409, 'SESSION_NOT_OPEN')
+      }
+      noteAdmitted(student.id)
       if (skippedHere(question, openRun)) throw new AppError(SKIPPED_MESSAGE, 409, 'QUESTION_SKIPPED')
       if (autoCloseEnabled(question, question.session.class) && !isOpen(openRun.id, question.id)) {
         throw new AppError('This question has closed', 409)

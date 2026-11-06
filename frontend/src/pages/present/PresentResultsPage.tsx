@@ -74,6 +74,21 @@ interface LiveSession {
   questions: LiveQuestion[]
 }
 
+/**
+ * A session the slide can offer to start. `waiting` students scanned its code before it was
+ * open; their enrollments say which section they are in. Counts only, never who.
+ */
+interface StartOption {
+  sessionId: string
+  title: string
+  className: string
+  waiting: number
+  /** Waiting students with no section on record. Never used to suggest a section. */
+  unassigned: number
+  /** Every section of the class, busiest first. Empty when the class has none. */
+  sections: { id: string; name: string; waiting: number }[]
+}
+
 type Phase = 'loading' | 'no-session' | 'live' | 'unauthorised' | 'error'
 
 // A steady short heartbeat rather than one long timer. Chromium throttles timers hard in
@@ -110,6 +125,8 @@ export default function PresentResultsPage() {
   const [connected, setConnected] = useState(false)
   const [message, setMessage] = useState('')
   const [idle, setIdle] = useState(false)
+  const [waiting, setWaiting] = useState<StartOption[]>([])
+  const [recent, setRecent] = useState<StartOption[]>([])
 
   const socketRef = useRef<Socket | null>(null)
   const joinedRef = useRef<string | null>(null)
@@ -130,6 +147,26 @@ export default function PresentResultsPage() {
     ? Math.max(0, ...session.questions.map((q) =>
         q.responses[0] ? new Date(q.responses[0].submittedAt).getTime() : 0))
     : 0
+
+  // ── Starting a session from the slide ─────────────────────────────────────────
+  // The professor always picks: a section button is the choice, so one tap opens it. Nothing
+  // here opens a run on its own. Switching closes whatever is open first, because a session
+  // can only have one open run and the projector follows the most recent one.
+  async function start(sessionId: string, sectionId: string | null) {
+    const open = sessionIdRef.current && runIdRef.current
+      ? { sessionId: sessionIdRef.current, runId: runIdRef.current }
+      : null
+    if (open) await api.patch(`/sessions/${open.sessionId}/runs/${open.runId}`, { status: 'CLOSED' })
+    try {
+      await api.post(`/sessions/${sessionId}/runs`, sectionId ? { sectionId } : {})
+    } catch (err) {
+      // Opened from somewhere else in the meantime: that is the outcome wanted anyway.
+      const status = (err as { response?: { status?: number } })?.response?.status
+      if (status !== 409) throw err
+    } finally {
+      fetchRef.current()
+    }
+  }
 
   // ── Deciding the room has moved on ───────────────────────────────────────────
   useEffect(() => {
@@ -161,12 +198,16 @@ export default function PresentResultsPage() {
           session: LiveSession | null
           activeQuestionId: string | null
           runId: string | null
+          waiting?: StartOption[]
+          recent?: StartOption[]
         }
 
         // flushSync, because React's asynchronous commit does not reliably run in an
         // unfocused add-in frame: state updated but the DOM did not, until a click forced
         // a synchronous flush. Committing here keeps the projector honest without a poke.
         flushSync(() => {
+          setWaiting(data.waiting ?? [])
+          setRecent(data.recent ?? [])
           if (!data.session) {
             setSession(null)
             sessionIdRef.current = null
@@ -424,6 +465,16 @@ export default function PresentResultsPage() {
         )}
       </div>
 
+      {phase === 'live' && waiting.length > 0 && (
+        <SwitchBanner
+          key={waiting[0].sessionId}
+          option={waiting[0]}
+          openSectionName={session?.sectionName ?? null}
+          sameSession={waiting[0].sessionId === session?.id}
+          onStart={start}
+        />
+      )}
+
       {phase === 'live' && question && !idle ? (
         <>
           {/* Question */}
@@ -537,8 +588,215 @@ export default function PresentResultsPage() {
         <Waiting question={question} answered={answered} />
       ) : phase === 'live' && !question ? (
         <Ready />
+      ) : phase === 'no-session' ? (
+        <StartPrompt waiting={waiting} recent={recent} onStart={start} />
       ) : (
         <Placeholder phase={phase} message={message} />
+      )}
+    </div>
+  )
+}
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+
+/**
+ * Nothing is open. If students have scanned a code, say so and offer to start that session;
+ * otherwise keep today's message, with the professor's recent sessions one tap away.
+ *
+ * The section is always the professor's pick. Sections with students waiting are drawn as
+ * the obvious choice, but students with no section on record never suggest one, since they
+ * would be admitted by any of them.
+ */
+function StartPrompt({ waiting, recent, onStart }: {
+  waiting: StartOption[]
+  recent: StartOption[]
+  onStart: (sessionId: string, sectionId: string | null) => Promise<void>
+}) {
+  const [browsing, setBrowsing] = useState(false)
+
+  if (waiting.length > 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center text-center gap-4 w-full">
+        {waiting.slice(0, 3).map((o) => (
+          <div key={o.sessionId} className="flex flex-col items-center gap-2 w-full">
+            <p className="font-semibold" style={{ fontSize: 'clamp(15px, 2.8vw, 52px)' }}>
+              {plural(o.waiting, 'student is', 'students are')} trying to join
+            </p>
+            <p className="text-muted" style={{ fontSize: 'clamp(11px, 1.8vw, 34px)' }}>
+              {o.className} · {o.title}
+            </p>
+            <StartButtons option={o} onStart={onStart} />
+          </div>
+        ))}
+        <Origin />
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center text-center gap-2 w-full">
+      <p className="font-semibold" style={{ fontSize: 'clamp(16px, 3vw, 56px)' }}>No session open</p>
+      <p className="text-muted" style={{ fontSize: 'clamp(11px, 1.8vw, 34px)' }}>
+        Open a session in Pulse and results will appear here
+      </p>
+      {recent.length > 0 && !browsing && (
+        <button
+          onClick={() => setBrowsing(true)}
+          className="rounded-sm px-3 py-1.5 border border-hairline text-muted hover:text-ink"
+          style={{ fontSize: 'clamp(10px, 1.3vw, 22px)', marginTop: 'clamp(4px, 1vw, 16px)' }}
+        >
+          Start a session…
+        </button>
+      )}
+      {browsing && (
+        <div className="flex flex-col gap-3 w-full items-center" style={{ marginTop: 'clamp(4px, 1vw, 16px)' }}>
+          {recent.map((o) => (
+            <div key={o.sessionId} className="flex flex-col items-center gap-1.5 w-full">
+              <p style={{ fontSize: 'clamp(11px, 1.6vw, 28px)' }}>
+                {o.title} <span className="text-muted">· {o.className}</span>
+              </p>
+              <StartButtons option={o} onStart={onStart} />
+            </div>
+          ))}
+          <button
+            onClick={() => setBrowsing(false)}
+            className="text-muted hover:text-ink"
+            style={{ fontSize: 'clamp(9px, 1.2vw, 20px)' }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+      <Origin />
+    </div>
+  )
+}
+
+/** One button per section — tapping one is picking it — or a single Start for a class without. */
+function StartButtons({ option, onStart, label = 'Start' }: {
+  option: StartOption
+  onStart: (sessionId: string, sectionId: string | null) => Promise<void>
+  label?: string
+}) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function go(sectionId: string | null) {
+    setBusy(true)
+    setError('')
+    try {
+      await onStart(option.sessionId, sectionId)
+    } catch (err) {
+      setError(apiError(err, 'Could not start the session'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const choices = option.sections.length > 0
+    ? option.sections.map((s) => ({
+        key: s.id,
+        id: s.id as string | null,
+        text: `${label} Section ${s.name}${s.waiting > 0 ? ` · ${s.waiting}` : ''}`,
+        primary: s.waiting > 0,
+      }))
+    : [{ key: 'all', id: null, text: label, primary: true }]
+
+  return (
+    <div className="flex flex-col items-center gap-1.5">
+      <div className="flex flex-wrap justify-center gap-2">
+        {choices.map((c) => (
+          <button
+            key={c.key}
+            disabled={busy}
+            onClick={() => void go(c.id)}
+            className={`rounded-sm px-3 py-1.5 font-bold disabled:opacity-50 ${c.primary ? 'text-white' : 'border border-hairline text-ink'}`}
+            style={{ fontSize: 'clamp(11px, 1.6vw, 28px)', ...(c.primary ? { background: 'var(--signal)' } : {}) }}
+          >
+            {c.text}
+          </button>
+        ))}
+      </div>
+      {option.sections.length > 0 && option.unassigned > 0 && (
+        <p className="text-muted" style={{ fontSize: 'clamp(9px, 1.2vw, 20px)' }}>
+          {plural(option.unassigned, 'student has', 'students have')} no section yet
+        </p>
+      )}
+      {error && (
+        <p style={{ color: 'var(--warn)', fontSize: 'clamp(9px, 1.2vw, 20px)' }}>{error}</p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Something is open, but students are waiting for something else: another section of this
+ * session (back-to-back sections, not switched over) or another session (the wrong one was
+ * opened). Small, because the results underneath are still true. Switching closes what is
+ * open, so it takes a second tap.
+ */
+function SwitchBanner({ option, openSectionName, sameSession, onStart }: {
+  option: StartOption
+  openSectionName: string | null
+  sameSession: boolean
+  onStart: (sessionId: string, sectionId: string | null) => Promise<void>
+}) {
+  const [confirming, setConfirming] = useState(false)
+  // A student from another section sitting in keeps their phone retrying, which would keep
+  // this up for the whole lecture. Dismissed, it stays away until more students arrive.
+  const [dismissedAt, setDismissedAt] = useState(0)
+  if (option.waiting <= dismissedAt) return null
+  // Reopening the section that is already open would only restart it.
+  const choices = sameSession
+    ? { ...option, sections: option.sections.filter((s) => s.name !== openSectionName) }
+    : option
+  const who = plural(option.waiting, 'student is', 'students are')
+  // Sections come busiest first, so the first with anyone waiting is the one to name.
+  const busiest = option.sections.find((s) => s.waiting > 0)
+  const what = !sameSession
+    ? `${who} trying to join ${option.title}`
+    : busiest ? `${who} waiting for Section ${busiest.name}` : `${who} waiting for another section`
+
+  return (
+    <div
+      className="flex flex-col items-center gap-1.5 rounded-sm border shrink-0 mt-2"
+      style={{ borderColor: 'var(--warn)', padding: 'clamp(4px, 0.8vw, 14px)' }}
+    >
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <span style={{ color: 'var(--warn)', fontSize: 'clamp(10px, 1.4vw, 24px)' }}>{what}</span>
+        {!confirming && (
+          <>
+            <button
+              onClick={() => setConfirming(true)}
+              className="rounded-sm px-2 py-1 border border-hairline text-ink"
+              style={{ fontSize: 'clamp(9px, 1.2vw, 20px)' }}
+            >
+              Switch…
+            </button>
+            <button
+              onClick={() => setDismissedAt(option.waiting)}
+              className="text-muted hover:text-ink px-1"
+              style={{ fontSize: 'clamp(9px, 1.2vw, 20px)' }}
+            >
+              Dismiss
+            </button>
+          </>
+        )}
+      </div>
+      {confirming && (
+        <>
+          <p className="text-muted" style={{ fontSize: 'clamp(9px, 1.2vw, 20px)' }}>
+            Closes {openSectionName ? `Section ${openSectionName}` : 'the open session'} and opens:
+          </p>
+          <StartButtons option={choices} onStart={onStart} label="Open" />
+          <button
+            onClick={() => setConfirming(false)}
+            className="text-muted hover:text-ink"
+            style={{ fontSize: 'clamp(9px, 1.2vw, 20px)' }}
+          >
+            Cancel
+          </button>
+        </>
       )}
     </div>
   )

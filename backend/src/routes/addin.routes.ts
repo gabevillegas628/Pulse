@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../db/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
-import { Viewer, ownedClass, ownedQuestion, ownedSessionRun, owns } from '../utils/ownership.js'
+import { Viewer, ownedClass, ownedQuestion, ownedSession, ownedSessionRun, owns } from '../utils/ownership.js'
 import { generateUniqueCode } from '../utils/codes.js'
 import { generateQuestionQr } from '../utils/qr.js'
 import { p } from '../utils/params.js'
@@ -12,6 +12,7 @@ import { readThemeSetsForRun } from '../services/themes.service.js'
 import { autoCloseEnabled, clockState } from '../services/clock.service.js'
 import { withinTolerance } from '../utils/scoring.js'
 import { blanksRevealed } from '../services/reveal.service.js'
+import { waitingSnapshot } from '../services/waiting.service.js'
 import { blankVerdicts } from 'shared'
 
 const nanoidDigits = customAlphabet('0123456789', 4)
@@ -332,6 +333,86 @@ router.post('/rebind', async (req: Request, res: Response, next: NextFunction) =
  * a lecture-hall projector, so netIDs must not be in the data at all — a rendering bug
  * should not be able to expose them.
  */
+// ─── Starting a session from the slide ────────────────────────────────────────
+
+/**
+ * Sessions the slide can offer to start, each with its sections so the professor picks one.
+ *
+ * `waiting` comes from students whose scans were refused (waiting.service.ts): their scan
+ * named the session and their enrollment named the section. Counts only, never who — this
+ * goes to the projector. `recent` is the fallback for before anyone has scanned.
+ */
+interface StartOption {
+  sessionId: string
+  title: string
+  className: string
+  /** Students waiting for it; 0 for a `recent` entry. */
+  waiting: number
+  /** Waiting students with no section on record. They are admitted by any section's run. */
+  unassigned: number
+  /** Every section of the class, busiest first. Empty when the class has no sections. */
+  sections: { id: string; name: string; waiting: number }[]
+}
+
+const startSessionSelect = {
+  id: true,
+  title: true,
+  class: { select: { name: true, sections: { select: { id: true, name: true }, orderBy: { name: 'asc' as const } } } },
+}
+
+function toStartOption(
+  s: { id: string; title: string; class: { name: string; sections: { id: string; name: string }[] } },
+  bySection: Map<string | null, number> = new Map(),
+): StartOption {
+  const sections = s.class.sections
+    .map((sec) => ({ id: sec.id, name: sec.name, waiting: bySection.get(sec.id) ?? 0 }))
+    .sort((a, b) => b.waiting - a.waiting)
+  const counted = sections.reduce((n, sec) => n + sec.waiting, 0)
+  const total = [...bySection.values()].reduce((n, c) => n + c, 0)
+  return {
+    sessionId: s.id,
+    title: s.title,
+    className: s.class.name,
+    waiting: total,
+    // Anyone not in one of the class's current sections, including a section deleted since.
+    unassigned: total - counted,
+    sections,
+  }
+}
+
+/** Students waiting for this professor's sessions, busiest first. */
+async function waitingOptions(viewer: Viewer): Promise<StartOption[]> {
+  const snapshot = waitingSnapshot()
+  if (snapshot.length === 0) return []
+  const sessions = await prisma.session.findMany({
+    where: { id: { in: snapshot.map((w) => w.sessionId) }, status: { not: 'ARCHIVED' }, ...ownedSession(viewer) },
+    select: startSessionSelect,
+  })
+  const byId = new Map(sessions.map((s) => [s.id, s]))
+  return snapshot.flatMap((w) => {
+    const s = byId.get(w.sessionId)
+    return s ? [toStartOption(s, w.bySection)] : []
+  })
+}
+
+/** The professor's most recently edited sessions that are not open, for a manual start. */
+async function recentOptions(viewer: Viewer, exclude: string[]): Promise<StartOption[]> {
+  const sessions = await prisma.session.findMany({
+    where: {
+      ...ownedSession(viewer),
+      id: { notIn: exclude },
+      status: { not: 'ARCHIVED' },
+      runs: { none: { status: 'OPEN' } },
+    },
+    orderBy: { updatedAt: 'desc' },
+    take: 5,
+    select: startSessionSelect,
+  })
+  return sessions.map((s) => toStartOption(s))
+}
+
+// ─── Live results for the slide ───────────────────────────────────────────────
+
 router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
@@ -349,7 +430,11 @@ router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
         section: { select: { name: true } },
       },
     })
-    if (!run) return res.json({ success: true, data: { session: null } })
+    if (!run) {
+      const waiting = await waitingOptions(professor)
+      const recent = await recentOptions(professor, waiting.map((w) => w.sessionId))
+      return res.json({ success: true, data: { session: null, waiting, recent } })
+    }
 
     const session = await prisma.session.findUnique({
       where: { id: run.sessionId },
@@ -408,7 +493,7 @@ router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
         },
       },
     })
-    if (!session) return res.json({ success: true, data: { session: null } })
+    if (!session) return res.json({ success: true, data: { session: null, waiting: [], recent: [] } })
 
     // Whichever question most recently received an answer is where the class is now.
     let activeQuestionId: string | null = null
@@ -547,6 +632,10 @@ router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
         },
         activeQuestionId,
         runId: run.id,
+        // Students waiting elsewhere while this is open: another section of this session
+        // (back-to-back sections, not switched over), or another session entirely (the
+        // wrong one opened). The slide offers to switch.
+        waiting: await waitingOptions(professor),
       },
     })
   } catch (err) {

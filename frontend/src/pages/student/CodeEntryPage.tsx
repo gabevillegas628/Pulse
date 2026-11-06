@@ -28,8 +28,11 @@ export default function CodeEntryPage() {
       const r = await api.get(`/questions/by-code/${code}`)
       navigate(`/q/${r.data.data.questionId}`)
     } catch (e: unknown) {
-      const status = (e as { response?: { status?: number } })?.response?.status
-      if (status === 409) setError('This session is not open')
+      const res = (e as { response?: { status?: number; data?: { code?: string; error?: string } } })?.response
+      const status = res?.status
+      // Not open yet: the code page waits and carries on by itself once it opens.
+      if (status === 409 && res?.data?.code === 'SESSION_NOT_OPEN') navigate(`/q/code/${code}`)
+      else if (status === 409) setError(res?.data?.error ?? 'This session is not open')
       else if (status === 404) setError('Code not found — check and try again')
       else setError('Something went wrong')
     } finally {

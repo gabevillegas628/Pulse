@@ -12,6 +12,7 @@ import { generateUniqueCode } from '../utils/codes.js'
 import { attachQuestionQrs } from '../utils/qr.js'
 import { p } from '../utils/params.js'
 import { clearRun } from '../services/clock.service.js'
+import { noteOpened } from '../services/waiting.service.js'
 
 const nanoidDigits = customAlphabet('0123456789', 4)
 
@@ -360,6 +361,7 @@ router.post('/sessions/:id/runs', requireProfessor, async (req: Request, res: Re
       status: run.status,
       sectionId: run.sectionId,
     })
+    noteOpened(session.id, run.sectionId)
 
     res.status(201).json({ success: true, data: { run } })
   } catch (err) {

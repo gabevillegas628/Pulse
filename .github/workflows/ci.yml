@@ -37,6 +37,10 @@ jobs:
       - name: Clock unit tests
         run: npm run test:clock
 
+      # The list behind the slide's "students are waiting — Start?" button. Pure, like the clock.
+      - name: Waiting list unit tests
+        run: npm run test:waiting --workspace=backend
+
       # Not yet wired: smoke-themes.ts and e2e-qr.ts. Both want a Postgres service
       # and a booted backend, and smoke-themes additionally spends real Anthropic
       # tokens, so it needs a decision about a CI key before it belongs here.

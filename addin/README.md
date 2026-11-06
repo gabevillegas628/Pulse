@@ -239,6 +239,17 @@ and for free text the response count and average length. Never netIDs, never any
 That is enforced in the API, not just the UI: `/api/addin/live` strips student identity from
 the payload entirely, so a rendering bug cannot expose it.
 
+**Forgot to start the session?** The object notices. When students scan a code before the
+session is open, their scan names the session and their enrollment names their section, so
+the slide shows "6 students are trying to join Lecture 12" with one button per section, and
+the section with students waiting highlighted. Tap the section you are teaching; nothing
+opens until you do. Students' phones keep waiting and carry on by themselves once it opens.
+The same check catches the wrong thing being open: if Section A is open while Section B's
+students are scanning, a small banner offers to switch (a second tap, since it closes A).
+With nobody waiting yet, **Start a session…** lists your recent sessions instead. It is
+worth keeping a copy of the object on your title slide so you see this before the first
+question. Counts only: the slide never learns who is waiting.
+
 **Limitations.**
 
 - **PowerPoint Live (Teams) does not host content add-ins.** Remote or hybrid sessions lose the
