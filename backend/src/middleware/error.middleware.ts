@@ -14,7 +14,9 @@ export class AppError extends Error {
      * client that branches on it breaks silently the first time someone edits
      * the wording. Only the refusals that change client behaviour carry one.
      */
-    public code?: string
+    public code?: string,
+    /** Extra fields a client needs to act on the refusal, sent alongside `code`. */
+    public details?: Record<string, unknown>
   ) {
     super(message)
     this.name = 'AppError'
@@ -46,6 +48,7 @@ export function errorMiddleware(
       success: false,
       error: err.message,
       ...(err.code ? { code: err.code } : {}),
+      ...(err.details ?? {}),
     })
     return
   }

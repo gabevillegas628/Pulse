@@ -63,9 +63,10 @@ router.get('/questions/by-code/:code', requireStudent, async (req: Request, res:
       const openRun = openRunFor(question.session.runs, enrollment)
       if (!openRun) {
         // Remembered so the slide can offer to start it — see waiting.service.ts. The code
-        // lets the student page tell this apart from the other 409s and keep retrying.
+        // lets the student page tell this apart from the other 409s and keep retrying, and
+        // the session id lets it listen for the session opening instead of only polling.
         noteWaiting(question.session.id, enrollment?.sectionId ?? null, student.id)
-        throw new AppError('This session is not open', 409, 'SESSION_NOT_OPEN')
+        throw new AppError('This session is not open', 409, 'SESSION_NOT_OPEN', { sessionId: question.session.id })
       }
       noteAdmitted(student.id)
       if (skippedHere(question, openRun)) throw new AppError(SKIPPED_MESSAGE, 409, 'QUESTION_SKIPPED')

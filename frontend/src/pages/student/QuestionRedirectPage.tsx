@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
-import { api } from '@/api/client'
+import { io, type Socket } from 'socket.io-client'
+import { api, getStudentToken } from '@/api/client'
 import { useStudentAuth } from '@/context/StudentAuthContext'
 import StudentLayout from '@/components/layout/StudentLayout'
 
-// While the session is not open yet, keep asking. The scan is also what tells the
-// professor's slide that students are waiting, so each retry keeps this student counted.
-// Spread out so a hall of phones does not ask in step.
-const RETRY_MS = 8000
+// While the session is not open yet, wait for the server to say it opened: the session's
+// room gets a run_status the moment the professor starts it, so the phone moves on within
+// about a second. The poll is the backup for a dropped connection, and each retry also keeps
+// this student counted on the professor's slide. Spread out so a hall does not ask in step.
+const RETRY_MS = 13000
 const RETRY_JITTER_MS = 4000
+// When the session opens every waiting phone retries at once, so spread that over a moment.
+const OPENED_JITTER_MS = 500
 // Matches how long the server remembers a waiting student.
 const GIVE_UP_MS = 10 * 60 * 1000
 
@@ -30,7 +34,26 @@ export default function QuestionRedirectPage() {
     if (!isAuthenticated || !code) return
     let cancelled = false
     let timer: number | undefined
+    let socket: Socket | null = null
     const startedAt = Date.now()
+
+    function retryIn(ms: number) {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(attempt, ms)
+    }
+
+    // Opened once, on the first refusal. Joining the room again on reconnect, because room
+    // membership does not survive a drop.
+    function listen(sessionId: string) {
+      if (socket) return
+      socket = io({ path: '/socket.io', auth: { token: getStudentToken() } })
+      socket.on('connect', () => socket?.emit('join_session', sessionId))
+      socket.on('run_status', ({ status }: { status: string }) => {
+        // Possibly another section's run, in which case the retry is refused and the wait
+        // goes on — the server decides, not this page.
+        if (status === 'OPEN') retryIn(Math.random() * OPENED_JITTER_MS)
+      })
+    }
 
     function attempt() {
       api
@@ -38,14 +61,18 @@ export default function QuestionRedirectPage() {
         .then((r) => { if (!cancelled) navigate(`/q/${r.data.data.questionId}`, { replace: true }) })
         .catch((e: unknown) => {
           if (cancelled) return
-          const res = (e as { response?: { status?: number; data?: { code?: string; error?: string } } })?.response
+          const res = (e as {
+            response?: { status?: number; data?: { code?: string; error?: string; sessionId?: string } }
+          })?.response
           if (res?.status === 409 && res.data?.code === 'SESSION_NOT_OPEN') {
             if (Date.now() - startedAt < GIVE_UP_MS) {
               setWaiting(true)
-              timer = window.setTimeout(attempt, RETRY_MS + Math.random() * RETRY_JITTER_MS)
+              if (res.data.sessionId) listen(res.data.sessionId)
+              retryIn(RETRY_MS + Math.random() * RETRY_JITTER_MS)
             } else {
               setWaiting(false)
               setError('This session is not open yet')
+              socket?.disconnect()
             }
           } else if (res?.status === 409) setError(res.data?.error ?? 'This session is not open yet')
           else if (res?.status === 404) setError('Question not found')
@@ -54,7 +81,7 @@ export default function QuestionRedirectPage() {
     }
 
     attempt()
-    return () => { cancelled = true; window.clearTimeout(timer) }
+    return () => { cancelled = true; window.clearTimeout(timer); socket?.disconnect() }
   }, [isAuthenticated, code, navigate])
 
   if (waiting && !error) {
