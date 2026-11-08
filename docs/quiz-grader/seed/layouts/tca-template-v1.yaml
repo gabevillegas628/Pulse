@@ -1,0 +1,35 @@
+layout: tca-template-v1
+page: { size: letter, source_pdf: samples/tca-quiz.pdf }
+markers: { dictionary: DICT_4X4_50, ids: [0, 1, 2, 3] }
+# Enzyme names are written in the numbered list at the bottom; cofactors at the numbered arrows.
+# in_end for each arrow must be set in the editor (arrows point different ways around the cycle).
+slots:
+  - { id: name, type: identity, ref: student.name, box: null }
+  - { id: netid, type: identity, ref: student.netid, box: null }
+  - { id: s1_enzyme, type: text, ref: step.1.enzyme, box: null }
+  - { id: s1_cofactors, type: cofactor_set, ref: step.1.cofactors, in_end: null, box: null }
+  - { id: s2_enzyme, type: text, ref: step.2.enzyme, box: null }
+  - { id: s2_cofactors, type: cofactor_set, ref: step.2.cofactors, in_end: null, box: null }
+  - { id: s3_enzyme, type: text, ref: step.3.enzyme, box: null }
+  - { id: s3_cofactors, type: cofactor_set, ref: step.3.cofactors, in_end: null, box: null }
+  - { id: s4_enzyme, type: text, ref: step.4.enzyme, box: null }
+  - { id: s4_cofactors, type: cofactor_set, ref: step.4.cofactors, in_end: null, box: null }
+  - { id: s5_enzyme, type: text, ref: step.5.enzyme, box: null }
+  - { id: s5_cofactors, type: cofactor_set, ref: step.5.cofactors, in_end: null, box: null }
+  - { id: s6_enzyme, type: text, ref: step.6.enzyme, box: null }
+  - { id: s6_cofactors, type: cofactor_set, ref: step.6.cofactors, in_end: null, box: null }
+  - { id: s7_enzyme, type: text, ref: step.7.enzyme, box: null }
+  - { id: s7_cofactors, type: cofactor_set, ref: step.7.cofactors, in_end: null, box: null }
+  - { id: s8_enzyme, type: text, ref: step.8.enzyme, box: null }
+  - { id: s8_cofactors, type: cofactor_set, ref: step.8.cofactors, in_end: null, box: null }
+  - { id: s9_enzyme, type: text, ref: step.9.enzyme, box: null }
+  - { id: s9_cofactors, type: cofactor_set, ref: step.9.cofactors, in_end: null, box: null }
+  - { id: int_oaa, type: structure, ref: intermediate.oaa, box: null }
+  - { id: int_citrate, type: structure, ref: intermediate.citrate, box: null }
+  - { id: int_cis_aconitate, type: structure, ref: intermediate.cis_aconitate, box: null }
+  - { id: int_isocitrate, type: structure, ref: intermediate.isocitrate, box: null }
+  - { id: int_akg, type: structure, ref: intermediate.akg, box: null }
+  - { id: int_succinyl_coa, type: structure, ref: intermediate.succinyl_coa, box: null }
+  - { id: int_succinate, type: structure, ref: intermediate.succinate, box: null }
+  - { id: int_fumarate, type: structure, ref: intermediate.fumarate, box: null }
+  - { id: int_malate, type: structure, ref: intermediate.malate, box: null }

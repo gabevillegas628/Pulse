@@ -1,0 +1,38 @@
+layout: glycolysis-template-v1
+page: { size: letter, source_pdf: samples/glycolysis-quiz-versions-ABC.pdf }
+markers: { dictionary: DICT_4X4_50, ids: [0, 1, 2, 3] }
+# Coordinates: fractions of page [x, y, w, h]. Measured by hand from the sample PDF for the
+# Phase 0 spike; the layout editor (Phase 2) replaces this. An enzyme blank and its cofactor
+# arrow sit on top of each other on this form, so the two slots share one box and the model
+# separates them (name on the line, cofactors at the arrow ends). Structure boxes overlap
+# the corners of step boxes where cofactors are written; the prompts say to ignore those.
+# Cofactor arrows on this form: the curve starts at the top (in) and the arrowhead is at the bottom (out).
+slots:
+  - { id: name, type: identity, ref: student.name, box: [0.120, 0.012, 0.430, 0.055] }
+  - { id: netid, type: identity, ref: student.netid, box: [0.690, 0.012, 0.290, 0.055] }
+  - { id: s1_enzyme, type: text, ref: step.1.enzyme, box: [0.200, 0.105, 0.280, 0.130] }
+  - { id: s1_cofactors, type: cofactor_set, ref: step.1.cofactors, in_end: top, box: [0.200, 0.105, 0.280, 0.130] }
+  - { id: s2_enzyme, type: text, ref: step.2.enzyme, box: [0.200, 0.284, 0.280, 0.130] }
+  - { id: s3_enzyme, type: text, ref: step.3.enzyme, box: [0.200, 0.463, 0.280, 0.130] }
+  - { id: s3_cofactors, type: cofactor_set, ref: step.3.cofactors, in_end: top, box: [0.200, 0.463, 0.280, 0.130] }
+  - { id: s4_enzyme, type: text, ref: step.4.enzyme, box: [0.200, 0.641, 0.280, 0.120] }
+  - { id: s5_enzyme, type: text, ref: step.5.enzyme, box: [0.120, 0.895, 0.220, 0.065] }
+  - { id: s6_enzyme, type: text, ref: step.6.enzyme, box: [0.655, 0.073, 0.335, 0.132] }
+  - { id: s6_cofactors, type: cofactor_set, ref: step.6.cofactors, in_end: top, box: [0.655, 0.073, 0.335, 0.132] }
+  - { id: s7_enzyme, type: text, ref: step.7.enzyme, box: [0.655, 0.253, 0.335, 0.130] }
+  - { id: s7_cofactors, type: cofactor_set, ref: step.7.cofactors, in_end: top, box: [0.655, 0.253, 0.335, 0.130] }
+  - { id: s8_enzyme, type: text, ref: step.8.enzyme, box: [0.655, 0.431, 0.335, 0.130] }
+  - { id: s9_enzyme, type: text, ref: step.9.enzyme, box: [0.655, 0.609, 0.335, 0.131] }
+  - { id: s9_cofactors, type: cofactor_set, ref: step.9.cofactors, in_end: top, box: [0.655, 0.609, 0.335, 0.131] }
+  - { id: s10_enzyme, type: text, ref: step.10.enzyme, box: [0.655, 0.787, 0.335, 0.131] }
+  - { id: s10_cofactors, type: cofactor_set, ref: step.10.cofactors, in_end: top, box: [0.655, 0.787, 0.335, 0.131] }
+  - { id: int_g6p, type: structure, ref: intermediate.g6p, box: [0.030, 0.205, 0.400, 0.109] }
+  - { id: int_f6p, type: structure, ref: intermediate.f6p, box: [0.030, 0.384, 0.400, 0.109] }
+  - { id: int_f16bp, type: structure, ref: intermediate.f16bp, box: [0.030, 0.563, 0.400, 0.108] }
+  - { id: int_dhap, type: structure, ref: intermediate.dhap, box: [0.000, 0.830, 0.190, 0.100] }
+  - { id: int_gap, type: structure, ref: intermediate.gap, box: [0.260, 0.790, 0.150, 0.090] }
+  - { id: int_bpg13, type: structure, ref: intermediate.bpg13, box: [0.495, 0.175, 0.300, 0.108] }
+  - { id: int_pg3, type: structure, ref: intermediate.pg3, box: [0.495, 0.353, 0.300, 0.108] }
+  - { id: int_pg2, type: structure, ref: intermediate.pg2, box: [0.495, 0.531, 0.300, 0.108] }
+  - { id: int_pep, type: structure, ref: intermediate.pep, box: [0.495, 0.710, 0.300, 0.107] }
+  - { id: int_pyruvate, type: structure, ref: intermediate.pyruvate, box: [0.495, 0.888, 0.450, 0.090] }

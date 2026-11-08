@@ -41,6 +41,11 @@ jobs:
       - name: Waiting list unit tests
         run: npm run test:waiting --workspace=backend
 
+      # Quiz grader scoring and seed content (docs/quiz-grader). Pure; the model half
+      # is measured by the Phase 0 spike, which needs an API key and real scans.
+      - name: Quiz grader unit tests
+        run: npm run test:quiz-grader --workspace=backend
+
       # Not yet wired: smoke-themes.ts and e2e-qr.ts. Both want a Postgres service
       # and a booted backend, and smoke-themes additionally spends real Anthropic
       # tokens, so it needs a decision about a CI key before it belongs here.

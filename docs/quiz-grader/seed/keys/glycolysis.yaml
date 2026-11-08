@@ -1,0 +1,181 @@
+# Pathway key: Glycolysis
+# Reusable biochemistry content. Quizzes point at these IDs; edit freely.
+#
+# Conventions
+#   enzyme.accept     canonical name first, then accepted aliases/abbreviations
+#                     (matching is case-, space-, and hyphen-insensitive; minor misspellings
+#                     are handled by fuzzy match, so don't list typos here)
+#   cofactors.in/out  each entry is a group; a group is satisfied if ANY listed form appears
+#   cofactors.optional  never required, never penalized
+#   structure.features  yes/no checks the vision model answers; points split across them
+#                       (weight defaults to 1). Write features so they're true for
+#                       Fischer, Haworth, or line-angle drawings alike.
+
+pathway: glycolysis
+title: Glycolysis
+
+intermediates:
+  glucose:
+    name: Glucose
+    accept: [glucose, D-glucose, Glc]
+    features:
+      - six carbons
+      - aldehyde at C1, or a six-membered pyranose ring
+      - no phosphate groups
+  g6p:
+    name: Glucose 6-phosphate
+    accept: [glucose 6-phosphate, glucose-6-phosphate, G6P, Glc-6-P]
+    features:
+      - six carbons
+      - aldose (aldehyde at C1, or six-membered pyranose ring)
+      - phosphate on C6
+      - only one phosphate
+  f6p:
+    name: Fructose 6-phosphate
+    accept: [fructose 6-phosphate, fructose-6-phosphate, F6P, Fru-6-P]
+    features:
+      - six carbons
+      - ketose (C=O at C2, or five-membered furanose ring)
+      - phosphate on C6
+      - only one phosphate
+  f16bp:
+    name: Fructose 1,6-bisphosphate
+    accept: ["fructose 1,6-bisphosphate", "fructose-1,6-bisphosphate", "F1,6BP", "F1,6-BP", FBP, "fructose 1,6-diphosphate"]
+    features:
+      - six carbons
+      - ketose (C=O at C2, or five-membered furanose ring)
+      - phosphate on C1
+      - phosphate on C6
+  dhap:
+    name: Dihydroxyacetone phosphate
+    accept: [dihydroxyacetone phosphate, DHAP]
+    features:
+      - three carbons
+      - ketone at C2
+      - phosphate on one terminal carbon
+      - hydroxyl on the other terminal carbon
+  gap:
+    name: Glyceraldehyde 3-phosphate
+    accept: [glyceraldehyde 3-phosphate, glyceraldehyde-3-phosphate, GAP, G3P, GA3P]
+    features:
+      - three carbons
+      - aldehyde at C1
+      - hydroxyl on C2
+      - phosphate on C3
+  bpg13:
+    name: 1,3-Bisphosphoglycerate
+    accept: ["1,3-bisphosphoglycerate", "1,3-BPG", "1,3BPG", "1,3-diphosphoglycerate"]
+    features:
+      - three carbons
+      - acyl phosphate at C1 (phosphate attached to the C=O carbon)
+      - hydroxyl on C2
+      - phosphate on C3
+  pg3:
+    name: 3-Phosphoglycerate
+    accept: [3-phosphoglycerate, 3PG, 3-PG, 3-phosphoglyceric acid]
+    features:
+      - three carbons
+      - carboxylate at C1
+      - hydroxyl on C2
+      - phosphate on C3
+  pg2:
+    name: 2-Phosphoglycerate
+    accept: [2-phosphoglycerate, 2PG, 2-PG, 2-phosphoglyceric acid]
+    features:
+      - three carbons
+      - carboxylate at C1
+      - phosphate on C2
+      - hydroxyl on C3
+  pep:
+    name: Phosphoenolpyruvate
+    accept: [phosphoenolpyruvate, PEP]
+    features:
+      - three carbons
+      - carboxylate at C1
+      - phosphate on C2
+      - C2=C3 double bond
+  pyruvate:
+    name: Pyruvate
+    accept: [pyruvate, pyruvic acid]
+    features:
+      - three carbons
+      - carboxylate at C1
+      - ketone at C2
+      - methyl group at C3
+      - no phosphate
+
+steps:
+  1:
+    from: [glucose]
+    to: [g6p]
+    enzyme:
+      accept: [hexokinase, HK, glucokinase]
+    cofactors:
+      in:  [[ATP]]
+      out: [[ADP]]
+      optional: [Mg2+, H+]
+  2:
+    from: [g6p]
+    to: [f6p]
+    enzyme:
+      accept: [phosphoglucose isomerase, PGI, phosphohexose isomerase, glucose-6-phosphate isomerase, GPI]
+  3:
+    from: [f6p]
+    to: [f16bp]
+    enzyme:
+      accept: [phosphofructokinase-1, PFK-1, PFK1, phosphofructokinase, PFK]
+    cofactors:
+      in:  [[ATP]]
+      out: [[ADP]]
+      optional: [Mg2+, H+]
+  4:
+    from: [f16bp]
+    to: [dhap, gap]
+    enzyme:
+      accept: [aldolase, fructose-bisphosphate aldolase, "fructose-1,6-bisphosphate aldolase"]
+  5:
+    from: [dhap]
+    to: [gap]
+    enzyme:
+      accept: [triose phosphate isomerase, TPI, TIM, triosephosphate isomerase]
+  6:
+    from: [gap]
+    to: [bpg13]
+    enzyme:
+      accept: [glyceraldehyde 3-phosphate dehydrogenase, GAPDH, G3PDH, GAPD]
+    cofactors:
+      in:  [[NAD+, NAD]]
+      out: [[NADH]]
+      optional: [Pi, H+]
+  7:
+    from: [bpg13]
+    to: [pg3]
+    enzyme:
+      accept: [phosphoglycerate kinase, PGK]
+    cofactors:
+      in:  [[ADP]]
+      out: [[ATP]]
+      optional: [Mg2+]
+  8:
+    from: [pg3]
+    to: [pg2]
+    enzyme:
+      accept: [phosphoglycerate mutase, PGM, PGAM]
+  9:
+    from: [pg2]
+    to: [pep]
+    enzyme:
+      accept: [enolase]
+    cofactors:
+      in:  []
+      out: [[H2O, water]]
+      optional: [Mg2+]
+  10:
+    from: [pep]
+    to: [pyruvate]
+    enzyme:
+      accept: [pyruvate kinase, PK]
+    cofactors:
+      in:  [[ADP]]
+      out: [[ATP]]
+      optional: [Mg2+, K+, H+]

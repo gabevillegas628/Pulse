@@ -1,0 +1,24 @@
+# Assessment: CAC/TCA quiz
+# Enzyme names are written in the numbered list at the bottom of the page;
+# the layout maps each numbered blank to its step. Structures are off until you
+# decide which (if any) to grade — add a versions block like the glycolysis quiz.
+
+assessment: tca-quiz
+key: tca
+layout: tca-template-v1
+
+defaults:
+  points:
+    enzyme: 1
+    cofactors: 1
+    structure: 2
+  structure_review: always
+  text_review: low_confidence
+
+grade:
+  enzymes: all
+  cofactors: all
+
+versions:
+  A:
+    structures: []
