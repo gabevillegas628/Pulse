@@ -18,4 +18,7 @@ work phase by phase from `docs/quiz-grader/PLAN.md`, stopping at phase boundarie
   overridable, and overrides are logged.
 - **Review by item, not by student.** Group identical normalised answers so one decision
   applies to many papers.
+- **Names and NetIDs never reach the model.** Only single answer-blank crops are sent;
+  identity is matched by a person (or a QR sheet). Guards in `reader.ts` and
+  `slotsForVersion` enforce this; keep them.
 - **Student work stays out of git.** Scans and crops are FERPA material.

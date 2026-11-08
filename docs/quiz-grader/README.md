@@ -28,7 +28,7 @@ It has not yet been run on real handwriting, which is the point of Phase 0.
 
 What it does per page: resample to letter at 200 dpi, crop every slot box from
 `seed/layouts/glycolysis-template-v1.yaml`, skip slots with no more ink than the blank
-form, send the remaining text crops to `MODEL_TEXT` (default `claude-haiku-5-5`) and the
+form, send the remaining answer crops (never the name or NetID; see below) as text crops to `MODEL_TEXT` (default `claude-haiku-5-5`) and the
 structure crops to `MODEL_STRUCTURE` (default `claude-sonnet-5-5`), one request each per
 page, then score in code.
 
@@ -36,7 +36,6 @@ page, then score in code.
    pages per PDF; each page is one quiz) or page images. Put them in one folder.
    Phone photos only work after a scanner app has flattened and cropped them to the page
    edge (Notes, Drive, Adobe Scan). Real alignment is Phase 3.
-   *Until the FERPA question below is settled, use mock-filled quizzes.*
 2. **Dry run.** No API calls. It checks the boxes and writes a grades template:
    ```bash
    cd backend
@@ -62,6 +61,18 @@ page, then score in code.
 **Decision Phase 0 feeds:** are structures auto-scored with review, or review-only?
 (Question 6 below.)
 
+## Names and NetIDs never go to the model
+
+The handoff's step 6 had the model read each paper's name and NetID. Pulse doesn't do
+that. The name and NetID boxes are cropped and saved locally (`pages/<page>/name.png`,
+`netid.png`), and a person matches papers to students: you in the spike, and the review
+screen later, or a per-student QR sheet (open question 9). Every crop the model sees is a
+single answer blank with nothing that identifies the student.
+
+Two guards keep it that way: `readTextRegions` throws if handed a name or NetID slot, and
+`slotsForVersion` refuses a layout whose answer box overlaps the name or NetID box, since
+that crop would carry the name along. Both are tested.
+
 ## Changes from the handoff
 
 - **Seed YAML bug fixed.** Names containing a comma (`1,3-bisphosphoglycerate`,
@@ -81,9 +92,8 @@ page, then score in code.
 ## Open questions (from `OPEN_QUESTIONS.md`)
 
 1. ~~Host project~~: Pulse.
-2. **FERPA**: is sending photos of student work (with names and NetIDs) to the
-   Anthropic API covered? Pulse already sends typed answers for AI themes; check whether
-   that approval extends to images. Until then, mock-filled quizzes only.
+2. ~~FERPA~~: names and NetIDs are never sent (above); the model sees anonymous answer
+   crops, in line with the typed answers grading and themes already send.
 3. Image retention after export.
 4. ~~Roster source~~: Pulse's own roster (`Student.netId`) is the likely answer.
 5. Real point values and partial-credit rules (seed values are placeholders).

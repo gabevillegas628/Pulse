@@ -20,7 +20,8 @@ import {
 export interface SlotResult {
   slotId: string
   kind: GradedSlot['ref']['kind']
-  status: 'blank' | 'read' | 'illegible' | 'error'
+  /** not_sent: a name or NetID slot, which stays on this machine and is matched by a person. */
+  status: 'blank' | 'read' | 'illegible' | 'error' | 'not_sent'
   transcription?: string
   match?: TextMatch
   cofactors?: TextRead['cofactors']
@@ -62,6 +63,7 @@ export function gradePage(
       reviewReasons: reasons,
     })
 
+    if (g.ref.kind === 'identity') return finish({ status: 'not_sent', confidence: 1, pointsAuto: 0 }, [])
     if (blank.has(g.slot.id)) return finish({ status: 'blank', confidence: 1, pointsAuto: 0 }, [])
 
     if (g.ref.kind === 'structure') {
@@ -88,10 +90,6 @@ export function gradePage(
     if (read.status !== 'read') {
       const reasons = read.status === 'illegible' ? reviewReasons(g.review, { confidence: 0, illegible: true }, confT) : []
       return finish({ status: read.status, transcription: read.transcription, confidence: read.confidence, pointsAuto: 0 }, reasons)
-    }
-
-    if (g.ref.kind === 'identity') {
-      return finish({ status: 'read', transcription: read.transcription, confidence: read.confidence, pointsAuto: 0 }, [])
     }
 
     if (g.ref.kind === 'enzyme') {

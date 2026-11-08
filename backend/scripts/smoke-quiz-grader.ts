@@ -13,7 +13,8 @@ import {
   type CofactorSpec,
 } from '../src/quizGrader/content.js'
 import { gradePage } from '../src/quizGrader/grade.js'
-import type { StructureRead, TextRead } from '../src/quizGrader/reader.js'
+import { readTextRegions, type StructureRead, type TextRead } from '../src/quizGrader/reader.js'
+import type Anthropic from '@anthropic-ai/sdk'
 import { matchText, normalize, scoreCofactors, scoreStructure } from '../src/quizGrader/scoring.js'
 
 let passed = 0
@@ -132,8 +133,31 @@ check('structure: weights count', scoreStructure({ name: 'x', accept: [], featur
   check('page: blank scores 0 without review', by.get('s4_enzyme')!.status === 'blank' && !by.get('s4_enzyme')!.needsReview)
   check('page: structures always reviewed, scored by features', by.get('int_pep')!.pointsAuto === 1 && by.get('int_pep')!.needsReview)
   check('page: a slot the model skipped is an error for review', by.get('s5_enzyme')!.status === 'error' && by.get('s5_enzyme')!.needsReview)
-  check('page: identity slots carry no points', by.get('name')!.maxPoints === 0)
+  check('page: names are never read, carry no points, need no review',
+    by.get('name')!.status === 'not_sent' && by.get('name')!.maxPoints === 0 && !by.get('name')!.needsReview)
 }
+
+// ── Names and NetIDs never reach the model ─────────────────────────────────────
+
+await (async () => {
+  const slots = slotsForVersion(glyQuiz, glyLayout, gly, 'A')
+  let called = false
+  const client = { messages: { parse: async () => { called = true; throw new Error('should not be called') } } } as unknown as Anthropic
+  const name = slots.find((g) => g.ref.kind === 'identity')!
+  const s1 = slots.find((g) => g.slot.id === 's1_enzyme')!
+  let refused = false
+  try {
+    await readTextRegions(client, gly, [{ id: 'r', png: Buffer.from(''), slots: [s1, name] }])
+  } catch (e) {
+    refused = e instanceof Error && e.message.includes('names and NetIDs stay local')
+  }
+  check('the reader refuses a name slot before any API call', refused && !called)
+})()
+
+check('an answer box overlapping the name box is refused', (() => {
+  const bad = { ...glyLayout, slots: glyLayout.slots.map((s) => (s.id === 's1_enzyme' ? { ...s, box: [0.2, 0.03, 0.3, 0.1] as [number, number, number, number] } : s)) }
+  try { slotsForVersion(glyQuiz, bad, gly, 'A'); return false } catch (e) { return e instanceof Error && e.message.includes('overlaps name') }
+})())
 
 console.log(`\n  ${passed} passed, ${failed} failed`)
 process.exit(failed === 0 ? 0 : 1)

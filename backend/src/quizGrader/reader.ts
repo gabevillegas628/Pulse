@@ -2,6 +2,11 @@
  * The vision model's half of grading: it transcribes handwriting and answers yes/no
  * feature questions about drawings. It is never asked whether an answer is correct.
  *
+ * Name and NetID crops are never sent. Every crop that reaches the model is one blank
+ * cut from the page, so the model sees answers, not who wrote them. readTextRegions
+ * refuses identity slots outright, and slotsForVersion refuses layouts whose answer
+ * boxes overlap a name or NetID box.
+ *
  * One request per page per model: every text-like region of a page goes to the text
  * model together, every structure to the structure model. Regions are sent once even
  * when several slots share a box (an enzyme blank and its cofactor arrow, on the
@@ -44,7 +49,7 @@ const textReadSchema = z.object({
     z.object({
       slot_id: z.string(),
       status: z.enum(['blank', 'read', 'illegible']),
-      /** Verbatim handwriting, for enzyme and identity slots. Empty for cofactor slots. */
+      /** Verbatim handwriting, for enzyme slots. Empty for cofactor slots. */
       transcription: z.string(),
       /** Every item written at the arrow, for cofactor slots. Empty otherwise. */
       cofactors: z.array(z.object({ text: z.string(), side: z.enum(['in', 'out', 'unclear']) })),
@@ -81,8 +86,6 @@ const SIDE_TEXT: Record<string, string> = {
 function describeTextSlot(key: PathwayKey, g: GradedSlot): string {
   const { ref, slot } = g
   switch (ref.kind) {
-    case 'identity':
-      return `${slot.id}: the student's ${ref.field === 'netid' ? 'NetID (a short university login, letters then digits, e.g. "abc123")' : ref.field}, handwritten after the printed label.`
     case 'enzyme':
       return `${slot.id}: the enzyme name for step ${ref.stepNo} (${nameOf(key, ref.step.from)} → ${nameOf(key, ref.step.to)}), handwritten on the horizontal line. The expected answer is "${ref.step.enzyme.accept[0]}" (also accepted: ${ref.step.enzyme.accept.slice(1).join(', ') || 'none'}). Use this ONLY to help decipher messy letters.`
     case 'cofactors':
@@ -172,6 +175,10 @@ export async function readTextRegions(
 ): Promise<{ reads: Map<string, TextRead>; usage: Usage }> {
   const model = opts.model ?? DEFAULT_MODEL_TEXT
   const slots = regions.flatMap((r) => r.slots)
+  const identity = slots.filter((s) => s.ref.kind === 'identity').map((s) => s.slot.id)
+  if (identity.length) {
+    throw new Error(`Refusing to send ${identity.join(', ')} to the model: names and NetIDs stay local`)
+  }
   const prompt = `${TEXT_RULES}\n\nSlots:\n${slots.map((s) => `- ${describeTextSlot(key, s)}`).join('\n')}`
   const { parsed, usage } = await cachedParse(client, opts.cache, model, 'low', prompt, regions, textReadSchema)
   return { reads: new Map(parsed.slots.map((s) => [s.slot_id, s])), usage }

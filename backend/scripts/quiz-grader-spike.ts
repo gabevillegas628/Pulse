@@ -5,6 +5,9 @@
  * scores the reads in code against the pathway key, and — given the instructor's hand
  * grades — reports how often the two agree, what it cost, and how long it took.
  *
+ * Name and NetID crops are saved locally for you to match papers to students but are
+ * never sent to the model; only the answer crops are.
+ *
  * No database, no server. Inputs are copier scans: PDFs (one quiz per page) or page
  * images. Phone photos only work if a scanner app has already flattened and cropped
  * them to the page edge; marker-based alignment is Phase 3.
@@ -294,7 +297,7 @@ async function main() {
       .map((r) => ({ id: r.slots[0]!.slot.id, png: r.png, slots: r.slots.filter((s) => !blank.has(s.slot.id)) }))
       .filter((r) => r.slots.length)
     const textRegions = regions
-      .map((r) => ({ ...r, slots: r.slots.filter((s) => s.ref.kind !== 'structure') }))
+      .map((r) => ({ ...r, slots: r.slots.filter((s) => s.ref.kind === 'enzyme' || s.ref.kind === 'cofactors') }))
       .filter((r) => r.slots.length)
     const structRegions = regions
       .map((r) => ({ ...r, slots: r.slots.filter((s) => s.ref.kind === 'structure') }))
@@ -325,14 +328,13 @@ async function main() {
     return
   }
 
-  // results.csv — one row per paper, like the eventual export.
-  const header = ['page', 'name', 'netid', 'total', 'to_review', ...scored.map((g) => g.slot.id)]
+  // results.csv — one row per paper. No names: those were never read. Each paper's
+  // name and NetID crops are in pages/<page>/ for matching by hand.
+  const header = ['page', 'total', 'to_review', ...scored.map((g) => g.slot.id)]
   const rows = outcomes.map((o) => {
     const by = new Map(o.results.map((r) => [r.slotId, r]))
     return [
       o.id,
-      by.get('name')?.transcription,
-      by.get('netid')?.transcription,
       o.results.reduce((a, r) => a + r.pointsAuto, 0),
       o.results.filter((r) => r.needsReview).length,
       ...scored.map((g) => by.get(g.slot.id)?.pointsAuto),

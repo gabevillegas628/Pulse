@@ -147,15 +147,19 @@ const selects = (sel: 'all' | number[], stepNo: string) => sel === 'all' || sel.
 export interface GradedSlot {
   slot: LayoutSlot
   ref: ResolvedRef
-  /** 0 for identity slots, which are read but never scored. */
+  /** 0 for identity slots, which are cropped for a person to match but never sent to the model or scored. */
   maxPoints: number
   review: ReviewPolicy
 }
 
+const overlaps = (a: Box, b: Box) => a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3]
+
 /**
- * The slots a version reads, in layout order. Identity slots are always read; a
- * structure is read only when this version grades it. Throws on a version the
- * assessment does not define, or a graded slot with no box drawn yet.
+ * The slots a version uses, in layout order. Identity slots are always included (they
+ * are cropped for a person, never sent to the model); a structure is included only when
+ * this version grades it. Throws on a version the assessment does not define, a graded
+ * slot with no box drawn yet, or an answer box that overlaps a name or NetID box — a
+ * crop of that answer would carry the student's name to the model with it.
  */
 export function slotsForVersion(
   assessment: Assessment,
@@ -186,6 +190,13 @@ export function slotsForVersion(
     if (!graded) continue
     if (!slot.box) throw new Error(`Slot ${slot.id} is graded but has no box in ${layout.layout}`)
     out.push(graded)
+  }
+
+  const identity = out.filter((g) => g.ref.kind === 'identity')
+  for (const g of out) {
+    if (g.ref.kind === 'identity') continue
+    const hit = identity.find((i) => overlaps(i.slot.box!, g.slot.box!))
+    if (hit) throw new Error(`Slot ${g.slot.id} overlaps ${hit.slot.id} in ${layout.layout}; its crop would include the student's ${hit.slot.id}`)
   }
   return out
 }

@@ -39,7 +39,8 @@ Two ingestion paths, same pipeline afterward:
 4. **Blank detection** (pixel ink density vs. the blank template's crop) — blank slots
    score 0 without a model call.
 5. **Read** non-blank slots with the vision model (see Grading engine).
-6. **Identify student:** read name + netid, fuzzy-match against the uploaded course roster.
+6. **Identify student:** ~~read name + netid with the model~~ — changed in Pulse: name and
+   NetID crops are never sent to the model; a person matches them (see README.md).
    Low-confidence matches go to review.
 7. **Score** deterministically. Store the per-slot result record (`SCHEMA.md`).
 
