@@ -1,3 +1,18 @@
+/**
+ * VISION_URL as a full base URL. Railway's `${{vision.RAILWAY_PRIVATE_DOMAIN}}` is a bare
+ * hostname (vision.railway.internal), so a missing scheme becomes http:// (private
+ * network traffic is plain HTTP) and a missing port becomes 8000, where the service listens
+ * when its PORT variable is 8000 (vision/README.md).
+ */
+export function visionBaseUrl(raw: string): string {
+  let v = raw.trim().replace(/\/+$/, '')
+  if (!v) return ''
+  if (!/^https?:\/\//i.test(v)) v = `http://${v}`
+  const u = new URL(v)
+  if (!u.port && u.protocol === 'http:') u.port = '8000'
+  return u.toString().replace(/\/+$/, '')
+}
+
 export const config = {
   port: parseInt(process.env.PORT ?? '3001', 10),
   nodeEnv: process.env.NODE_ENV ?? 'development',
@@ -25,4 +40,8 @@ export const config = {
   // an unlocked inbox is not a standing key to the account.
   passwordResetTtlMinutes: parseInt(process.env.PASSWORD_RESET_TTL_MINUTES ?? '60', 10),
   uploadDir: process.env.UPLOAD_DIR ?? './uploads',
+  // The quiz grader's vision service (vision/README.md). Scans are refused, with a
+  // message, until both are set.
+  visionUrl: visionBaseUrl(process.env.VISION_URL ?? ''),
+  visionToken: process.env.VISION_TOKEN ?? '',
 }

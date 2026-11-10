@@ -23,6 +23,8 @@ model Professor {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   classes       Class[]
+  quizContent   QuizContent[]
+  quizBatches   QuizBatch[]
 }
 
 model Student {
@@ -410,4 +412,223 @@ model ResponseTheme {
   assignedAt DateTime      @default(now())
 
   @@index([categoryId])
+}
+
+// ─── Quiz grader (docs/quiz-grader) ───────────────────────────────────────────
+
+enum QuizContentKind {
+  KEY        // a pathway's answers: enzymes, cofactors, intermediates and their features
+  LAYOUT     // where each blank sits on one printed form
+  ASSESSMENT // which blanks a quiz grades, for how many points, in which versions
+}
+
+// One answer key, layout or assessment, kept as the YAML a professor imports and
+// exports. The source text is the record, not a parse of it: it carries comments and
+// hand formatting, and the app edits it by splicing only the changed text
+// (src/quizGrader/yamlPatch.ts), so an exported file diffs cleanly against the one
+// that was imported. Parsing and validating happen on every read.
+//
+// Owned by a professor rather than a class: a glycolysis key outlives a semester and
+// serves every section that gives the quiz. Assessments name their key and layout by
+// slug, as the YAML does, resolved within the same professor's content.
+model QuizContent {
+  id          String          @id @default(cuid())
+  professorId String
+  // Restrict, like Class: no path in the app deletes a professor.
+  professor   Professor       @relation(fields: [professorId], references: [id], onDelete: Restrict)
+  kind        QuizContentKind
+  // The YAML's own name for itself: `pathway:` for a key, `layout:`, `assessment:`.
+  slug        String
+  source      String
+  // Layouts only: the blank form, as a PDF, one page per version. What the box editor
+  // draws on and what printing stamps corner markers onto. Small (a quiz page is tens of
+  // kilobytes), so it lives in the row rather than on the upload volume.
+  pdf         Bytes?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@unique([professorId, kind, slug])
+  batches     QuizBatch[]
+  decisions   QuizGroupDecision[]
+}
+
+// One upload of scanned quizzes for an assessment: a PDF from the copier, or a photo.
+// The page images are student work (names, NetIDs, handwriting). They live under a
+// dot-directory of the upload volume that is never served statically, and only the
+// owning professor's authenticated requests read them.
+model QuizBatch {
+  id           String          @id @default(cuid())
+  professorId  String
+  professor    Professor       @relation(fields: [professorId], references: [id], onDelete: Restrict)
+  // Restrict: an assessment with scans cannot be deleted until its scans are.
+  assessmentId String
+  assessment   QuizContent     @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
+  fileName     String
+  // The upload as the vision service holds it, until every page has been fetched.
+  visionDocId  String?
+  pageCount    Int
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  pages        QuizPage[]
+
+  @@index([assessmentId])
+}
+
+enum QuizPageStatus {
+  PENDING       // waiting for the worker
+  PROCESSING    // claimed; claimedAt says since when
+  DONE          // aligned, version known, boxes cropped
+  NEEDS_VERSION // aligned, but the version could not be told; a person picks it
+  FAILED        // gave up after retries; `error` says why
+}
+
+model QuizPage {
+  id            String         @id @default(cuid())
+  batchId       String
+  batch         QuizBatch      @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  // 0-based position in the upload.
+  index         Int
+  status        QuizPageStatus @default(PENDING)
+  attempts      Int            @default(0)
+  claimedAt     DateTime?
+  // Set by the professor when detection could not tell, or got it wrong.
+  versionForced String?
+  version       String?
+  // How the page was lined up ("markers", "lines", "paper edges") and how well the
+  // form's printed lines matched afterwards (0-1).
+  method        String?
+  markers       Int?
+  match         Float?
+  // Each version's fit from detection, e.g. {"A": 0.99, "B": 0.42}.
+  fits          Json?
+  // Per box: [{ id, ink, blank }]. Crops are files beside the page image.
+  slots         Json?
+  error         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  // ── Grading (after the page is DONE) ──
+  gradeStatus    QuizGradeStatus @default(NONE)
+  gradeClaimedAt DateTime?
+  gradeAttempts  Int             @default(0)
+  gradeError     String?
+  gradedAt       DateTime?
+  // What the model said, kept so the page can be re-scored against an edited key
+  // without asking again: { text: { [slotId]: TextRead }, structure: { [slotId]: StructureRead } }.
+  reads          Json?
+  // Tokens per model call, for cost: [{ model, input_tokens, output_tokens, cached }].
+  usage          Json?
+  pointsAuto     Float?
+  maxPoints      Float?
+  toReview       Int?
+  results        QuizSlotResult[]
+  overrides      QuizOverride[]
+
+  @@unique([batchId, index])
+  @@index([status])
+  @@index([gradeStatus])
+}
+
+enum QuizGradeStatus {
+  NONE     // not graded (not DONE yet, or grading not set up)
+  PENDING  // waiting for the grader
+  GRADING  // claimed; gradeClaimedAt says since when
+  GRADED
+  FAILED   // gave up after retries; gradeError says why
+}
+
+// One answer box on one paper, scored. Recomputed from QuizPage.reads whenever the key
+// changes; the model is not asked again.
+model QuizSlotResult {
+  id            String   @id @default(cuid())
+  pageId        String
+  page          QuizPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  slotId        String
+  kind          String   // enzyme | cofactors | structure
+  status        String   // blank | read | illegible | error
+  blankBy       String?  // ink | model
+  transcription String?
+  // What identical answers share, for reviewing by item: the normalised name, or the
+  // sorted cofactors with their sides. Null for structures.
+  groupKey      String?
+  // The rest of the scoring detail (match, cofactors, features, description).
+  detail        Json
+  confidence    Float
+  pointsAuto    Float
+  maxPoints     Float
+  needsReview   Boolean
+  reviewReasons Json
+  createdAt     DateTime @default(now())
+
+  @@unique([pageId, slotId])
+  @@index([slotId, groupKey])
+}
+
+// Model reads by (model, prompt version, prompt, images), so re-running a page never
+// pays twice. Holds transcriptions of student answers (never names), like the reads above.
+model QuizReadCache {
+  key       String   @id
+  value     Json
+  createdAt DateTime @default(now())
+}
+
+// ─── Review (Phase 5) ─────────────────────────────────────────────────────────
+//
+// A box's score is, in order: the professor's decision for that one paper
+// (QuizOverride), else their decision for everyone who wrote the same thing
+// (QuizGroupDecision), else the automatic score (QuizSlotResult.pointsAuto). Decisions
+// live apart from results, so re-scoring after a key edit never erases them.
+
+// "Everyone who wrote this, in this box, gets these points." Applies to papers uploaded
+// later with the same answer too.
+model QuizGroupDecision {
+  id           String      @id @default(cuid())
+  assessmentId String
+  assessment   QuizContent @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  slotId       String
+  // QuizSlotResult.groupKey: the normalised answer.
+  groupKey     String
+  points       Float
+  decidedById  String
+  decidedAt    DateTime    @default(now())
+
+  @@unique([assessmentId, slotId, groupKey])
+}
+
+// One paper's box, decided by hand: a regrade, a structure judged feature by feature, or
+// an exception to its group.
+model QuizOverride {
+  id          String   @id @default(cuid())
+  pageId      String
+  page        QuizPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  slotId      String
+  points      Float
+  // Structures: the professor's feature answers, in the key's order.
+  features    Json?
+  note        String?
+  decidedById String
+  decidedAt   DateTime @default(now())
+
+  @@unique([pageId, slotId])
+}
+
+// Every review decision, appended and never edited: who, when, which box or group, and
+// the score before and after. No foreign keys, so the record outlives what it describes.
+model QuizDecisionLog {
+  id           String   @id @default(cuid())
+  assessmentId String
+  professorId  String
+  // "group" | "paper" | "alias" (an answer added to the key from review)
+  scope        String
+  slotId       String
+  groupKey     String?
+  pageId       String?
+  // Points before and after; null after = the decision was withdrawn.
+  fromPoints   Float?
+  toPoints     Float?
+  papers       Int?
+  detail       Json?
+  createdAt    DateTime @default(now())
+
+  @@index([assessmentId, createdAt])
 }

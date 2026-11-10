@@ -39,3 +39,7 @@ backend/loadtest-results/
 .VSCodeCounter/
 backend/scripts/clone-prod-to-dev.ps1
 backend/scripts/theme-batch-forensics.ts
+
+# Quiz grader spike output: crops of real student papers, names and NetIDs on them.
+# Student work; never in git.
+quiz-spike-out/

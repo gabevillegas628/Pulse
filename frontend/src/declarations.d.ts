@@ -6,3 +6,9 @@ declare module 'smiles-drawer' {
   }
   export default SmilesDrawerNS
 }
+
+// Vite's `?url` imports: the asset's public URL (used for the pdf.js worker).
+declare module '*?url' {
+  const url: string
+  export default url
+}

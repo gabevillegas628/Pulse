@@ -1,0 +1,34 @@
+# Assessment: Glycolysis pathway quiz (3 versions)
+# Every version grades all enzymes and cofactors; versions differ only in which
+# intermediate structures are graded (the starred positions on the printout).
+# Points and credit rules confirmed by the instructor after the Phase 0 run.
+
+assessment: glycolysis-quiz
+key: glycolysis
+layout: glycolysis-template-v1   # slot boxes get defined in the layout editor
+
+defaults:
+  points:
+    enzyme: 1
+    name: 1          # an intermediate's name, where the layout has a box for it
+    cofactors: 1
+    structure: 1
+  # All or nothing: every required cofactor on the right side, every structure feature.
+  partial_credit:
+    cofactors: false
+    structure: false
+  structure_review: always   # always | low_confidence | never
+  text_review: low_confidence
+
+grade:
+  enzymes: all
+  cofactors: all
+  names: all         # or a list of intermediate ids, e.g. [g6p, f6p]
+
+versions:
+  A:
+    structures: [bpg13, pg2, pep]
+  B:
+    structures: [bpg13, pg3, f16bp]
+  C:
+    structures: [f6p, pg2, pyruvate]

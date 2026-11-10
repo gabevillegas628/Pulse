@@ -7,6 +7,8 @@ import { initIo } from './socket.js'
 import { logger } from './utils/logger.js'
 import { installProcessHandlers } from './utils/reporting.js'
 import { startScheduler } from './scheduler.js'
+import { startQuizWorker } from './quizGrader/scans.js'
+import { startQuizGradeWorker } from './quizGrader/grading.js'
 import { warmFromDb, startClockSweep } from './services/clock.service.js'
 import { prisma } from './db/index.js'
 
@@ -22,6 +24,8 @@ const io = new Server(httpServer, {
 
 initIo(io)
 startScheduler()
+startQuizWorker()
+startQuizGradeWorker()
 startClockSweep()
 // Rebuilt from Response.submittedAt, so a restart mid-lecture does not silently
 // un-time every question. Not awaited: the server must boot either way.

@@ -1,0 +1,155 @@
+# Pathway key: Citric acid cycle (TCA / Krebs)
+# Same conventions as glycolysis.yaml.
+#
+# NOTE: numbered to match the CAC quiz's 9 positions, with aconitase split into
+# two steps (2: dehydration to cis-aconitate, 3: hydration to isocitrate).
+# If your numbering differs, renumber here; quizzes reference step numbers.
+
+pathway: tca
+title: Citric acid cycle
+
+intermediates:
+  oaa:
+    name: Oxaloacetate
+    accept: [oxaloacetate, OAA, oxaloacetic acid]
+    features:
+      - four carbons
+      - two carboxylates (C1 and C4)
+      - ketone at C2
+  citrate:
+    name: Citrate
+    accept: [citrate, citric acid]
+    features:
+      - six carbons
+      - three carboxylates
+      - hydroxyl on the central carbon (C3), which also carries a carboxylate
+  cis_aconitate:
+    name: cis-Aconitate
+    accept: [cis-aconitate, aconitate]
+    features:
+      - six carbons
+      - three carboxylates
+      - C=C double bond between C2 and C3
+      - no hydroxyl
+  isocitrate:
+    name: Isocitrate
+    accept: [isocitrate, isocitric acid]
+    features:
+      - six carbons
+      - three carboxylates
+      - hydroxyl on C2 (secondary alcohol, adjacent to the central carbon)
+  akg:
+    name: alpha-Ketoglutarate
+    accept: [alpha-ketoglutarate, α-ketoglutarate, a-ketoglutarate, AKG, α-KG, 2-oxoglutarate]
+    features:
+      - five carbons
+      - two carboxylates
+      - ketone on the carbon adjacent to a carboxylate (C2)
+  succinyl_coa:
+    name: Succinyl-CoA
+    accept: [succinyl-CoA, succinyl CoA]
+    features:
+      - four-carbon chain
+      - one free carboxylate
+      - thioester to CoA at the other end (C(=O)-S-CoA)
+  succinate:
+    name: Succinate
+    accept: [succinate, succinic acid]
+    features:
+      - four carbons
+      - two carboxylates
+      - fully saturated (no C=C, no OH, no C=O other than carboxylates)
+  fumarate:
+    name: Fumarate
+    accept: [fumarate, fumaric acid]
+    features:
+      - four carbons
+      - two carboxylates
+      - C2=C3 double bond
+      - trans geometry (carboxylates on opposite sides)
+    feature_weights: [1, 1, 1, 0.5]   # example: soften the trans check; edit or delete
+  malate:
+    name: Malate
+    accept: [malate, L-malate, malic acid]
+    features:
+      - four carbons
+      - two carboxylates
+      - hydroxyl on C2
+
+steps:
+  1:
+    from: [oaa]
+    to: [citrate]
+    enzyme:
+      accept: [citrate synthase, CS]
+    cofactors:
+      in:  [[acetyl-CoA, acetyl CoA], [H2O, water]]
+      out: [[CoA, CoA-SH, HS-CoA, CoASH]]
+      optional: [H+]
+  2:
+    from: [citrate]
+    to: [cis_aconitate]
+    enzyme:
+      accept: [aconitase, aconitate hydratase]
+    cofactors:
+      in:  []
+      out: [[H2O, water]]
+  3:
+    from: [cis_aconitate]
+    to: [isocitrate]
+    enzyme:
+      accept: [aconitase, aconitate hydratase]
+    cofactors:
+      in:  [[H2O, water]]
+      out: []
+  4:
+    from: [isocitrate]
+    to: [akg]
+    enzyme:
+      accept: [isocitrate dehydrogenase, IDH, ICDH]
+    cofactors:
+      in:  [[NAD+, NAD]]
+      out: [[NADH], [CO2]]
+      optional: [H+, Mg2+, Mn2+]
+  5:
+    from: [akg]
+    to: [succinyl_coa]
+    enzyme:
+      accept: [alpha-ketoglutarate dehydrogenase, α-ketoglutarate dehydrogenase, α-KGDH, AKGDH, KGDH, 2-oxoglutarate dehydrogenase, alpha-ketoglutarate dehydrogenase complex]
+    cofactors:
+      in:  [[NAD+, NAD], [CoA, CoA-SH, HS-CoA, CoASH]]
+      out: [[NADH], [CO2]]
+      optional: [H+, TPP, lipoate, FAD]
+  6:
+    from: [succinyl_coa]
+    to: [succinate]
+    enzyme:
+      accept: [succinyl-CoA synthetase, succinyl CoA synthetase, SCS, succinate thiokinase, succinate-CoA ligase]
+    cofactors:
+      in:  [[GDP, ADP], [Pi]]
+      out: [[GTP, ATP], [CoA, CoA-SH, HS-CoA, CoASH]]
+  7:
+    from: [succinate]
+    to: [fumarate]
+    enzyme:
+      accept: [succinate dehydrogenase, SDH, complex II]
+    cofactors:
+      in:  [[FAD, Q, ubiquinone, CoQ]]
+      out: [[FADH2, QH2, ubiquinol, CoQH2]]
+  8:
+    from: [fumarate]
+    to: [malate]
+    enzyme:
+      accept: [fumarase, fumarate hydratase]
+    cofactors:
+      in:  [[H2O, water]]
+      out: []
+  9:
+    from: [malate]
+    to: [oaa]
+    enzyme:
+      accept: [malate dehydrogenase, MDH]
+    cofactors:
+      in:  [[NAD+, NAD]]
+      out: [[NADH]]
+      optional: [H+]

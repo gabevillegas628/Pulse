@@ -17,6 +17,11 @@ import SessionPage from '@/pages/professor/SessionPage'
 import AssignmentDetailPage from '@/pages/professor/AssignmentDetailPage'
 import AdminPage from '@/pages/professor/AdminPage'
 import AdminStudentsPage from '@/pages/professor/AdminStudentsPage'
+import QuizContentPage from '@/pages/professor/QuizContentPage'
+import QuizContentEditorPage from '@/pages/professor/QuizContentEditorPage'
+import { QuizBatchPage, QuizPageDebug } from '@/pages/professor/QuizScanPages'
+import QuizResultsPage from '@/pages/professor/QuizResultsPage'
+import QuizReviewPage from '@/pages/professor/QuizReviewPage'
 
 // Student pages
 import CodeEntryPage from '@/pages/student/CodeEntryPage'
@@ -144,6 +149,12 @@ export default function App() {
         <Route path="/professor/classes/:classId" element={<ProfessorProtected><ClassPage /></ProfessorProtected>} />
         <Route path="/professor/classes/:classId/assignments/:assignmentId" element={<ProfessorProtected><AssignmentDetailPage /></ProfessorProtected>} />
         <Route path="/professor/sessions/:sessionId" element={<ProfessorProtected><SessionPage /></ProfessorProtected>} />
+        <Route path="/professor/quiz-grader" element={<ProfessorProtected><QuizContentPage /></ProfessorProtected>} />
+        <Route path="/professor/quiz-grader/:id" element={<ProfessorProtected><QuizContentEditorPage /></ProfessorProtected>} />
+        <Route path="/professor/quiz-grader/batches/:batchId" element={<ProfessorProtected><QuizBatchPage /></ProfessorProtected>} />
+        <Route path="/professor/quiz-grader/:id/results" element={<ProfessorProtected><QuizResultsPage /></ProfessorProtected>} />
+        <Route path="/professor/quiz-grader/:id/review" element={<ProfessorProtected><QuizReviewPage /></ProfessorProtected>} />
+        <Route path="/professor/quiz-grader/pages/:pageId" element={<ProfessorProtected><QuizPageDebug /></ProfessorProtected>} />
 
         {/* Student routes */}
         <Route path="/student/enter-code" element={<CodeEntryPage />} />

@@ -41,6 +41,30 @@ jobs:
       - name: Waiting list unit tests
         run: npm run test:waiting --workspace=backend
 
+      # Quiz grader scoring and seed content (docs/quiz-grader). Pure; the model half
+      # is measured by the Phase 0 spike, which needs an API key and real scans.
+      - name: Quiz grader unit tests
+        run: npm run test:quiz-grader --workspace=backend
+
       # Not yet wired: smoke-themes.ts and e2e-qr.ts. Both want a Postgres service
       # and a booted backend, and smoke-themes additionally spends real Anthropic
       # tokens, so it needs a decision about a CI key before it belongs here.
+
+  vision:
+    name: Quiz grader vision tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: vision/requirements.txt
+
+      - run: pip install -r vision/requirements.txt
+
+      # Builds pages from the real sample quizzes (copier scans, angled phone photos,
+      # versions A-C) and checks each lines up, gets its version, and keeps its writing.
+      - name: Vision pipeline tests
+        run: python -m unittest vision/test_pipeline.py -v
