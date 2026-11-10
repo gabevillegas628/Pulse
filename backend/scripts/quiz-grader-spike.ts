@@ -509,9 +509,12 @@ async function main() {
   if (opt.dryRun) {
     const header = ['page', ...scored.map((g) => g.slot.id)]
     const lines = [header.join(','), ...pages.map((p) => [p.id, ...scored.map(() => '')].join(','))]
-    await fs.writeFile(path.join(opt.out, 'hand-grades-template.csv'), lines.join('\n') + '\n')
+    // Never overwrite a template someone may already have filled in with their grades.
+    let template = path.join(opt.out, 'hand-grades-template.csv')
+    if (await fs.stat(template).then(() => true, () => false)) template = path.join(opt.out, 'hand-grades-template.new.csv')
+    await fs.writeFile(template, lines.join('\n') + '\n')
     console.log(`\nCheck ${path.join(opt.out, 'pages', '<page>', 'overlay.png')} — every box should sit on its blank.`)
-    console.log(`Fill in ${path.join(opt.out, 'hand-grades-template.csv')} with your points per slot, then run with --grades.`)
+    console.log(`Fill in ${template} with your points per slot, then run with --grades.`)
     return
   }
 
