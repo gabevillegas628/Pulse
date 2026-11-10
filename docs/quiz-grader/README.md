@@ -80,6 +80,26 @@ Two guards keep it that way: `readTextRegions` throws if handed a name or NetID 
 `slotsForVersion` refuses a layout whose answer box overlaps the name or NetID box, since
 that crop would carry the name along. Both are tested.
 
+## Phase 0 results (20 real version-A papers)
+
+First run: $0.01 per page, ~12 s per page. Enzymes 96.5% and cofactors 92.7% agreement
+on unflagged slots. Nearly every miss was a key or settings issue, not a misread:
+
+| Miss | Fix |
+|---|---|
+| "G3P dehydrogenase", "PFKI" marked wrong | aliases added to the key |
+| "glyceraldehyde 3-phosphate hydrogenase", "enolate" passed as typos | every inexact match now goes to review |
+| "2ATP", "2NAD+" not recognised | leading amounts ignored for cofactors |
+| GAPDH without Pi given credit | Pi now required going in |
+| Structures 1.7% (graded out of 1, key used 2) | structures 1 point, all or nothing |
+| Structure and step-5 crops cutting writing off | boxes enlarged |
+
+Decided by the instructor: **Pi required for GAPDH; structures and cofactors are 1 point,
+all or nothing** (`partial_credit: false` in the assessments). A required cofactor written
+on the wrong side as well as the right one fails its group. Structures stay
+**review-always**: the model's feature checklist is a suggestion; the instructor is more
+lenient than the checklist (e.g. full credit for a PEP drawn without its C=C).
+
 ## Changes from the handoff
 
 - **Seed YAML bug fixed.** Names containing a comma (`1,3-bisphosphoglycerate`,
@@ -103,10 +123,12 @@ that crop would carry the name along. Both are tested.
    crops, in line with the typed answers grading and themes already send.
 3. Image retention after export.
 4. ~~Roster source~~: Pulse's own roster (`Student.netId`) is the likely answer.
-5. Real point values and partial-credit rules (seed values are placeholders).
-6. Structures: auto-score with review, or review-only? **Answer from Phase 0.**
+5. ~~Points~~: 1 point per enzyme, cofactor set and structure; cofactors and structures
+   all or nothing.
+6. ~~Structures~~: review-always, with the model's checklist as a suggestion.
 7. TCA: which structures are graded, and is the 9-step numbering right? TCA layout boxes
    are still empty; the arrows run around a circle, so `in_end` must be set per arrow.
-8. Lenient answers in the keys (Pi optional for GAPDH, ATP for GTP, Q/QH2 for FAD/FADH2).
+8. Lenient answers in the keys: ~~Pi optional for GAPDH~~ (required). Still open for TCA:
+   ATP alongside GTP, Q/QH2 alongside FAD/FADH2.
 9. Per-student QR sheets.
 10. TAs reviewing.

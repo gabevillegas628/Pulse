@@ -96,7 +96,12 @@ export interface CofactorItem { text: string; side: Side }
 export interface CofactorOptions {
   /** Points removed per written item that is neither required nor optional. */
   extraPenalty?: number
+  /** false: full credit only when every group is satisfied. Default true. */
+  partialCredit?: boolean
 }
+
+/** "2ATP", "2 NAD+" → "ATP", "NAD+": students write the stoichiometry; the key does not. */
+export const stripCoefficient = (s: string) => s.trim().replace(/^\d+\s*(?=[a-zA-Z])/, '')
 
 export interface CofactorResult {
   fraction: number
@@ -110,11 +115,12 @@ export interface CofactorResult {
 
 /**
  * Each required group on each side is satisfied by any accepted form written on that
- * side. Partial credit is satisfied / total. A form written on the wrong side earns
- * nothing for its group. Optional items are ignored entirely.
+ * side, and none on the other side: "Pi" going both in and out is wrong, not half right.
+ * Partial credit is satisfied / total, or all-or-nothing when partialCredit is false.
+ * Optional items are ignored entirely; anything else extra is listed in `extras`.
  */
 export function scoreCofactors(items: CofactorItem[], spec: CofactorSpec, opts: CofactorOptions = {}): CofactorResult {
-  const read = items.map((i) => ({ ...i, norm: normalize(i.text) })).filter((i) => i.norm)
+  const read = items.map((i) => ({ ...i, norm: normalize(stripCoefficient(i.text)) })).filter((i) => i.norm)
   const used = new Set<number>()
   const groups: CofactorResult['groups'] = []
 
@@ -122,10 +128,11 @@ export function scoreCofactors(items: CofactorItem[], spec: CofactorSpec, opts: 
     for (const group of spec[side]) {
       const forms = new Set(group.map(normalize))
       const hit = read.findIndex((r) => r.side === side && forms.has(r.norm))
-      const misplaced = read.findIndex((r) => r.side !== side && forms.has(r.norm))
+      const other = side === 'in' ? 'out' : 'in'
+      const misplaced = read.findIndex((r) => r.side === other && forms.has(r.norm))
       if (hit >= 0) used.add(hit)
       if (misplaced >= 0) used.add(misplaced)
-      groups.push({ side, accept: group, status: hit >= 0 ? 'ok' : misplaced >= 0 ? 'wrong_side' : 'missing' })
+      groups.push({ side, accept: group, status: misplaced >= 0 ? 'wrong_side' : hit >= 0 ? 'ok' : 'missing' })
     }
   }
 
@@ -133,7 +140,7 @@ export function scoreCofactors(items: CofactorItem[], spec: CofactorSpec, opts: 
   const extras = read.filter((r, i) => !used.has(i) && !optional.has(r.norm)).map((r) => r.text)
   const satisfied = groups.filter((g) => g.status === 'ok').length
   const total = groups.length
-  const base = total ? satisfied / total : 1
+  const base = !total ? 1 : opts.partialCredit === false ? (satisfied === total ? 1 : 0) : satisfied / total
   const fraction = Math.max(0, base - (opts.extraPenalty ?? 0) * extras.length)
 
   return {
@@ -148,13 +155,17 @@ export function scoreCofactors(items: CofactorItem[], spec: CofactorSpec, opts: 
 
 // ── Structures ─────────────────────────────────────────────────────────────────
 
-/** Weighted share of the key's features the drawing was judged to have. */
-export function scoreStructure(intermediate: Intermediate, answers: boolean[]): number {
+/**
+ * Weighted share of the key's features the drawing was judged to have; with
+ * partialCredit false, 1 only when every feature is there.
+ */
+export function scoreStructure(intermediate: Intermediate, answers: boolean[], partialCredit = true): number {
   const n = intermediate.features.length
   if (!n) return 0
   const w = intermediate.feature_weights ?? intermediate.features.map(() => 1)
   const total = w.reduce((a, b) => a + b, 0)
   const got = w.reduce((a, wi, i) => a + (answers[i] ? wi : 0), 0)
+  if (!partialCredit) return answers.length >= n && answers.slice(0, n).every(Boolean) ? 1 : 0
   return total ? got / total : 0
 }
 
@@ -165,7 +176,15 @@ export const DEFAULT_CONFIDENCE_THRESHOLD = 0.8
 /** Why a slot goes to the review queue; empty means its auto score stands. */
 export function reviewReasons(
   policy: ReviewPolicy,
-  signals: { confidence: number; nearThreshold?: boolean; unclearSide?: boolean; illegible?: boolean },
+  signals: {
+    confidence: number
+    nearThreshold?: boolean
+    /** Matched an accepted answer only approximately: a typo, or a different word. */
+    inexact?: string
+    unclearSide?: boolean
+    extras?: string[]
+    illegible?: boolean
+  },
   confidenceThreshold = DEFAULT_CONFIDENCE_THRESHOLD,
 ): string[] {
   if (policy === 'never') return []
@@ -173,8 +192,12 @@ export function reviewReasons(
   const reasons: string[] = []
   if (signals.illegible) reasons.push('illegible')
   if (signals.confidence < confidenceThreshold) reasons.push(`confidence ${signals.confidence.toFixed(2)}`)
-  if (signals.nearThreshold) reasons.push('fuzzy match near threshold')
+  // A near miss is a typo as often as it is a different word ("enolate", "hydrogenase"),
+  // and only a person can tell which. One decision covers every paper with that spelling.
+  if (signals.inexact) reasons.push(`inexact match to "${signals.inexact}"`)
+  else if (signals.nearThreshold) reasons.push('close to an accepted answer')
   if (signals.unclearSide) reasons.push('cofactor side unclear')
+  if (signals.extras?.length) reasons.push(`unexpected: ${signals.extras.join(', ')}`)
   return reasons
 }
 

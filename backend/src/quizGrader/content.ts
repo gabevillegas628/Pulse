@@ -87,6 +87,10 @@ export const assessmentSchema = z.object({
       cofactors: z.number().default(1),
       structure: z.number().default(2),
     }),
+    /** false = all or nothing: every required cofactor group, every structure feature. */
+    partial_credit: z
+      .object({ cofactors: z.boolean().default(true), structure: z.boolean().default(true) })
+      .default({}),
     structure_review: reviewPolicy.default('always'),
     text_review: reviewPolicy.default('low_confidence'),
   }),
@@ -150,6 +154,8 @@ export interface GradedSlot {
   /** 0 for identity slots, which are cropped for a person to match but never sent to the model or scored. */
   maxPoints: number
   review: ReviewPolicy
+  /** Fractional credit for a partly right answer; false means full points or none. */
+  partialCredit: boolean
 }
 
 const overlaps = (a: Box, b: Box) => a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3]
@@ -172,20 +178,20 @@ export function slotsForVersion(
     const known = Object.keys(assessment.versions).join(', ')
     throw new Error(`Version "${version}" is not in ${assessment.assessment} (has: ${known})`)
   }
-  const { points, text_review, structure_review } = assessment.defaults
+  const { points, text_review, structure_review, partial_credit } = assessment.defaults
   const out: GradedSlot[] = []
 
   for (const slot of layout.slots) {
     const ref = resolveRef(key, slot.ref)
     let graded: GradedSlot | null = null
 
-    if (ref.kind === 'identity') graded = { slot, ref, maxPoints: 0, review: 'never' }
+    if (ref.kind === 'identity') graded = { slot, ref, maxPoints: 0, review: 'never', partialCredit: false }
     else if (ref.kind === 'enzyme' && selects(assessment.grade.enzymes, ref.stepNo))
-      graded = { slot, ref, maxPoints: points.enzyme, review: text_review }
+      graded = { slot, ref, maxPoints: points.enzyme, review: text_review, partialCredit: false }
     else if (ref.kind === 'cofactors' && selects(assessment.grade.cofactors, ref.stepNo))
-      graded = { slot, ref, maxPoints: points.cofactors, review: text_review }
+      graded = { slot, ref, maxPoints: points.cofactors, review: text_review, partialCredit: partial_credit.cofactors }
     else if (ref.kind === 'structure' && v.structures.includes(ref.id))
-      graded = { slot, ref, maxPoints: points.structure, review: structure_review }
+      graded = { slot, ref, maxPoints: points.structure, review: structure_review, partialCredit: partial_credit.structure }
 
     if (!graded) continue
     if (!slot.box) throw new Error(`Slot ${slot.id} is graded but has no box in ${layout.layout}`)

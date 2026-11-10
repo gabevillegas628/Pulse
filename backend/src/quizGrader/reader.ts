@@ -110,6 +110,7 @@ const STRUCTURE_RULES = `You are inspecting a student's hand-drawn chemical stru
 Rules:
 - Judge only what is drawn. Fischer projections, Haworth projections, line-angle and condensed formulas are all acceptable ways to show a feature.
 - Ignore the printed form (arrows, lines, stars) and anything clearly crossed out.
+- The crop is generous, so it may include neighbouring answers: enzyme names, cofactors, or the molecule's name written beside the drawing. Judge only the drawn structure.
 - "present" is true only if the drawing clearly shows that feature. If a feature is ambiguous, answer your best judgement and give low confidence.
 - description: one line saying what molecule the drawing appears to show, in plain words.
 - status "blank" if nothing is drawn, "illegible" if something is drawn but cannot be interpreted, otherwise "read".

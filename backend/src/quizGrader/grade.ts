@@ -22,6 +22,8 @@ export interface SlotResult {
   kind: GradedSlot['ref']['kind']
   /** not_sent: a name or NetID slot, which stays on this machine and is matched by a person. */
   status: 'blank' | 'read' | 'illegible' | 'error' | 'not_sent'
+  /** For blanks: found empty by the ink check (never read) or by the model. */
+  blankBy?: 'ink' | 'model'
   transcription?: string
   match?: TextMatch
   cofactors?: TextRead['cofactors']
@@ -64,14 +66,16 @@ export function gradePage(
     })
 
     if (g.ref.kind === 'identity') return finish({ status: 'not_sent', confidence: 1, pointsAuto: 0 }, [])
-    if (blank.has(g.slot.id)) return finish({ status: 'blank', confidence: 1, pointsAuto: 0 }, [])
+    if (blank.has(g.slot.id)) return finish({ status: 'blank', blankBy: 'ink', confidence: 1, pointsAuto: 0 }, [])
 
     if (g.ref.kind === 'structure') {
       const read = structureReads.get(g.slot.id)
       if (!read) return finish({ status: 'error', confidence: 0, pointsAuto: 0 }, ['no model result'])
       const feats = g.ref.intermediate.features
       const answers = feats.map((_, i) => read.features.find((f) => f.index === i))
-      const pointsAuto = read.status === 'read' ? g.maxPoints * scoreStructure(g.ref.intermediate, answers.map((a) => !!a?.present)) : 0
+      const pointsAuto = read.status === 'read'
+        ? g.maxPoints * scoreStructure(g.ref.intermediate, answers.map((a) => !!a?.present), g.partialCredit)
+        : 0
       const minFeatureConf = Math.min(read.confidence, ...answers.map((a) => a?.confidence ?? 0))
       return finish(
         {
@@ -89,7 +93,13 @@ export function gradePage(
     if (!read) return finish({ status: 'error', confidence: 0, pointsAuto: 0 }, ['no model result'])
     if (read.status !== 'read') {
       const reasons = read.status === 'illegible' ? reviewReasons(g.review, { confidence: 0, illegible: true }, confT) : []
-      return finish({ status: read.status, transcription: read.transcription, confidence: read.confidence, pointsAuto: 0 }, reasons)
+      return finish({
+        status: read.status,
+        ...(read.status === 'blank' ? { blankBy: 'model' as const } : {}),
+        transcription: read.transcription,
+        confidence: read.confidence,
+        pointsAuto: 0,
+      }, reasons)
     }
 
     if (g.ref.kind === 'enzyme') {
@@ -102,12 +112,16 @@ export function gradePage(
           confidence: read.confidence,
           pointsAuto: match.verdict === 'wrong' ? 0 : g.maxPoints,
         },
-        reviewReasons(g.review, { confidence: read.confidence, nearThreshold: match.nearThreshold }, confT),
+        reviewReasons(g.review, {
+          confidence: read.confidence,
+          nearThreshold: match.nearThreshold,
+          inexact: match.verdict === 'fuzzy' ? match.alias : undefined,
+        }, confT),
       )
     }
 
     // cofactors
-    const cofactorResult = scoreCofactors(read.cofactors, g.ref.spec, opts)
+    const cofactorResult = scoreCofactors(read.cofactors, g.ref.spec, { ...opts, partialCredit: g.partialCredit })
     return finish(
       {
         status: 'read',
@@ -116,7 +130,11 @@ export function gradePage(
         confidence: read.confidence,
         pointsAuto: g.maxPoints * cofactorResult.fraction,
       },
-      reviewReasons(g.review, { confidence: read.confidence, unclearSide: cofactorResult.unclearSide }, confT),
+      reviewReasons(g.review, {
+        confidence: read.confidence,
+        unclearSide: cofactorResult.unclearSide,
+        extras: cofactorResult.extras,
+      }, confT),
     )
   })
 }

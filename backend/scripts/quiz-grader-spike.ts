@@ -537,7 +537,7 @@ async function main() {
 // ── Report ─────────────────────────────────────────────────────────────────────
 
 function describeRead(r: SlotResult): string {
-  if (r.status !== 'read') return `(${r.status})`
+  if (r.status !== 'read') return `(${r.status}${r.blankBy === 'model' ? ': model saw nothing' : r.blankBy === 'ink' ? ': no ink, not read' : ''})`
   if (r.kind === 'cofactors') return r.cofactors!.map((c) => `${c.text}→${c.side}`).join(', ') || '(nothing)'
   if (r.kind === 'structure') return `${r.description} [${r.features!.map((f) => (f.present ? '✓' : '✗')).join('')}]`
   return `"${r.transcription}"${r.match ? ` ${r.match.verdict} ${r.match.alias} d=${r.match.distance}` : ''}`
@@ -602,9 +602,10 @@ function report(
     )
   }
 
-  const missedInk = compared.filter((x) => x.r.status === 'blank' && x.hand > 0)
+  // Only the ink check's blanks: the model's "blank" reads are ordinary disagreements.
+  const missedInk = compared.filter((x) => x.r.blankBy === 'ink' && x.hand > 0)
   if (missedInk.length) {
-    out.push('', `**Blank detection missed writing on ${missedInk.length} slot(s)** — scored 0 without a read but you gave points:`)
+    out.push('', `**The ink check skipped writing on ${missedInk.length} slot(s)** — never sent to the model, scored 0, but you gave points:`)
     for (const x of missedInk) out.push(`- ${x.page} ${x.r.slotId} (hand ${x.hand})`)
   }
 

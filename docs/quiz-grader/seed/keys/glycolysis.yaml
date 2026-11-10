@@ -123,7 +123,7 @@ steps:
     from: [f6p]
     to: [f16bp]
     enzyme:
-      accept: [phosphofructokinase-1, PFK-1, PFK1, phosphofructokinase, PFK]
+      accept: [phosphofructokinase-1, PFK-1, PFK1, phosphofructokinase, PFK, PFK-I, phosphofructokinase-I]
     cofactors:
       in:  [[ATP]]
       out: [[ADP]]
@@ -142,11 +142,13 @@ steps:
     from: [gap]
     to: [bpg13]
     enzyme:
-      accept: [glyceraldehyde 3-phosphate dehydrogenase, GAPDH, G3PDH, GAPD]
+      # "G3P dehydrogenase" also covers G-3P, G3p and G-3-P once normalised.
+      accept: [glyceraldehyde 3-phosphate dehydrogenase, GAPDH, G3PDH, GAPD, G3P dehydrogenase, GAP dehydrogenase]
     cofactors:
-      in:  [[NAD+, NAD]]
+      # Pi is required going in (instructor's rule, confirmed after the Phase 0 run).
+      in:  [[NAD+, NAD], [Pi, phosphate, HPO4]]
       out: [[NADH]]
-      optional: [Pi, H+]
+      optional: [H+]
   7:
     from: [bpg13]
     to: [pg3]

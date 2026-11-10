@@ -100,13 +100,32 @@ check('extra-item penalty when configured', scoreCofactors(
   [{ text: 'ATP', side: 'in' }, { text: 'ADP', side: 'out' }, { text: 'NADH', side: 'out' }], atp, { extraPenalty: 0.25 }).fraction === 0.75)
 check('enolase: water out, spelled either way', scoreCofactors([{ text: 'water', side: 'out' }], gly.steps['9']!.cofactors!).fraction === 1
   && scoreCofactors([{ text: 'H₂O', side: 'out' }], gly.steps['9']!.cofactors!).fraction === 1)
-check('GAPDH accepts NAD and NAD+', scoreCofactors([{ text: 'NAD', side: 'in' }, { text: 'NADH', side: 'out' }], gly.steps['6']!.cofactors!).fraction === 1)
+const gapdh = gly.steps['6']!.cofactors!
+check('GAPDH accepts NAD and NAD+', scoreCofactors([{ text: 'NAD', side: 'in' }, { text: 'Pi', side: 'in' }, { text: 'NADH', side: 'out' }], gapdh).fraction === 1)
+
+// ── Rules settled by the Phase 0 run on real scans ─────────────────────────────
+
+const allOrNothing = { partialCredit: false }
+check('GAPDH without Pi in gets nothing (pages 9, 13)',
+  scoreCofactors([{ text: 'NAD+', side: 'in' }, { text: 'NADH', side: 'out' }, { text: 'H+', side: 'out' }], gapdh, allOrNothing).fraction === 0)
+check('Pi on both sides is wrong, not half right (page 11)',
+  scoreCofactors([{ text: 'NAD+', side: 'in' }, { text: 'Pi', side: 'in' }, { text: 'NADH', side: 'out' }, { text: 'Pi', side: 'out' }], gapdh, allOrNothing).fraction === 0)
+check('stoichiometry is ignored: 2NAD+, 2 Pi, 2NADH, 2H+ (page 20)',
+  scoreCofactors([{ text: '2NAD+', side: 'in' }, { text: '2 Pi', side: 'in' }, { text: '2NADH', side: 'out' }, { text: '2H+', side: 'out' }], gapdh, allOrNothing).fraction === 1)
+check('cofactors all or nothing: one side right is 0', scoreCofactors([{ text: 'ATP', side: 'in' }], atp, allOrNothing).fraction === 0)
+check('"G3P dehydrogenase" and its spellings are accepted (pages 2, 4, 6, 19)',
+  ['G3P dehydrogenase', 'G-3P Dehydrogenase', 'G3p Dehydrogenase', 'G-3-P dehydrogenase'].every((t) => matchText(t, gly.steps['6']!.enzyme.accept).verdict === 'exact'))
+check('"PFKI" is accepted (page 4)', matchText('PFKI', gly.steps['3']!.enzyme.accept).verdict === 'exact')
+check('seed assessment: structures 1 point, no partial credit',
+  glyQuiz.defaults.points.structure === 1 && !glyQuiz.defaults.partial_credit.structure && !glyQuiz.defaults.partial_credit.cofactors)
 check('an unplaceable item is flagged', scoreCofactors([{ text: 'ATP', side: 'unclear' }], atp).unclearSide)
 
 // ── Structures ─────────────────────────────────────────────────────────────────
 
 check('structure: 3 of 4 features is 0.75', scoreStructure(gly.intermediates.pep!, [true, true, true, false]) === 0.75)
 check('structure: weights count', scoreStructure({ name: 'x', accept: [], features: ['a', 'b'], feature_weights: [3, 1] }, [true, false]) === 0.75)
+check('structure all or nothing', scoreStructure(gly.intermediates.pep!, [true, true, true, false], false) === 0
+  && scoreStructure(gly.intermediates.pep!, [true, true, true, true], false) === 1)
 
 // ── A whole page ───────────────────────────────────────────────────────────────
 
@@ -119,6 +138,10 @@ check('structure: weights count', scoreStructure({ name: 'x', accept: [], featur
   t('s1_enzyme', 'hexokinase')
   t('s1_cofactors', '', 0.95, [{ text: 'ATP', side: 'in' }, { text: 'ADP', side: 'out' }])
   t('s2_enzyme', 'phosphoglucose isomerse', 0.6)
+  t('s6_enzyme', 'glyceraldehyde 3-phosphate hydrogenase')
+  t('s9_enzyme', 'Enolate')
+  t('s10_enzyme', 'pyruvate kinase')
+  t('s7_cofactors', '', 0.95, [{ text: 'ADP', side: 'in' }, { text: 'ATP', side: 'out' }, { text: 'NADPH', side: 'out' }])
   text.set('s3_enzyme', { slot_id: 's3_enzyme', status: 'illegible', transcription: '', cofactors: [], confidence: 0.2 })
   const struct = new Map<string, StructureRead>([
     ['int_pep', { slot_id: 'int_pep', status: 'read', description: 'PEP', confidence: 0.9,
@@ -131,7 +154,13 @@ check('structure: weights count', scoreStructure({ name: 'x', accept: [], featur
   check('page: low confidence goes to review', by.get('s2_enzyme')!.needsReview)
   check('page: illegible scores 0 and goes to review', by.get('s3_enzyme')!.pointsAuto === 0 && by.get('s3_enzyme')!.needsReview)
   check('page: blank scores 0 without review', by.get('s4_enzyme')!.status === 'blank' && !by.get('s4_enzyme')!.needsReview)
-  check('page: structures always reviewed, scored by features', by.get('int_pep')!.pointsAuto === 1 && by.get('int_pep')!.needsReview)
+  check('page: structures always reviewed, all or nothing', by.get('int_pep')!.pointsAuto === 0 && by.get('int_pep')!.maxPoints === 1 && by.get('int_pep')!.needsReview)
+  check('page: an inexact match is proposed but reviewed ("hydrogenase", page 17)',
+    by.get('s6_enzyme')!.pointsAuto === 1 && by.get('s6_enzyme')!.reviewReasons.some((r) => r.startsWith('inexact')))
+  check('page: "Enolate" goes to review', by.get('s9_enzyme')!.needsReview)
+  check('page: an exact match is not reviewed', !by.get('s10_enzyme')!.needsReview)
+  check('page: an unexpected cofactor goes to review', by.get('s7_cofactors')!.reviewReasons.some((r) => r.includes('NADPH')))
+  check('page: ink-check blanks say so', by.get('s4_enzyme')!.blankBy === 'ink')
   check('page: a slot the model skipped is an error for review', by.get('s5_enzyme')!.status === 'error' && by.get('s5_enzyme')!.needsReview)
   check('page: names are never read, carry no points, need no review',
     by.get('name')!.status === 'not_sent' && by.get('name')!.maxPoints === 0 && !by.get('name')!.needsReview)

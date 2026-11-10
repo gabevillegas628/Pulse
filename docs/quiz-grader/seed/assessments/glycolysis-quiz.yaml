@@ -1,7 +1,7 @@
 # Assessment: Glycolysis pathway quiz (3 versions)
 # Every version grades all enzymes and cofactors; versions differ only in which
 # intermediate structures are graded (the starred positions on the printout).
-# Points are placeholders — set your own.
+# Points and credit rules confirmed by the instructor after the Phase 0 run.
 
 assessment: glycolysis-quiz
 key: glycolysis
@@ -10,8 +10,12 @@ layout: glycolysis-template-v1   # slot boxes get defined in the layout editor
 defaults:
   points:
     enzyme: 1
-    cofactors: 1          # split evenly across required groups for partial credit
-    structure: 2          # split across that intermediate's features
+    cofactors: 1
+    structure: 1
+  # All or nothing: every required cofactor on the right side, every structure feature.
+  partial_credit:
+    cofactors: false
+    structure: false
   structure_review: always   # always | low_confidence | never
   text_review: low_confidence
 
