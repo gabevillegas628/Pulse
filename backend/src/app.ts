@@ -28,6 +28,7 @@ import textbookRoutes from './routes/textbook.routes.js'
 import diagRoutes from './routes/diag.routes.js'
 import addinRoutes from './routes/addin.routes.js'
 import adminRoutes from './routes/admin.routes.js'
+import quizGraderRoutes from './routes/quizGrader.routes.js'
 import addinManifestRoutes from './routes/addin-manifest.js'
 
 const app = express()
@@ -170,6 +171,7 @@ app.use('/api', responseRoutes)
 app.use('/api', uploadRoutes)
 app.use('/api', textbookRoutes)
 app.use('/api', diagRoutes)
+app.use('/api', quizGraderRoutes)
 app.use('/api/addin', addinRoutes)
 app.use('/api/admin', adminRoutes)
 

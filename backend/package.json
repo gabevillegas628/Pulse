@@ -26,6 +26,7 @@
     "test:smoke:join": "tsx scripts/smoke-join.ts",
     "test:waiting": "tsx scripts/smoke-waiting.ts",
     "test:quiz-grader": "tsx scripts/smoke-quiz-grader.ts",
+    "test:smoke:quiz-content": "tsx scripts/smoke-quiz-content.ts",
     "quiz-grader:spike": "tsx scripts/quiz-grader-spike.ts",
     "rehearse": "tsx scripts/rehearse.ts"
   },

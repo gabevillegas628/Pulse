@@ -16,6 +16,8 @@ import { gradePage } from '../src/quizGrader/grade.js'
 import { readTextRegions, type StructureRead, type TextRead } from '../src/quizGrader/reader.js'
 import type Anthropic from '@anthropic-ai/sdk'
 import { matchText, normalize, scoreCofactors, scoreStructure } from '../src/quizGrader/scoring.js'
+import { patchYaml } from '../src/quizGrader/yamlPatch.js'
+import { parse as parseYaml } from 'yaml'
 
 let passed = 0
 let failed = 0
@@ -193,6 +195,58 @@ check('an answer box overlapping the name box is refused', (() => {
   const bad = { ...glyLayout, slots: glyLayout.slots.map((s) => (s.id === 's1_enzyme' ? { ...s, box: [0.2, 0.03, 0.3, 0.1] as [number, number, number, number] } : s)) }
   try { slotsForVersion(glyQuiz, bad, gly, 'A'); return false } catch (e) { return e instanceof Error && e.message.includes('overlaps name') }
 })())
+
+// ── YAML editing: an edit changes only its own lines ──────────────────────────
+
+{
+  const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x))
+  /** Lines removed and added between two texts, trimming the shared head and tail. */
+  const lineDiff = (a: string, b: string) => {
+    const A = a.split('\n'), B = b.split('\n')
+    let i = 0
+    while (i < A.length && A[i] === B[i]) i++
+    let j = 0
+    while (j < A.length - i && j < B.length - i && A[A.length - 1 - j] === B[B.length - 1 - j]) j++
+    return { removed: A.length - i - j, added: B.length - i - j }
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const edit = (name: string, file: string, change: (v: any) => void, removed: number, added: number) => {
+    const src = read(file)
+    const want = clone(parseYaml(src))
+    change(want)
+    const r = patchYaml(src, want)
+    const d = lineDiff(src, r.text)
+    check(`yaml edit, ${name}: -${removed} +${added} lines`,
+      r.method === 'splice' && d.removed === removed && d.added === added && JSON.stringify(parseYaml(r.text)) === JSON.stringify(want))
+  }
+
+  for (const f of ['keys/glycolysis.yaml', 'keys/tca.yaml', 'layouts/glycolysis-template-v1.yaml', 'assessments/glycolysis-quiz.yaml']) {
+    const src = read(f)
+    check(`yaml round trip leaves ${f} byte-identical`, patchYaml(src, parseYaml(src)).text === src)
+  }
+  edit('add an alias', 'keys/glycolysis.yaml', (v) => v.steps['6'].enzyme.accept.push('glyceraldehyde-3-P DH'), 1, 1)
+  edit('alias containing a comma is quoted', 'keys/glycolysis.yaml', (v) => v.steps['4'].enzyme.accept.push('F-1,6-BP aldolase'), 1, 1)
+  edit('remove an alias', 'keys/glycolysis.yaml', (v) => v.steps['1'].enzyme.accept.splice(1, 1), 1, 1)
+  edit('extend a cofactor group', 'keys/glycolysis.yaml', (v) => v.steps['6'].cofactors.in[1].push('P_i'), 1, 1)
+  edit('reword a feature', 'keys/glycolysis.yaml', (v) => (v.intermediates.pep.features[3] = 'C2=C3 double bond (enol)'), 1, 1)
+  edit('add a feature', 'keys/glycolysis.yaml', (v) => v.intermediates.pep.features.push('no hydroxyl on C3'), 0, 1)
+  edit('remove a feature', 'keys/glycolysis.yaml', (v) => v.intermediates.pep.features.splice(1, 1), 1, 0)
+  edit('add feature weights', 'keys/glycolysis.yaml', (v) => (v.intermediates.pep.feature_weights = [1, 1, 2, 1]), 0, 1)
+  edit('remove cofactors from a step', 'keys/glycolysis.yaml', (v) => delete v.steps['1'].cofactors, 4, 0)
+  edit('add a step, numbered like its siblings', 'keys/glycolysis.yaml', (v) => (v.steps['11'] = {
+    from: ['pyruvate'], to: ['lactate'], enzyme: { accept: ['lactate dehydrogenase', 'LDH'] },
+  }), 0, 5)
+  edit('a comment on the edited line survives', 'keys/tca.yaml', (v) => (v.intermediates.fumarate.feature_weights[3] = 1), 1, 1)
+  edit('one layout box number', 'layouts/glycolysis-template-v1.yaml', (v) => (v.slots[2].box[0] = 0.21), 1, 1)
+  edit('draw a missing box', 'layouts/tca-template-v1.yaml', (v) => (v.slots[2].box = [0.1, 0.8, 0.31, 0.04]), 1, 1)
+  edit('add a structure to a version', 'assessments/glycolysis-quiz.yaml', (v) => v.versions.A.structures.push('pyruvate'), 1, 1)
+  check('a new step key is written as a number', (() => {
+    const src = read('keys/glycolysis.yaml')
+    const want = clone(parseYaml(src))
+    want.steps['11'] = { from: ['a'], to: ['b'], enzyme: { accept: ['x'] } }
+    return /\n  11:\n/.test(patchYaml(src, want).text)
+  })())
+}
 
 console.log(`\n  ${passed} passed, ${failed} failed`)
 process.exit(failed === 0 ? 0 : 1)

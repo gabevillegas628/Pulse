@@ -23,6 +23,7 @@ model Professor {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   classes       Class[]
+  quizContent   QuizContent[]
 }
 
 model Student {
@@ -410,4 +411,36 @@ model ResponseTheme {
   assignedAt DateTime      @default(now())
 
   @@index([categoryId])
+}
+
+// ─── Quiz grader (docs/quiz-grader) ───────────────────────────────────────────
+
+enum QuizContentKind {
+  KEY        // a pathway's answers: enzymes, cofactors, intermediates and their features
+  LAYOUT     // where each blank sits on one printed form
+  ASSESSMENT // which blanks a quiz grades, for how many points, in which versions
+}
+
+// One answer key, layout or assessment, kept as the YAML a professor imports and
+// exports. The source text is the record, not a parse of it: it carries comments and
+// hand formatting, and the app edits it by splicing only the changed text
+// (src/quizGrader/yamlPatch.ts), so an exported file diffs cleanly against the one
+// that was imported. Parsing and validating happen on every read.
+//
+// Owned by a professor rather than a class: a glycolysis key outlives a semester and
+// serves every section that gives the quiz. Assessments name their key and layout by
+// slug, as the YAML does, resolved within the same professor's content.
+model QuizContent {
+  id          String          @id @default(cuid())
+  professorId String
+  // Restrict, like Class: no path in the app deletes a professor.
+  professor   Professor       @relation(fields: [professorId], references: [id], onDelete: Restrict)
+  kind        QuizContentKind
+  // The YAML's own name for itself: `pathway:` for a key, `layout:`, `assessment:`.
+  slug        String
+  source      String
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@unique([professorId, kind, slug])
 }

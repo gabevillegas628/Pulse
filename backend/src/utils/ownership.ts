@@ -102,3 +102,8 @@ export function owns<T extends { professorId: string }>(
 ): record is T {
   return record != null && record.professorId === viewer.id
 }
+
+/** Quiz grader content (answer keys, layouts, assessments) this viewer may act on. */
+export function ownedQuizContent(viewer: Viewer): Prisma.QuizContentWhereInput {
+  return { professorId: viewer.id }
+}
