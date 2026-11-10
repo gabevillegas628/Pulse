@@ -24,8 +24,8 @@
  *
  * Options:
  *   --assessment glycolysis-quiz   which seed assessment (docs/quiz-grader/seed/assessments)
- *   --version A                    quiz version all pages are on
- *   --template-page N              page of the blank PDF for that version (default: version's position)
+ *   --version A                    treat every page as this version (default: detect each page's
+ *                                  version from the marks that differ between versions' blank forms)
  *   --out quiz-spike-out           output directory
  *   --limit N                      only the first N pages
  *   --model-text / --model-structure   override MODEL_TEXT / MODEL_STRUCTURE
@@ -49,6 +49,7 @@ import {
   parseLayout,
   parsePathwayKey,
   slotsForVersion,
+  versionPage,
   type Box,
   type GradedSlot,
 } from '../src/quizGrader/content.js'
@@ -115,8 +116,7 @@ function args() {
     input: path.resolve(input),
     out: path.resolve(get('out') ?? 'quiz-spike-out'),
     assessment: get('assessment') ?? 'glycolysis-quiz',
-    version: get('version') ?? 'A',
-    templatePage: get('template-page') ? Number(get('template-page')) : undefined,
+    version: get('version') ?? null,
     grades: get('grades') ? path.resolve(get('grades')!) : undefined,
     limit: get('limit') ? Number(get('limit')) : Infinity,
     dryRun: a.includes('--dry-run'),
@@ -266,9 +266,11 @@ async function alignToTemplate(template: Buffer, page: Buffer): Promise<Align> {
     return best
   }
 
-  // Coarse: ±1.5°, 94-106% (copier reduce/enlarge), ±26 px at 1/8 size ≈ ±1 inch.
+  // Coarse: ±1.5°, 84-106% scale, ±26 px at 1/8 size ≈ ±1 inch. The scale range covers
+  // copier reduce/enlarge and fit-to-page (~96%), and pages printed with corner markers,
+  // whose form is shrunk to 90% (print.ts) — 87% if fit-to-page shrinks it again.
   const L8 = await level(8, 170, 1)
-  const a = search(L8, range(-1.5, 1.5, 0.25), range(0.94, 1.06, 0.02), range(-26, 26, 1), range(-26, 26, 1))
+  const a = search(L8, range(-1.5, 1.5, 0.25), range(0.84, 1.06, 0.02), range(-26, 26, 1), range(-26, 26, 1))
   const L2 = await level(2, 120, 2)
   const b = search(L2, range(a.theta - 0.25, a.theta + 0.25, 0.125), range(a.s - 0.02, a.s + 0.02, 0.005),
     range(4 * a.dx - 6, 4 * a.dx + 6, 1), range(4 * a.dy - 6, 4 * a.dy + 6, 1))
@@ -305,6 +307,46 @@ function warpToTemplate(page: Raw, a: Align): Raw {
 const mm = (px: number) => `${px >= 0 ? '+' : ''}${((px / DPI) * 25.4).toFixed(1)}mm`
 const describeAlign = (a: Align) =>
   `shift ${mm(a.dx)} across, ${mm(a.dy)} down, tilt ${a.theta.toFixed(2)}°, scale ${(a.s * 100).toFixed(1)}%, match ${(a.match * 100).toFixed(0)}%`
+
+// ── Versions ───────────────────────────────────────────────────────────────────
+
+/**
+ * Tell a page's version from what differs between the versions' blank forms (on the
+ * glycolysis quiz, where the stars are). Every pixel printed on exactly one version's
+ * form, and well clear of everything printed on the others, is a "tell"; a version fits
+ * a page by how many tells are dark where its form is dark and light where it is not.
+ * Nothing here knows about stars: any printed difference works.
+ */
+interface VersionTells { owner: Int16Array; count: number }
+
+function versionTells(forms: Raw[]): VersionTells {
+  const dark = forms.map((f) => darkMask(f, W, H, 128))
+  const near = forms.map((f) => darkMask(f, W, H, 128, 4))
+  const owner = new Int16Array(W * H).fill(-1)
+  let count = 0
+  for (let i = 0; i < W * H; i++) {
+    for (let v = 0; v < forms.length; v++) {
+      if (dark[v]![i] && near.every((m, u) => u === v || !m[i])) { owner[i] = v; count++; break }
+    }
+  }
+  return { owner, count }
+}
+
+/** Each version's fit (0–1) to an aligned page. */
+function versionFits(page: Raw, tells: VersionTells, versions: number, inkMax: number): number[] {
+  const inked = darkMask(page, W, H, inkMax, 1)
+  const fits = new Array<number>(versions).fill(0)
+  for (let i = 0; i < W * H; i++) {
+    const o = tells.owner[i]!
+    if (o < 0) continue
+    for (let v = 0; v < versions; v++) if ((o === v) === (inked[i] === 1)) fits[v]!++
+  }
+  return fits.map((n) => (tells.count ? n / tells.count : 0))
+}
+
+/** A fit this good, and this far ahead of the next, is a confident call. */
+const VERSION_MIN_FIT = 0.85
+const VERSION_MIN_LEAD = 0.15
 
 // ── Ink ────────────────────────────────────────────────────────────────────────
 
@@ -417,42 +459,74 @@ async function main() {
   const assessment = parseAssessment(await fs.readFile(path.join(CONTENT, 'seed/assessments', `${opt.assessment}.yaml`), 'utf8'))
   const key = parsePathwayKey(await fs.readFile(path.join(CONTENT, 'seed/keys', `${assessment.key}.yaml`), 'utf8'))
   const layout = parseLayout(await fs.readFile(path.join(CONTENT, 'seed/layouts', `${assessment.layout}.yaml`), 'utf8'))
-  const slots = slotsForVersion(assessment, layout, key, opt.version)
-  const scored = slots.filter((g) => g.maxPoints > 0)
+  const versions = Object.keys(assessment.versions)
+  if (opt.version && !versions.includes(opt.version)) throw new Error(`No version "${opt.version}" in ${assessment.assessment} (has ${versions.join(', ')})`)
 
   await fs.mkdir(opt.out, { recursive: true })
 
-  // The blank form for this version: the baseline for "is anything written here".
-  const templatePage = opt.templatePage ?? Object.keys(assessment.versions).indexOf(opt.version) + 1
-  const templatePrefix = path.join(opt.out, 'template')
-  pdfToPngs(path.join(CONTENT, layout.page.source_pdf), templatePrefix, templatePage)
-  const template = await sharp(`${templatePrefix}.png`).resize(W, H, { fit: 'fill' }).greyscale().png().toBuffer()
-  // Everything printed on the form, grown by 4 px so a slightly-off alignment or a
-  // thicker copier line still falls inside it.
-  const printed = darkMask(await toRaw(template), W, H, 230, 4)
+  // Each version's blank form: what pages are lined up against, the baseline for "is
+  // anything written here", and (between versions) the marks that tell them apart.
+  const forms = new Map<string, { png: Buffer; raw: Raw; printed: Uint8Array; slots: GradedSlot[] }>()
+  for (const v of versions) {
+    const prefix = path.join(opt.out, `template-${v}`)
+    pdfToPngs(path.join(CONTENT, layout.page.source_pdf), prefix, versionPage(assessment, v))
+    const png = await sharp(`${prefix}.png`).resize(W, H, { fit: 'fill' }).greyscale().png().toBuffer()
+    const raw = await toRaw(png)
+    // Everything printed on the form, grown by 4 px so a slightly-off alignment or a
+    // thicker copier line still falls inside it.
+    forms.set(v, { png, raw, printed: darkMask(raw, W, H, 230, 4), slots: slotsForVersion(assessment, layout, key, v) })
+  }
+  const tells = versions.length > 1 ? versionTells(versions.map((v) => forms.get(v)!.raw)) : null
+  // Columns for results and hand grades: every slot any version scores, in layout order.
+  const scoredIds = new Set([...forms.values()].flatMap((f) => f.slots.filter((g) => g.maxPoints > 0).map((g) => g.slot.id)))
+  const scored = layout.slots.filter((s) => scoredIds.has(s.id))
 
   const pages = await collectPages(opt.input, opt.out, opt.limit)
   if (!pages.length) throw new Error(`No PDFs or images found in ${opt.input}`)
-  console.log(`${pages.length} page(s), version ${opt.version}, ${scored.length} scored slots each${opt.dryRun ? ' — dry run, no API calls' : ''}`)
+  console.log(`${pages.length} page(s), ${opt.version ? `all version ${opt.version}` : versions.length > 1 ? `versions ${versions.join('/')} detected per page` : `version ${versions[0]}`}${opt.dryRun ? ' — dry run, no API calls' : ''}`)
 
   const client = opt.dryRun ? null : new Anthropic()
   const cache = fileCache(path.join(opt.out, 'cache'))
   const outcomes: PageOutcome[] = []
+  const pageVersion = new Map<string, string>()
 
   for (const page of pages) {
     const started = Date.now()
     const pageDir = path.join(opt.out, 'pages', page.id)
     await fs.mkdir(pageDir, { recursive: true })
     const scanned = await fs.readFile(page.file)
-    const align = await alignToTemplate(template, scanned)
+    // Versions share their lines, so any version's form lines a page up.
+    const align = await alignToTemplate(forms.get(opt.version ?? versions[0]!)!.png, scanned)
     const raw = warpToTemplate(await toRaw(scanned), align)
     const img = await fromRaw(raw).png().toBuffer()
     await fs.writeFile(path.join(pageDir, 'aligned.png'), img)
     const inkMax = Math.min(INK_MAX, paperLevel(raw) - 35)
-    const placed = describeAlign(align)
+    let placed = describeAlign(align)
     if (align.match < MIN_MATCH) {
       console.log(`  ${page.id}: WARNING — only ${(align.match * 100).toFixed(0)}% of the form's lines found. Crooked, a different version, or not this quiz?`)
     }
+
+    let version = opt.version ?? versions[0]!
+    if (tells) {
+      const fits = versionFits(raw, tells, versions.length, inkMax)
+      const order = fits.map((f, i) => [f, i] as const).sort((a, b) => b[0] - a[0])
+      const [best, second] = [order[0]!, order[1]!]
+      const confident = best[0] >= VERSION_MIN_FIT && best[0] - second[0] >= VERSION_MIN_LEAD
+      const scores = versions.map((v, i) => `${v} ${(fits[i]! * 100).toFixed(0)}%`).join(', ')
+      if (opt.version) {
+        if (confident && versions[best[1]] !== opt.version) {
+          console.log(`  ${page.id}: WARNING — looks like version ${versions[best[1]]}, not ${opt.version} (fit ${scores})`)
+        }
+      } else if (confident) {
+        version = versions[best[1]]!
+      } else {
+        console.log(`  ${page.id}: SKIPPED — could not tell the version (fit ${scores}). Run it again with --version.`)
+        continue
+      }
+      placed = `version ${version} (fit ${scores}); ${placed}`
+    }
+    pageVersion.set(page.id, version)
+    const { slots, printed } = forms.get(version)!
 
     // Crop each distinct box once; slots that share a box share the crop.
     const byBox = new Map<string, { png: Buffer; slots: GradedSlot[] }>()
@@ -503,12 +577,17 @@ async function main() {
     outcomes.push({ id: page.id, results, seconds, usage })
     await fs.writeFile(path.join(pageDir, 'results.json'), JSON.stringify(results, null, 2))
     const total = results.reduce((a, r) => a + r.pointsAuto, 0)
-    console.log(`  ${page.id}: ${placed}; ${total}/${scored.reduce((a, g) => a + g.maxPoints, 0)}, ${results.filter((r) => r.needsReview).length} to review, ${seconds.toFixed(1)}s`)
+    console.log(`  ${page.id}: ${placed}; ${total}/${slots.reduce((a, g) => a + g.maxPoints, 0)}, ${results.filter((r) => r.needsReview).length} to review, ${seconds.toFixed(1)}s`)
   }
 
   if (opt.dryRun) {
-    const header = ['page', ...scored.map((g) => g.slot.id)]
-    const lines = [header.join(','), ...pages.map((p) => [p.id, ...scored.map(() => '')].join(','))]
+    // Slots a page's version does not score are marked "-", so nobody grades them.
+    const header = ['page', 'version', ...scored.map((s) => s.id)]
+    const lines = [header.join(','), ...pages.filter((p) => pageVersion.has(p.id)).map((p) => {
+      const v = pageVersion.get(p.id)!
+      const own = new Set(forms.get(v)!.slots.filter((g) => g.maxPoints > 0).map((g) => g.slot.id))
+      return [p.id, v, ...scored.map((s) => (own.has(s.id) ? '' : '-'))].join(',')
+    })]
     // Never overwrite a template someone may already have filled in with their grades.
     let template = path.join(opt.out, 'hand-grades-template.csv')
     if (await fs.stat(template).then(() => true, () => false)) template = path.join(opt.out, 'hand-grades-template.new.csv')
@@ -520,20 +599,21 @@ async function main() {
 
   // results.csv — one row per paper. No names: those were never read. Each paper's
   // name and NetID crops are in pages/<page>/ for matching by hand.
-  const header = ['page', 'total', 'to_review', ...scored.map((g) => g.slot.id)]
+  const header = ['page', 'version', 'total', 'to_review', ...scored.map((s) => s.id)]
   const rows = outcomes.map((o) => {
     const by = new Map(o.results.map((r) => [r.slotId, r]))
     return [
       o.id,
+      pageVersion.get(o.id),
       o.results.reduce((a, r) => a + r.pointsAuto, 0),
       o.results.filter((r) => r.needsReview).length,
-      ...scored.map((g) => by.get(g.slot.id)?.pointsAuto),
+      ...scored.map((s) => by.get(s.id)?.pointsAuto),
     ].map(csvCell).join(',')
   })
   await fs.writeFile(path.join(opt.out, 'results.csv'), [header.join(','), ...rows].join('\n') + '\n')
 
   const hand = opt.grades ? new Map(parseCsv(await fs.readFile(opt.grades, 'utf8')).map((r) => [r.page!, r])) : null
-  await fs.writeFile(path.join(opt.out, 'report.md'), report(opt, outcomes, scored, hand))
+  await fs.writeFile(path.join(opt.out, 'report.md'), report(opt, outcomes, pageVersion, hand))
   console.log(`\nWrote ${path.join(opt.out, 'report.md')} and results.csv`)
 }
 
@@ -549,7 +629,7 @@ function describeRead(r: SlotResult): string {
 function report(
   opt: ReturnType<typeof args>,
   outcomes: PageOutcome[],
-  scored: GradedSlot[],
+  pageVersion: Map<string, string>,
   hand: Map<string, Record<string, string>> | null,
 ): string {
   // Cached calls carry the usage from when they were first made, so the cost here is
@@ -566,9 +646,9 @@ function report(
   const all = outcomes.flatMap((o) => o.results.filter((r) => r.maxPoints > 0).map((r) => ({ page: o.id, r })))
 
   const out: string[] = [
-    `# Quiz grader spike — ${opt.assessment}, version ${opt.version}`,
+    `# Quiz grader spike — ${opt.assessment}`,
     '',
-    `- Pages: ${pages}; scored slots per page: ${scored.length}`,
+    `- Pages: ${pages}; versions: ${[...new Set(outcomes.map((o) => pageVersion.get(o.id)))].map((v) => `${v} ×${outcomes.filter((o) => pageVersion.get(o.id) === v).length}`).join(', ')}${opt.version ? ' (set with --version)' : ' (detected)'}`,
     `- Models: text ${opt.modelText}, structures ${opt.modelStructure}`,
     `- Cost: $${cost.toFixed(4)} total, $${(cost / Math.max(1, pages)).toFixed(4)} per page` +
       (cachedCalls ? ` (${cachedCalls} of ${usage.length} calls came from the cache this run and were not billed again)` : '') +
