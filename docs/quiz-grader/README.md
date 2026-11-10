@@ -16,7 +16,8 @@ folder. Read `HANDOFF.md` first, then `SPEC.md`, `SCHEMA.md`, `PLAN.md`.
 | Phase 0 spike | `backend/scripts/quiz-grader-spike.ts` | Script only, no DB or UI. |
 | Tests | `backend/scripts/smoke-quiz-grader.ts` | `npm run test:quiz-grader --workspace=backend`; pure, runs in CI. |
 | API tests | `backend/scripts/smoke-quiz-content.ts` | Needs a running server and database, like the other smoke tests: `E2E_BASE=… npm run test:smoke:quiz-content --workspace=backend`. |
-| Later | a "Paper quizzes" tab on the class page | Professor-only. Students never use it. Grades can land in Pulse's gradebook, matched by `Student.netId`, not just a Canvas CSV. |
+| Vision service | `vision/` (Python, OpenCV), its own Railway service | Splits PDFs, lines pages up, finds versions, crops boxes. Deploy steps in `vision/README.md`. |
+| Scans | `backend/src/quizGrader/scans.ts`, `routes/quizScans.routes.ts` | Uploads, background worker, page images under `<UPLOAD_DIR>/.quiz-scans` (never public). |
 
 Pulse already supplies much of what the handoff's architecture lists: Prisma/Postgres,
 professor auth, the Anthropic SDK with structured output (`themes.service.ts`), an upload
@@ -156,7 +157,41 @@ markers kept for phone capture later.
   arrows. Each arrow's tail end was read off the form; **check them in the box editor**.
   TCA structures are not graded, so they have no boxes.
 
-Not yet: marker *detection* on uploads (Phase 3 for scans, Phase 6 for phone photos).
+Marker detection on uploads arrived in Phase 3.
+
+## Phase 3: scans in, pages lined up
+
+**Status:** done, pending deployment of the vision service.
+
+- **Vision service** (`vision/`): a small Python service (FastAPI, OpenCV, pypdfium2) on
+  Railway's private network, called only by Pulse with a shared secret. Splits PDFs into
+  pages; lines each page up by corner markers, else the form's printed lines, else the
+  paper's edges; finds the version; crops every box and flags empty ones. Keeps nothing.
+- **Uploads**: an assessment's page has a **Scans** section. Upload a copier PDF (one quiz
+  per page) or photos. Pages are processed in the background, two at a time; progress
+  updates live. Each upload opens as a grid of its pages; each page opens a debug view
+  with the boxes drawn over the lined-up scan, how it was lined up, how well the form's
+  lines matched, version fits, and every box's crop.
+- **Unsure pages wait**: a page whose version cannot be told is marked "needs version";
+  pick it on the page and it is processed again. Any page can be re-processed after a
+  layout change, or forced to another version.
+- **Privacy**: page images are student work. They are stored on the upload volume under
+  `.quiz-scans/`, which the public `/uploads` route never serves, and are read only by
+  the owning professor through signed-in requests. Names and NetIDs are cropped but, as
+  before, never sent to Claude. The vision service deletes each upload once Pulse has
+  every page.
+- **Acceptance**: an angled phone photo of a marker print, an angled phone photo of an old
+  print, a crooked copier scan of an old print, and a copier scan of a marker print all
+  line up (93–100% of the form's lines matching) with the right version, through the real
+  upload path: `backend/scripts/smoke-quiz-scans.ts` (22 checks) with fixtures from
+  `vision/make_fixtures.py`, and `vision/test_pipeline.py`. These are synthetic pages
+  built from the real forms; a run with your own scans and phone photos is the real test.
+
+To deploy: create the `vision` service and set `VISION_URL`/`VISION_TOKEN` on Pulse
+(`vision/README.md`). Until then the Scans section says scanning is not set up.
+
+Still open: how long to keep scans (open question 3). Delete an upload to remove its
+images now.
 
 ## Changes from the handoff
 

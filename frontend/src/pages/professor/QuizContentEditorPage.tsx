@@ -8,6 +8,7 @@ import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
 import ChipList from '@/components/quizGrader/ChipList'
 import LayoutEditor from '@/components/quizGrader/LayoutEditor'
+import ScansPanel from '@/components/quizGrader/ScansPanel'
 import { apiError } from '@/lib/errors'
 import { KIND_LABEL, downloadPrintable, saveText, type QuizContentDetail, type RawIntermediate, type RawKey, type RawLayout, type RawStep } from '@/lib/quizGrader'
 
@@ -101,9 +102,13 @@ function SourceView({ item }: { item: QuizContentDetail }) {
       </Header>
       {printError && <p className="text-sm text-warn mb-4">{printError}</p>}
       <Problems item={item} />
-      <Card className="p-4 overflow-x-auto">
-        <pre className="text-xs font-mono text-ink-2 whitespace-pre">{item.source}</pre>
-      </Card>
+      {item.kind === 'ASSESSMENT' && !item.issues.length && <ScansPanel assessmentId={item.id} />}
+      <details className="group" open={item.kind !== 'ASSESSMENT'}>
+        <summary className="text-sm font-semibold text-ink cursor-pointer mb-2">YAML</summary>
+        <Card className="p-4 overflow-x-auto">
+          <pre className="text-xs font-mono text-ink-2 whitespace-pre">{item.source}</pre>
+        </Card>
+      </details>
     </>
   )
 }

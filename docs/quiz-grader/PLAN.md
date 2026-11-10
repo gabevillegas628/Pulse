@@ -21,7 +21,7 @@ Upload blank PDF → layout editor (draw/resize/label boxes, assign type + ref) 
 markers + per-version QR → printable PDFs.
 **Done when:** both sample quizzes have complete layouts and print-ready PDFs.
 
-## Phase 3 — Ingest + alignment (vision service)
+## Phase 3 — Ingest + alignment (vision service)  *(done — see README.md)*
 Bulk PDF upload and single-photo upload; page splitting; marker alignment with contour
 fallback; QR version read; cropping; blank detection. Debug view showing aligned page with
 boxes overlaid.

@@ -90,3 +90,42 @@ export async function downloadPrintable(api: { get: (url: string, cfg: object) =
   const r = await api.get(`/quiz-grader/content/${id}/print${version ? `?version=${encodeURIComponent(version)}` : ''}`, { responseType: 'blob' })
   saveBlob(`${slug}${version ? `-${version}` : ''}.pdf`, r.data as Blob)
 }
+
+// ── Scans ──────────────────────────────────────────────────────────────────────
+
+export type PageStatus = 'PENDING' | 'PROCESSING' | 'DONE' | 'NEEDS_VERSION' | 'FAILED'
+
+export interface QuizBatch {
+  id: string
+  assessmentId: string
+  fileName: string
+  pageCount: number
+  createdAt: string
+  counts: Partial<Record<PageStatus, number>>
+}
+
+export interface QuizPage {
+  id: string
+  batchId: string
+  index: number
+  status: PageStatus
+  version: string | null
+  versionForced: string | null
+  method: string | null
+  markers: number | null
+  match: number | null
+  fits: Record<string, number> | null
+  slots: { id: string; ink: number; blank: boolean }[] | null
+  error: string | null
+}
+
+export const STATUS_LABEL: Record<PageStatus, string> = {
+  PENDING: 'Queued',
+  PROCESSING: 'Processing',
+  DONE: 'Ready',
+  NEEDS_VERSION: 'Needs version',
+  FAILED: 'Failed',
+}
+
+/** Pages still on their way through the pipeline. */
+export const inFlight = (c: QuizBatch['counts']) => (c.PENDING ?? 0) + (c.PROCESSING ?? 0)

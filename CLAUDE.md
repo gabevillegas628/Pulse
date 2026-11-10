@@ -22,6 +22,9 @@ work phase by phase from `docs/quiz-grader/PLAN.md`, stopping at phase boundarie
   identity is matched by a person (or a QR sheet). Guards in `reader.ts` and
   `slotsForVersion` enforce this; keep them.
 - **Student work stays out of git.** Scans and crops are FERPA material.
+- **Scans are never public.** Page images live under `<UPLOAD_DIR>/.quiz-scans/` and are
+  served only by the ownership-checked routes in `quizScans.routes.ts`; app.ts blocks the
+  folder on the static `/uploads` route. Keep both.
 - **Printed pages are permanent.** `PRINT_SCALE` and the marker geometry in
   `backend/src/quizGrader/print.ts` are read back from every quiz already printed; changing
   them breaks those pages. Add a new layout version instead.
