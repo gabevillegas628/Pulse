@@ -135,3 +135,17 @@ export async function starterFiles(): Promise<{ file: string; source: string }[]
   }
   return out
 }
+
+const CONTENT_DIR = path.resolve(SEED_DIR, '..')
+
+/**
+ * A starter layout's blank form, from the `page.source_pdf` path its YAML names
+ * (relative to docs/quiz-grader). Null when it names none or the file is not there.
+ */
+export async function starterPdf(raw: Raw): Promise<Buffer | null> {
+  const rel = (raw.page as { source_pdf?: unknown } | undefined)?.source_pdf
+  if (typeof rel !== 'string') return null
+  const file = path.resolve(CONTENT_DIR, rel)
+  if (!file.startsWith(CONTENT_DIR + path.sep)) return null
+  try { return await fs.readFile(file) } catch { return null }
+}

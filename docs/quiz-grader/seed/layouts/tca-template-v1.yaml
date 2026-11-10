@@ -2,28 +2,30 @@ layout: tca-template-v1
 page: { size: letter, source_pdf: samples/tca-quiz.pdf }
 markers: { dictionary: DICT_4X4_50, ids: [0, 1, 2, 3] }
 # Enzyme names are written in the numbered list at the bottom; cofactors at the numbered arrows.
-# in_end for each arrow must be set in the editor (arrows point different ways around the cycle).
+# Boxes and in_end (the tail of each curved cofactor arrow) measured from the blank PDF;
+# check the in_end values in the layout editor. Structures are not graded on this quiz,
+# so their boxes are left empty.
 slots:
-  - { id: name, type: identity, ref: student.name, box: null }
-  - { id: netid, type: identity, ref: student.netid, box: null }
-  - { id: s1_enzyme, type: text, ref: step.1.enzyme, box: null }
-  - { id: s1_cofactors, type: cofactor_set, ref: step.1.cofactors, in_end: null, box: null }
-  - { id: s2_enzyme, type: text, ref: step.2.enzyme, box: null }
-  - { id: s2_cofactors, type: cofactor_set, ref: step.2.cofactors, in_end: null, box: null }
-  - { id: s3_enzyme, type: text, ref: step.3.enzyme, box: null }
-  - { id: s3_cofactors, type: cofactor_set, ref: step.3.cofactors, in_end: null, box: null }
-  - { id: s4_enzyme, type: text, ref: step.4.enzyme, box: null }
-  - { id: s4_cofactors, type: cofactor_set, ref: step.4.cofactors, in_end: null, box: null }
-  - { id: s5_enzyme, type: text, ref: step.5.enzyme, box: null }
-  - { id: s5_cofactors, type: cofactor_set, ref: step.5.cofactors, in_end: null, box: null }
-  - { id: s6_enzyme, type: text, ref: step.6.enzyme, box: null }
-  - { id: s6_cofactors, type: cofactor_set, ref: step.6.cofactors, in_end: null, box: null }
-  - { id: s7_enzyme, type: text, ref: step.7.enzyme, box: null }
-  - { id: s7_cofactors, type: cofactor_set, ref: step.7.cofactors, in_end: null, box: null }
-  - { id: s8_enzyme, type: text, ref: step.8.enzyme, box: null }
-  - { id: s8_cofactors, type: cofactor_set, ref: step.8.cofactors, in_end: null, box: null }
-  - { id: s9_enzyme, type: text, ref: step.9.enzyme, box: null }
-  - { id: s9_cofactors, type: cofactor_set, ref: step.9.cofactors, in_end: null, box: null }
+  - { id: name, type: identity, ref: student.name, box: [0.100, 0.012, 0.400, 0.050] }
+  - { id: netid, type: identity, ref: student.netid, box: [0.730, 0.012, 0.200, 0.050] }
+  - { id: s1_enzyme, type: text, ref: step.1.enzyme, box: [0.090, 0.772, 0.340, 0.046] }
+  - { id: s1_cofactors, type: cofactor_set, ref: step.1.cofactors, in_end: left, box: [0.240, 0.090, 0.270, 0.170] }
+  - { id: s2_enzyme, type: text, ref: step.2.enzyme, box: [0.090, 0.813, 0.340, 0.046] }
+  - { id: s2_cofactors, type: cofactor_set, ref: step.2.cofactors, in_end: left, box: [0.500, 0.100, 0.200, 0.160] }
+  - { id: s3_enzyme, type: text, ref: step.3.enzyme, box: [0.090, 0.854, 0.340, 0.046] }
+  - { id: s3_cofactors, type: cofactor_set, ref: step.3.cofactors, in_end: top, box: [0.660, 0.190, 0.240, 0.160] }
+  - { id: s4_enzyme, type: text, ref: step.4.enzyme, box: [0.090, 0.895, 0.340, 0.046] }
+  - { id: s4_cofactors, type: cofactor_set, ref: step.4.cofactors, in_end: top, box: [0.660, 0.340, 0.280, 0.160] }
+  - { id: s5_enzyme, type: text, ref: step.5.enzyme, box: [0.090, 0.936, 0.340, 0.046] }
+  - { id: s5_cofactors, type: cofactor_set, ref: step.5.cofactors, in_end: top, box: [0.610, 0.480, 0.270, 0.160] }
+  - { id: s6_enzyme, type: text, ref: step.6.enzyme, box: [0.540, 0.772, 0.340, 0.046] }
+  - { id: s6_cofactors, type: cofactor_set, ref: step.6.cofactors, in_end: right, box: [0.420, 0.560, 0.250, 0.160] }
+  - { id: s7_enzyme, type: text, ref: step.7.enzyme, box: [0.540, 0.813, 0.340, 0.046] }
+  - { id: s7_cofactors, type: cofactor_set, ref: step.7.cofactors, in_end: right, box: [0.190, 0.520, 0.240, 0.170] }
+  - { id: s8_enzyme, type: text, ref: step.8.enzyme, box: [0.540, 0.854, 0.340, 0.046] }
+  - { id: s8_cofactors, type: cofactor_set, ref: step.8.cofactors, in_end: left, box: [0.090, 0.420, 0.240, 0.150] }
+  - { id: s9_enzyme, type: text, ref: step.9.enzyme, box: [0.540, 0.895, 0.340, 0.046] }
+  - { id: s9_cofactors, type: cofactor_set, ref: step.9.cofactors, in_end: bottom, box: [0.070, 0.230, 0.260, 0.150] }
   - { id: int_oaa, type: structure, ref: intermediate.oaa, box: null }
   - { id: int_citrate, type: structure, ref: intermediate.citrate, box: null }
   - { id: int_cis_aconitate, type: structure, ref: intermediate.cis_aconitate, box: null }

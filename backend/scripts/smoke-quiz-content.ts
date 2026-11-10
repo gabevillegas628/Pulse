@@ -20,6 +20,7 @@ import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import { prisma } from '../src/db/index.js'
 import { config } from '../src/config/index.js'
+import { PDFDocument } from 'pdf-lib'
 
 const BASE = process.env.E2E_BASE ?? 'http://localhost:3001'
 const RUN_ID = Date.now().toString(36)
@@ -77,9 +78,9 @@ async function main() {
     const glyQuiz = items.find((i) => i.slug === 'glycolysis-quiz')!
     const tcaQuiz = items.find((i) => i.slug === 'tca-quiz')!
     check('the complete glycolysis quiz has no warnings', glyQuiz.warnings.length === 0, glyQuiz.warnings)
-    check('the TCA quiz warns its layout has no boxes yet', tcaQuiz.warnings.some((w) => w.includes('no box drawn')), tcaQuiz.warnings)
+    check('the TCA quiz notes its layout has undrawn boxes', tcaQuiz.warnings.some((w) => w.includes('no box drawn')), tcaQuiz.warnings)
     const tcaLayout = items.find((i) => i.kind === 'LAYOUT' && i.slug === 'tca-template-v1')!
-    check('the TCA layout itself warns it has no boxes yet', tcaLayout.warnings.some((w) => w.includes('29 slots')), tcaLayout.warnings)
+    check('the TCA layout warns only about its ungraded structures having no box', tcaLayout.warnings.some((w) => w.includes('9 slots')), tcaLayout.warnings)
 
     const keyItem = items.find((i) => i.kind === 'KEY' && i.slug === 'glycolysis')!
     check('a key is listed by its title', keyItem.title === 'Glycolysis')
@@ -132,6 +133,28 @@ async function main() {
     check('a new key imports', newKey.status === 201)
     const delNew = await http('DELETE', `/api/quiz-grader/content/${newKey.body.data.id}`, T)
     check('an unused key deletes', delNew.status === 200)
+
+    // Blank forms and printing
+    const layouts = items.filter((i) => i.kind === 'LAYOUT') as unknown as { id: string; hasPdf: boolean }[]
+    check('starter layouts come with their blank PDFs', layouts.every((l) => l.hasPdf))
+    const pdfRes = await fetch(`${BASE}/api/quiz-grader/content/${layouts[0]!.id}/pdf`, { headers: { Authorization: `Bearer ${T}` } })
+    check('a layout PDF downloads', pdfRes.status === 200 && (await pdfRes.arrayBuffer()).byteLength > 1000)
+    const printAll = await fetch(`${BASE}/api/quiz-grader/content/${glyQuiz.id}/print`, { headers: { Authorization: `Bearer ${T}` } })
+    const allPdf = await PDFDocument.load(new Uint8Array(await printAll.arrayBuffer()))
+    check('printing the glycolysis quiz gives one page per version (3)', printAll.status === 200 && allPdf.getPageCount() === 3)
+    const printB = await fetch(`${BASE}/api/quiz-grader/content/${glyQuiz.id}/print?version=B`, { headers: { Authorization: `Bearer ${T}` } })
+    check('printing one version gives one page', printB.status === 200 && (await PDFDocument.load(new Uint8Array(await printB.arrayBuffer()))).getPageCount() === 1
+      && /glycolysis-quiz-B\.pdf/.test(printB.headers.get('content-disposition') ?? ''))
+    const printZ = await http('GET', `/api/quiz-grader/content/${glyQuiz.id}/print?version=Z`, T)
+    check('printing an unknown version is refused', printZ.status === 400)
+    const junk = await fetch(`${BASE}/api/quiz-grader/content/${layouts[0]!.id}/pdf`, {
+      method: 'PUT', headers: { Authorization: `Bearer ${T}`, 'Content-Type': 'application/pdf' }, body: 'not a pdf',
+    })
+    check('a file that is not a PDF is refused', junk.status === 400)
+    const keyPdf = await fetch(`${BASE}/api/quiz-grader/content/${keyItem.id}/pdf`, {
+      method: 'PUT', headers: { Authorization: `Bearer ${T}`, 'Content-Type': 'application/pdf' }, body: new Uint8Array(await (await fetch(`${BASE}/api/quiz-grader/content/${layouts[0]!.id}/pdf`, { headers: { Authorization: `Bearer ${T}` } })).arrayBuffer()),
+    })
+    check('only layouts take a PDF', keyPdf.status === 400)
 
     // Ownership
     const theirs = await http('GET', `/api/quiz-grader/content/${keyItem.id}`, T2)

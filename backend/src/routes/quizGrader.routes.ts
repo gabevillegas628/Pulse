@@ -2,7 +2,8 @@
  * Quiz grader content: answer keys, layouts and assessments, kept as YAML.
  * Professor-only. See docs/quiz-grader/README.md.
  */
-import { Router, Request, Response, NextFunction } from 'express'
+import express, { Router, Request, Response, NextFunction } from 'express'
+import { PDFDocument } from 'pdf-lib'
 import { z } from 'zod'
 import type { QuizContent } from '@prisma/client'
 import { prisma } from '../db/index.js'
@@ -11,8 +12,10 @@ import { requireProfessor, ProfessorRequest } from '../middleware/auth.middlewar
 import { ownedQuizContent } from '../utils/ownership.js'
 import { p } from '../utils/params.js'
 import { patchYaml } from '../quizGrader/yamlPatch.js'
+import { printablePdf } from '../quizGrader/print.js'
+import { assessmentSchema, versionPage } from '../quizGrader/content.js'
 import {
-  ContentError, KIND_LABEL, crossCheck, dependents, kindOf, parseSource, schemaIssues, slugOf, starterFiles, titleOf, validate,
+  ContentError, KIND_LABEL, crossCheck, dependents, kindOf, parseSource, schemaIssues, slugOf, starterFiles, starterPdf, titleOf, validate,
   type Raw,
 } from '../quizGrader/store.js'
 
@@ -23,8 +26,11 @@ function asAppError(e: unknown): unknown {
   return e instanceof ContentError ? new AppError(e.message, 400) : e
 }
 
+/** A row without its PDF bytes, which only the PDF and print routes need. */
+type Row = Omit<QuizContent, 'pdf'> & { hasPdf: boolean }
+
 /** The summary the list shows, and the editor's header. */
-function summary(row: QuizContent, all: QuizContent[]) {
+function summary(row: Row, all: Row[]) {
   let raw: Raw | null = null
   let issues: string[]
   try {
@@ -39,20 +45,37 @@ function summary(row: QuizContent, all: QuizContent[]) {
     slug: row.slug,
     title: raw ? titleOf(row.kind, raw) : row.slug,
     updatedAt: row.updatedAt,
+    hasPdf: row.hasPdf,
     issues,
-    warnings: issues.length ? [] : crossCheck(row, all),
+    warnings: issues.length ? [] : [...pdfWarnings(row, all), ...crossCheck(row, all)],
   }
 }
 
-async function loadAll(professorId: string) {
-  return prisma.quizContent.findMany({ where: { professorId }, orderBy: [{ kind: 'asc' }, { slug: 'asc' }] })
+/** Printing needs the layout's blank form. */
+function pdfWarnings(row: Row, all: Row[]): string[] {
+  if (row.kind === 'LAYOUT') return row.hasPdf ? [] : ['No blank PDF uploaded yet, so it cannot be printed or drawn on.']
+  if (row.kind !== 'ASSESSMENT') return []
+  let layoutSlug: unknown
+  try { layoutSlug = parseSource(row.source).layout } catch { return [] }
+  const layout = all.find((r) => r.kind === 'LAYOUT' && r.slug === layoutSlug)
+  return layout && !layout.hasPdf ? [`Layout "${layout.slug}" has no blank PDF, so this cannot be printed yet.`] : []
 }
 
-async function loadOne(req: Request) {
+async function loadAll(professorId: string): Promise<Row[]> {
+  const [rows, withPdf] = await Promise.all([
+    prisma.quizContent.findMany({ where: { professorId }, omit: { pdf: true }, orderBy: [{ kind: 'asc' }, { slug: 'asc' }] }),
+    prisma.quizContent.findMany({ where: { professorId, pdf: { not: null } }, select: { id: true } }),
+  ])
+  const has = new Set(withPdf.map((r) => r.id))
+  return rows.map((r) => ({ ...r, hasPdf: has.has(r.id) }))
+}
+
+async function loadOne(req: Request): Promise<Row> {
   const professor = (req as ProfessorRequest).professor
-  const row = await prisma.quizContent.findFirst({ where: { id: p(req.params.id), ...ownedQuizContent(professor) } })
+  const row = await prisma.quizContent.findFirst({ where: { id: p(req.params.id), ...ownedQuizContent(professor) }, omit: { pdf: true } })
   if (!row) throw new AppError('Not found', 404)
-  return row
+  const withPdf = await prisma.quizContent.count({ where: { id: row.id, pdf: { not: null } } })
+  return { ...row, hasPdf: withPdf > 0 }
 }
 
 // List everything, with problems and warnings for each.
@@ -105,11 +128,11 @@ router.post('/quiz-grader/content', requireProfessor, async (req: Request, res: 
     if (existing && !replace) {
       throw new AppError(`You already have a ${KIND_LABEL[kind]} named "${slug}". Import it again with "replace" to overwrite it.`, 409, 'QUIZ_CONTENT_EXISTS')
     }
-    const row = existing
-      ? await prisma.quizContent.update({ where: { id: existing.id }, data: { source } })
-      : await prisma.quizContent.create({ data: { professorId: professor.id, kind, slug, source } })
+    const saved = existing
+      ? await prisma.quizContent.update({ where: { id: existing.id }, data: { source }, select: { id: true } })
+      : await prisma.quizContent.create({ data: { professorId: professor.id, kind, slug, source }, select: { id: true } })
     const all = await loadAll(professor.id)
-    res.status(existing ? 200 : 201).json({ success: true, data: summary(row, all) })
+    res.status(existing ? 200 : 201).json({ success: true, data: summary(all.find((r) => r.id === saved.id)!, all) })
   } catch (err) {
     next(isUniqueViolation(err) ? new AppError('That name was taken a moment ago; try again.', 409) : asAppError(err))
   }
@@ -141,7 +164,7 @@ router.put('/quiz-grader/content/:id', requireProfessor, async (req: Request, re
     const { text, method } = patchYaml(row.source, data)
     const saved = method === 'unchanged'
       ? row
-      : await prisma.quizContent.update({ where: { id: row.id }, data: { source: text, slug } })
+      : { ...(await prisma.quizContent.update({ where: { id: row.id }, data: { source: text, slug }, omit: { pdf: true } })), hasPdf: row.hasPdf }
     const after = all.map((r) => (r.id === saved.id ? saved : r))
     res.json({ success: true, data: { ...summary(saved, after), source: saved.source, data: parseSource(saved.source), method } })
   } catch (err) {
@@ -172,12 +195,98 @@ router.post('/quiz-grader/starter', requireProfessor, async (req: Request, res: 
       const raw = parseSource(source)
       const kind = kindOf(raw)
       const slug = slugOf(kind, raw)
-      const exists = await prisma.quizContent.findUnique({ where: { professorId_kind_slug: { professorId: professor.id, kind, slug } } })
-      if (exists) { skipped.push(file); continue }
-      await prisma.quizContent.create({ data: { professorId: professor.id, kind, slug, source } })
+      const pdf = kind === 'LAYOUT' ? await starterPdf(raw) : null
+      const exists = await prisma.quizContent.findUnique({
+        where: { professorId_kind_slug: { professorId: professor.id, kind, slug } },
+        select: { id: true, pdf: true },
+      })
+      if (exists) {
+        // An existing starter layout without its PDF (loaded before PDFs were kept) gets one.
+        if (pdf && !exists.pdf) await prisma.quizContent.update({ where: { id: exists.id }, data: { pdf: new Uint8Array(pdf) } })
+        skipped.push(file)
+        continue
+      }
+      await prisma.quizContent.create({ data: { professorId: professor.id, kind, slug, source, ...(pdf ? { pdf: new Uint8Array(pdf) } : {}) } })
       added.push(file)
     }
     res.json({ success: true, data: { added, skipped } })
+  } catch (err) {
+    next(asAppError(err))
+  }
+})
+
+// ── Blank forms and printing ───────────────────────────────────────────────────
+
+/** Upload a layout's blank form: one page per version. Replaces any earlier one. */
+router.put(
+  '/quiz-grader/content/:id/pdf',
+  requireProfessor,
+  express.raw({ type: 'application/pdf', limit: '15mb' }),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const row = await loadOne(req)
+      if (row.kind !== 'LAYOUT') throw new AppError('Only a layout has a blank PDF.', 400)
+      const bytes = req.body as Buffer
+      if (!Buffer.isBuffer(bytes) || !bytes.length) throw new AppError('Send the PDF as the request body (Content-Type: application/pdf).', 400)
+      let pages: number
+      try {
+        pages = (await PDFDocument.load(bytes)).getPageCount()
+      } catch {
+        throw new AppError('That file could not be read as a PDF.', 400)
+      }
+      await prisma.quizContent.update({ where: { id: row.id }, data: { pdf: new Uint8Array(bytes) } })
+      res.json({ success: true, data: { pages } })
+    } catch (err) {
+      next(err)
+    }
+  },
+)
+
+router.get('/quiz-grader/content/:id/pdf', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const row = await loadOne(req)
+    const { pdf } = await prisma.quizContent.findUniqueOrThrow({ where: { id: row.id }, select: { pdf: true } })
+    if (!pdf) throw new AppError('No blank PDF uploaded for this layout.', 404)
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `inline; filename="${row.slug.replace(/[^\w.-]/g, '_')}.pdf"`)
+    res.send(Buffer.from(pdf))
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * An assessment's print-ready PDF: each version's page of the blank form with corner
+ * markers. `?version=A` for one version, or every version in order without it.
+ */
+router.get('/quiz-grader/content/:id/print', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const row = await loadOne(req)
+    if (row.kind !== 'ASSESSMENT') throw new AppError('Print an assessment; it says which page each version uses.', 400)
+    const parsed = assessmentSchema.safeParse(parseSource(row.source))
+    if (!parsed.success) throw new AppError('Fix this assessment\'s problems before printing it.', 400)
+    const a = parsed.data
+    const version = typeof req.query.version === 'string' ? req.query.version : null
+    const versions = version ? [version] : Object.keys(a.versions)
+    if (version && !a.versions[version]) throw new AppError(`No version "${version}" in ${a.assessment}.`, 400)
+
+    const layout = await prisma.quizContent.findUnique({
+      where: { professorId_kind_slug: { professorId: row.professorId, kind: 'LAYOUT', slug: a.layout } },
+      select: { pdf: true },
+    })
+    if (!layout) throw new AppError(`No layout named "${a.layout}".`, 400)
+    if (!layout.pdf) throw new AppError(`Layout "${a.layout}" has no blank PDF yet.`, 400)
+
+    let out: Uint8Array
+    try {
+      out = await printablePdf(layout.pdf, versions.map((v) => versionPage(a, v)))
+    } catch (e) {
+      throw new AppError((e as Error).message, 400)
+    }
+    const name = `${a.assessment}${version ? `-${version}` : ''}`.replace(/[^\w.-]/g, '_')
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="${name}.pdf"`)
+    res.send(Buffer.from(out))
   } catch (err) {
     next(asAppError(err))
   }

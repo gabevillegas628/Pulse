@@ -98,10 +98,21 @@ export const assessmentSchema = z.object({
     enzymes: stepSelection.default('all'),
     cofactors: stepSelection.default('all'),
   }),
-  versions: z.record(z.object({ structures: z.array(z.string()).default([]) })),
+  versions: z.record(z.object({
+    structures: z.array(z.string()).default([]),
+    /** Page of the layout's PDF printed for this version; default: its position in `versions`. */
+    page: z.number().int().positive().optional(),
+  })),
 })
 
 export type Assessment = z.infer<typeof assessmentSchema>
+
+/** The 1-based page of the layout PDF that a version is printed from. */
+export function versionPage(assessment: Assessment, version: string): number {
+  const v = assessment.versions[version]
+  if (!v) throw new Error(`Version "${version}" is not in ${assessment.assessment}`)
+  return v.page ?? Object.keys(assessment.versions).indexOf(version) + 1
+}
 
 // ── Loading ────────────────────────────────────────────────────────────────────
 

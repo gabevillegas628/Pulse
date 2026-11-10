@@ -439,6 +439,10 @@ model QuizContent {
   // The YAML's own name for itself: `pathway:` for a key, `layout:`, `assessment:`.
   slug        String
   source      String
+  // Layouts only: the blank form, as a PDF, one page per version. What the box editor
+  // draws on and what printing stamps corner markers onto. Small (a quiz page is tens of
+  // kilobytes), so it lives in the row rather than on the upload volume.
+  pdf         Bytes?
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
