@@ -13,11 +13,12 @@ and requests are not logged. Student work lives in Pulse, not here.
 1. In the Pulse project, **New → GitHub Repo →** this repo. Name the service `vision`.
 2. Service **Settings → Source → Root Directory:** `vision`. Railway builds the Dockerfile.
 3. **Settings → Networking:** no public domain. Pulse reaches it on the private network.
-4. **Variables:** `VISION_TOKEN` = a long random string (`openssl rand -hex 32`).
+4. **Variables:** `VISION_TOKEN` = a long random string (`openssl rand -hex 32`), and
+   `PORT` = `8000`.
 5. On the **Pulse** service, add variables:
-   - `VISION_URL` = `http://vision.railway.internal:${{vision.PORT}}` (or the port shown
-     in the vision service's settings)
-   - `VISION_TOKEN` = the same string as above
+   - `VISION_URL` = `${{vision.RAILWAY_PRIVATE_DOMAIN}}` (a bare hostname is fine: Pulse
+     adds `http://` and port 8000), or spelled out, `http://vision.railway.internal:8000`
+   - `VISION_TOKEN` = `${{vision.VISION_TOKEN}}`, or the same string pasted
 6. Redeploy Pulse. Its scans screen says "not set up" until both variables are present.
 
 Memory: ~300 MB idle, more while processing a page; the smallest plan with 1 GB is plenty.
