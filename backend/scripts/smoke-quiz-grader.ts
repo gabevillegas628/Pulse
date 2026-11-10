@@ -112,6 +112,8 @@ check('Pi on both sides is wrong, not half right (page 11)',
   scoreCofactors([{ text: 'NAD+', side: 'in' }, { text: 'Pi', side: 'in' }, { text: 'NADH', side: 'out' }, { text: 'Pi', side: 'out' }], gapdh, allOrNothing).fraction === 0)
 check('stoichiometry is ignored: 2NAD+, 2 Pi, 2NADH, 2H+ (page 20)',
   scoreCofactors([{ text: '2NAD+', side: 'in' }, { text: '2 Pi', side: 'in' }, { text: '2NADH', side: 'out' }, { text: '2H+', side: 'out' }], gapdh, allOrNothing).fraction === 1)
+check('the same item on both sides is flagged (page 4: NADH read as NAD+)',
+  scoreCofactors([{ text: 'NAD+', side: 'in' }, { text: 'Pi', side: 'in' }, { text: 'NAD+', side: 'out' }, { text: 'H+', side: 'out' }], gapdh, allOrNothing).bothSides.join() === 'NAD+')
 check('cofactors all or nothing: one side right is 0', scoreCofactors([{ text: 'ATP', side: 'in' }], atp, allOrNothing).fraction === 0)
 check('"G3P dehydrogenase" and its spellings are accepted (pages 2, 4, 6, 19)',
   ['G3P dehydrogenase', 'G-3P Dehydrogenase', 'G3p Dehydrogenase', 'G-3-P dehydrogenase'].every((t) => matchText(t, gly.steps['6']!.enzyme.accept).verdict === 'exact'))

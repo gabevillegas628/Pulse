@@ -134,6 +134,7 @@ export function gradePage(
         confidence: read.confidence,
         unclearSide: cofactorResult.unclearSide,
         extras: cofactorResult.extras,
+        bothSides: cofactorResult.bothSides,
       }, confT),
     )
   })

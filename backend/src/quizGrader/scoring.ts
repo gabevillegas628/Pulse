@@ -111,6 +111,11 @@ export interface CofactorResult {
   extras: string[]
   /** Something the model could not place on a side, which a person must judge. */
   unclearSide: boolean
+  /**
+   * The same item read on both sides. Usually a misread ("NADH" read as a second
+   * "NAD+"), occasionally a real mistake, so a person decides.
+   */
+  bothSides: string[]
 }
 
 /**
@@ -150,6 +155,7 @@ export function scoreCofactors(items: CofactorItem[], spec: CofactorSpec, opts: 
     groups,
     extras,
     unclearSide: read.some((r) => r.side === 'unclear'),
+    bothSides: [...new Set(read.filter((r) => r.side === 'in' && read.some((o) => o.side === 'out' && o.norm === r.norm)).map((r) => r.text))],
   }
 }
 
@@ -183,6 +189,7 @@ export function reviewReasons(
     inexact?: string
     unclearSide?: boolean
     extras?: string[]
+    bothSides?: string[]
     illegible?: boolean
   },
   confidenceThreshold = DEFAULT_CONFIDENCE_THRESHOLD,
@@ -198,6 +205,7 @@ export function reviewReasons(
   else if (signals.nearThreshold) reasons.push('close to an accepted answer')
   if (signals.unclearSide) reasons.push('cofactor side unclear')
   if (signals.extras?.length) reasons.push(`unexpected: ${signals.extras.join(', ')}`)
+  if (signals.bothSides?.length) reasons.push(`on both sides: ${signals.bothSides.join(', ')}`)
   return reasons
 }
 
