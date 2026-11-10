@@ -30,6 +30,11 @@
  *   --limit N                      only the first N pages
  *   --model-text / --model-structure   override MODEL_TEXT / MODEL_STRUCTURE
  *
+ * Each page is lined up against the blank form before cropping — shift, scale (94-106%)
+ * and tilt (up to 1.5°) — and the run prints how far off each page was. A match under 60%
+ * means the page did not line up: fed in very crooked, another version, or another quiz.
+ * Set QG_DEBUG=1 to print each slot's handwriting pixel count.
+ *
  * Requires poppler's `pdftoppm` on PATH for PDFs.
  */
 import 'dotenv/config'
@@ -77,6 +82,13 @@ const MARGIN = 0.006
  */
 const BLANK_MIN_PIXELS = 60
 const BLANK_MIN_SHARE = 0.0006
+/**
+ * What counts as ink: darker than this, or than 35 below the page's paper colour if the
+ * scanner made the paper grey. Pencil sits around 130-200, so mid-grey (128) misses it.
+ */
+const INK_MAX = 200
+/** Below this share of the blank form's printed lines found on the scan, warn. */
+const MIN_MATCH = 0.6
 
 /** $ per million tokens, input / output. Update from the pricing page if these move. */
 const PRICES: Record<string, [number, number]> = {
@@ -160,6 +172,142 @@ async function collectPages(input: string, out: string, limit: number): Promise<
   return pages
 }
 
+// ── Alignment ──────────────────────────────────────────────────────────────────
+
+/**
+ * Where the blank form sits on a scan. A form pixel t maps to the scan at
+ *   centre + rotate(theta) · s · (t − centre) + (dx, dy)
+ * Rotating about the page centre keeps the shift and the tilt from trading off.
+ */
+interface Align {
+  s: number
+  /** Degrees, clockwise on screen. */
+  theta: number
+  dx: number
+  dy: number
+  /** Share of the form's printed lines found on the scan at that placement. */
+  match: number
+}
+
+/** A greyscale page as raw bytes, W×H, one byte per pixel. */
+type Raw = Uint8Array
+
+async function toRaw(png: Buffer, w = W, h = H): Promise<Raw> {
+  const { data } = await sharp(png).resize(w, h, { fit: 'fill' }).greyscale().raw().toBuffer({ resolveWithObject: true })
+  return new Uint8Array(data)
+}
+
+const fromRaw = (raw: Raw, w = W, h = H) => sharp(Buffer.from(raw), { raw: { width: w, height: h, channels: 1 } })
+
+/** Pixels darker than `max`, grown by `r` in every direction. */
+function darkMask(raw: Raw, w: number, h: number, max: number, r = 0): Uint8Array {
+  const out = new Uint8Array(w * h)
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      if (raw[y * w + x]! >= max) continue
+      for (let j = Math.max(0, y - r); j <= Math.min(h - 1, y + r); j++)
+        for (let i = Math.max(0, x - r); i <= Math.min(w - 1, x + r); i++) out[j * w + i] = 1
+    }
+  return out
+}
+
+const range = (from: number, to: number, step: number) =>
+  Array.from({ length: Math.round((to - from) / step) + 1 }, (_, i) => Number((from + i * step).toFixed(4)))
+
+/**
+ * Find the placement that best lays the blank form's printed lines over the scan,
+ * coarse to fine: 1/8 size over the whole plausible range, then 1/2, then full size.
+ * Handwriting barely matters — the score only asks whether each printed-line pixel of
+ * the form lands on ink, and pencil washes out when the image is shrunk.
+ */
+async function alignToTemplate(template: Buffer, page: Buffer): Promise<Align> {
+  const level = async (factor: number, dark: number, everyNth: number) => {
+    const w = Math.round(W / factor)
+    const h = Math.round(H / factor)
+    const t = darkMask(await toRaw(template, w, h), w, h, dark)
+    const hit = darkMask(await toRaw(page, w, h), w, h, dark, 1)
+    const xs: number[] = []
+    const ys: number[] = []
+    let k = 0
+    for (let i = 0; i < t.length; i++) if (t[i] && k++ % everyNth === 0) { xs.push(i % w); ys.push(Math.floor(i / w)) }
+    return { factor, w, h, xs, ys, hit }
+  }
+
+  type Level = Awaited<ReturnType<typeof level>>
+  const search = (L: Level, thetas: number[], scales: number[], dxs: number[], dys: number[]) => {
+    const cx = L.w / 2
+    const cy = L.h / 2
+    let best: Align = { s: 1, theta: 0, dx: 0, dy: 0, match: -1 }
+    let bestCost = Infinity
+    for (const theta of thetas) {
+      const cos = Math.cos((theta * Math.PI) / 180)
+      const sin = Math.sin((theta * Math.PI) / 180)
+      for (const s of scales) {
+        const px = L.xs.map((x, k) => cx + s * (cos * (x - cx) - sin * (L.ys[k]! - cy)))
+        const py = L.xs.map((x, k) => cy + s * (sin * (x - cx) + cos * (L.ys[k]! - cy)))
+        for (const dy of dys)
+          for (const dx of dxs) {
+            let n = 0
+            for (let k = 0; k < px.length; k++) {
+              const x = Math.round(px[k]! + dx)
+              const y = Math.round(py[k]! + dy)
+              if (x >= 0 && y >= 0 && x < L.w && y < L.h && L.hit[y * L.w + x]) n++
+            }
+            const match = px.length ? n / px.length : 0
+            // On a tie, prefer the placement closest to "the scanner did nothing".
+            const cost = Math.abs(theta) * 10 + Math.abs(s - 1) * 100 + Math.abs(dx) + Math.abs(dy)
+            if (match > best.match || (match === best.match && cost < bestCost)) {
+              best = { s, theta, dx, dy, match }
+              bestCost = cost
+            }
+          }
+      }
+    }
+    return best
+  }
+
+  // Coarse: ±1.5°, 94-106% (copier reduce/enlarge), ±26 px at 1/8 size ≈ ±1 inch.
+  const L8 = await level(8, 170, 1)
+  const a = search(L8, range(-1.5, 1.5, 0.25), range(0.94, 1.06, 0.02), range(-26, 26, 1), range(-26, 26, 1))
+  const L2 = await level(2, 120, 2)
+  const b = search(L2, range(a.theta - 0.25, a.theta + 0.25, 0.125), range(a.s - 0.02, a.s + 0.02, 0.005),
+    range(4 * a.dx - 6, 4 * a.dx + 6, 1), range(4 * a.dy - 6, 4 * a.dy + 6, 1))
+  const L1 = await level(1, 110, 4)
+  const c = search(L1, range(b.theta - 0.1, b.theta + 0.1, 0.05), range(b.s - 0.004, b.s + 0.004, 0.002),
+    range(2 * b.dx - 3, 2 * b.dx + 3, 1), range(2 * b.dy - 3, 2 * b.dy + 3, 1))
+  return c
+}
+
+/** Resample the scan into the blank form's coordinates, so every box lands on its blank. */
+function warpToTemplate(page: Raw, a: Align): Raw {
+  const out = new Uint8Array(W * H).fill(255)
+  const cx = W / 2
+  const cy = H / 2
+  const cos = Math.cos((a.theta * Math.PI) / 180)
+  const sin = Math.sin((a.theta * Math.PI) / 180)
+  for (let ty = 0; ty < H; ty++)
+    for (let tx = 0; tx < W; tx++) {
+      const x = cx + a.s * (cos * (tx - cx) - sin * (ty - cy)) + a.dx
+      const y = cy + a.s * (sin * (tx - cx) + cos * (ty - cy)) + a.dy
+      const x0 = Math.floor(x)
+      const y0 = Math.floor(y)
+      if (x0 < 0 || y0 < 0 || x0 >= W - 1 || y0 >= H - 1) continue
+      const fx = x - x0
+      const fy = y - y0
+      const i = y0 * W + x0
+      out[ty * W + tx] = Math.round(
+        page[i]! * (1 - fx) * (1 - fy) + page[i + 1]! * fx * (1 - fy) + page[i + W]! * (1 - fx) * fy + page[i + W + 1]! * fx * fy,
+      )
+    }
+  return out
+}
+
+const mm = (px: number) => `${px >= 0 ? '+' : ''}${((px / DPI) * 25.4).toFixed(1)}mm`
+const describeAlign = (a: Align) =>
+  `shift ${mm(a.dx)} across, ${mm(a.dy)} down, tilt ${a.theta.toFixed(2)}°, scale ${(a.s * 100).toFixed(1)}%, match ${(a.match * 100).toFixed(0)}%`
+
+// ── Ink ────────────────────────────────────────────────────────────────────────
+
 function pixelRect(box: Box) {
   const [x, y, w, h] = box
   const left = Math.max(0, Math.floor((x - MARGIN) * W))
@@ -169,15 +317,31 @@ function pixelRect(box: Box) {
   return { left, top, width: right - left, height: bottom - top }
 }
 
-/** Pixels darker than mid-grey. */
-async function inkPixels(img: Buffer): Promise<number> {
-  const { data } = await sharp(img).greyscale().raw().toBuffer({ resolveWithObject: true })
-  let dark = 0
-  for (const v of data) if (v < 128) dark++
-  return dark
+/** The paper's grey level: the most common value among the lighter half of pixels. */
+function paperLevel(raw: Raw): number {
+  const hist = new Array<number>(256).fill(0)
+  for (let i = 0; i < raw.length; i += 7) hist[raw[i]!]!++
+  let best = 255
+  for (let v = 128; v < 256; v++) if (hist[v]! > hist[best]!) best = v
+  return best
 }
 
-async function overlay(pageFile: string, slots: GradedSlot[], blank: Set<string>, to: string) {
+/**
+ * Handwriting pixels in a box: ink on the aligned scan that is not within a few pixels
+ * of anything printed on the blank form. Printed lines never count, even when the
+ * alignment is a pixel or two off.
+ */
+function newInk(page: Raw, printed: Uint8Array, rect: ReturnType<typeof pixelRect>, inkMax: number): number {
+  let n = 0
+  for (let y = rect.top; y < rect.top + rect.height; y++)
+    for (let x = rect.left; x < rect.left + rect.width; x++) {
+      const i = y * W + x
+      if (page[i]! < inkMax && !printed[i]) n++
+    }
+  return n
+}
+
+async function overlay(page: Buffer, slots: GradedSlot[], blank: Set<string>, to: string) {
   const rects = slots
     .map((g) => {
       const r = pixelRect(g.slot.box!)
@@ -188,7 +352,7 @@ async function overlay(pageFile: string, slots: GradedSlot[], blank: Set<string>
     .join('\n')
   const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">${rects}</svg>`)
   // sharp resizes before it composites, so draw at full size first, then shrink.
-  const drawn = await sharp(pageFile).composite([{ input: svg }]).png().toBuffer()
+  const drawn = await sharp(page).composite([{ input: svg }]).png().toBuffer()
   await sharp(drawn).resize(Math.round(W / 2)).png().toFile(to)
 }
 
@@ -263,8 +427,9 @@ async function main() {
   const templatePrefix = path.join(opt.out, 'template')
   pdfToPngs(path.join(CONTENT, layout.page.source_pdf), templatePrefix, templatePage)
   const template = await sharp(`${templatePrefix}.png`).resize(W, H, { fit: 'fill' }).greyscale().png().toBuffer()
-  const templateInk = new Map<string, number>()
-  for (const g of slots) templateInk.set(g.slot.id, await inkPixels(await sharp(template).extract(pixelRect(g.slot.box!)).toBuffer()))
+  // Everything printed on the form, grown by 4 px so a slightly-off alignment or a
+  // thicker copier line still falls inside it.
+  const printed = darkMask(await toRaw(template), W, H, 230, 4)
 
   const pages = await collectPages(opt.input, opt.out, opt.limit)
   if (!pages.length) throw new Error(`No PDFs or images found in ${opt.input}`)
@@ -278,7 +443,16 @@ async function main() {
     const started = Date.now()
     const pageDir = path.join(opt.out, 'pages', page.id)
     await fs.mkdir(pageDir, { recursive: true })
-    const img = await fs.readFile(page.file)
+    const scanned = await fs.readFile(page.file)
+    const align = await alignToTemplate(template, scanned)
+    const raw = warpToTemplate(await toRaw(scanned), align)
+    const img = await fromRaw(raw).png().toBuffer()
+    await fs.writeFile(path.join(pageDir, 'aligned.png'), img)
+    const inkMax = Math.min(INK_MAX, paperLevel(raw) - 35)
+    const placed = describeAlign(align)
+    if (align.match < MIN_MATCH) {
+      console.log(`  ${page.id}: WARNING — only ${(align.match * 100).toFixed(0)}% of the form's lines found. Crooked, a different version, or not this quiz?`)
+    }
 
     // Crop each distinct box once; slots that share a box share the crop.
     const byBox = new Map<string, { png: Buffer; slots: GradedSlot[] }>()
@@ -293,13 +467,15 @@ async function main() {
       }
       region.slots.push(g)
       const r = pixelRect(g.slot.box!)
-      const extra = (await inkPixels(region.png)) - (templateInk.get(g.slot.id) ?? 0)
-      if (extra < Math.max(BLANK_MIN_PIXELS, BLANK_MIN_SHARE * r.width * r.height)) blank.add(g.slot.id)
+      const ink = newInk(raw, printed, r, inkMax)
+      const need = Math.max(BLANK_MIN_PIXELS, BLANK_MIN_SHARE * r.width * r.height)
+      if (process.env.QG_DEBUG) console.log(`    ${g.slot.id}: ${ink} handwriting px, blank below ${need.toFixed(0)}`)
+      if (ink < need) blank.add(g.slot.id)
     }
-    await overlay(page.file, slots, blank, path.join(pageDir, 'overlay.png'))
+    await overlay(img, slots, blank, path.join(pageDir, 'overlay.png'))
 
     if (!client) {
-      console.log(`  ${page.id}: ${blank.size} of ${slots.length} slots look blank${blank.size ? ` (${[...blank].join(', ')})` : ''}`)
+      console.log(`  ${page.id}: ${placed}; ${blank.size} of ${slots.length} slots look blank${blank.size ? ` (${[...blank].join(', ')})` : ''}`)
       continue
     }
 
@@ -327,7 +503,7 @@ async function main() {
     outcomes.push({ id: page.id, results, seconds, usage })
     await fs.writeFile(path.join(pageDir, 'results.json'), JSON.stringify(results, null, 2))
     const total = results.reduce((a, r) => a + r.pointsAuto, 0)
-    console.log(`  ${page.id}: ${total}/${scored.reduce((a, g) => a + g.maxPoints, 0)}, ${results.filter((r) => r.needsReview).length} to review, ${seconds.toFixed(1)}s`)
+    console.log(`  ${page.id}: ${placed}; ${total}/${scored.reduce((a, g) => a + g.maxPoints, 0)}, ${results.filter((r) => r.needsReview).length} to review, ${seconds.toFixed(1)}s`)
   }
 
   if (opt.dryRun) {

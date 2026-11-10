@@ -43,9 +43,12 @@ page, then score in code.
    ```
    Use `npx tsx` as shown, not `npm run quiz-grader:spike --`: PowerShell drops the `--`,
    npm then takes `--version` for itself and just prints npm's version number.
-   Open `quiz-spike-out/pages/<page>/overlay.png`: every box should sit over its blank
-   (blue = text, purple = structure, grey = judged empty). The glycolysis boxes were
-   measured by hand from the sample PDF, so nudge `box:` values in the layout if needed.
+   Each scan is first lined up against the blank form (shift, scale, tilt up to 1.5°);
+   the output prints how far off each page was, and warns if under 60% of the form's
+   lines could be matched. Open `quiz-spike-out/pages/<page>/overlay.png` — the
+   straightened page with the boxes drawn on — and check every box sits over its blank
+   (blue = text, purple = structure, grey = judged empty). "Empty" means no ink beyond
+   what is printed on the blank form, pencil included.
 3. **Hand-grade** by filling in `quiz-spike-out/hand-grades-template.csv`: points per
    slot, with the same point values as the assessment (enzyme 1, cofactors 1, structure 2).
    Use fractions for partial credit (0.5).
