@@ -117,6 +117,43 @@ export interface QuizPage {
   fits: Record<string, number> | null
   slots: { id: string; ink: number; blank: boolean }[] | null
   error: string | null
+  gradeStatus: GradeStatus
+  gradeError: string | null
+  pointsAuto: number | null
+  maxPoints: number | null
+  toReview: number | null
+}
+
+export type GradeStatus = 'NONE' | 'PENDING' | 'GRADING' | 'GRADED' | 'FAILED'
+
+/** One answer box on one paper, scored. */
+export interface SlotResult {
+  slotId: string
+  kind: 'enzyme' | 'cofactors' | 'structure'
+  status: 'blank' | 'read' | 'illegible' | 'error'
+  blankBy: 'ink' | 'model' | null
+  transcription: string | null
+  groupKey: string | null
+  detail: {
+    match: { verdict: string; alias: string; distance: number } | null
+    cofactors: { text: string; side: string }[] | null
+    features: { feature: string; present: boolean; confidence: number }[] | null
+    description: string | null
+  }
+  confidence: number
+  pointsAuto: number
+  maxPoints: number
+  needsReview: boolean
+  reviewReasons: string[]
+}
+
+/** How a box was read, in a few words. */
+export function describeRead(r: SlotResult): string {
+  if (r.status === 'blank') return r.blankBy === 'ink' ? 'empty (not sent)' : 'read as empty'
+  if (r.status !== 'read') return r.status
+  if (r.kind === 'cofactors') return (r.detail.cofactors ?? []).map((c) => `${c.text} ${c.side === 'in' ? '→ in' : c.side === 'out' ? '→ out' : '(?)'}`).join(', ') || 'nothing'
+  if (r.kind === 'structure') return r.detail.description ?? 'drawing'
+  return `“${r.transcription ?? ''}”`
 }
 
 export const STATUS_LABEL: Record<PageStatus, string> = {

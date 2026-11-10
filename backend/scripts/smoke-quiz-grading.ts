@@ -132,6 +132,13 @@ async function main() {
     await until('page 3 graded', async () => (await results()).pages[2].gradeStatus === 'GRADED')
     check('naming a version gets the page graded', (await results()).pages[2].version === 'A')
 
+    // Pages lined up before grading was set up can be graded later.
+    await prisma.quizPage.update({ where: { id: r.pages[1].id }, data: { gradeStatus: 'NONE' } })
+    const queued = await api('POST', `/api/quiz-grader/content/${quiz.id}/grade-ungraded`, T)
+    check('"grade ungraded" queues exactly the ungraded page', queued.body.data.queued === 1, queued.body)
+    await until('the ungraded page graded', async () => (await results()).pages[1].gradeStatus === 'GRADED')
+    check('it gets graded', true)
+
     // Comparison with hand grades.
     const csv = 'page,s1_enzyme,s2_enzyme,s4_enzyme,int_pep\ntestScans-p1,1,0,0,1\n2,1,1,0,-\n'
     const cmp = (await api('POST', `/api/quiz-grader/batches/${batchId}/compare`, T, { csv })).body.data

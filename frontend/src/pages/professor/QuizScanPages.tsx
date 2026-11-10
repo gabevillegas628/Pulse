@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, ChevronLeft, ChevronRight, RotateCw, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, ChevronLeft, ChevronRight, FileSpreadsheet, RotateCw, Trash2 } from 'lucide-react'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import Button from '@/components/ui/Button'
@@ -11,7 +11,7 @@ import ConfirmDialog, { type DialogRequest } from '@/components/ui/ConfirmDialog
 import AuthImage from '@/components/quizGrader/AuthImage'
 import { apiError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
-import { STATUS_LABEL, inFlight, type PageStatus, type QuizBatch, type QuizPage } from '@/lib/quizGrader'
+import { STATUS_LABEL, describeRead, inFlight, type PageStatus, type QuizBatch, type QuizPage, type SlotResult } from '@/lib/quizGrader'
 
 /**
  * One upload of scans, page by page; and one page in detail, with the boxes drawn over
@@ -41,7 +41,8 @@ export function QuizBatchPage() {
   const { data: batch, error } = useQuery<BatchDetail>({
     queryKey: ['quiz-grader', 'batch', batchId],
     queryFn: () => api.get(`/quiz-grader/batches/${batchId}`).then((r) => r.data.data),
-    refetchInterval: (q) => (q.state.data && inFlight(q.state.data.counts) > 0 ? 2000 : false),
+    refetchInterval: (q) => (q.state.data && (inFlight(q.state.data.counts) > 0
+      || q.state.data.pages.some((pg) => pg.gradeStatus === 'PENDING' || pg.gradeStatus === 'GRADING')) ? 2000 : false),
   })
 
   function remove() {
@@ -80,11 +81,16 @@ export function QuizBatchPage() {
             {batch.pages.map((pg) => (
               <Link key={pg.id} to={`/professor/quiz-grader/pages/${pg.id}`} className="block">
                 <Card className="overflow-hidden hover:ring-2 hover:ring-signal">
-                  <AuthImage
-                    src={`/quiz-grader/pages/${pg.id}/${pg.status === 'DONE' || pg.status === 'NEEDS_VERSION' ? 'aligned' : 'original'}`}
-                    alt={`Page ${pg.index + 1}`}
-                    className="aspect-[17/22] overflow-hidden"
-                  />
+                  {pg.status === 'PENDING' || pg.status === 'PROCESSING' ? (
+                    // Nothing to show until the page has been fetched and lined up.
+                    <div className="aspect-[17/22] bg-surface-2" />
+                  ) : (
+                    <AuthImage
+                      src={`/quiz-grader/pages/${pg.id}/${pg.status === 'FAILED' ? 'original' : 'aligned'}`}
+                      alt={`Page ${pg.index + 1}`}
+                      className="aspect-[17/22] overflow-hidden"
+                    />
+                  )}
                   <div className="p-2 space-y-1">
                     <div className="flex items-center justify-between gap-1">
                       <span className="text-sm font-semibold text-ink">Page {pg.index + 1}</span>
@@ -95,12 +101,21 @@ export function QuizBatchPage() {
                         Version {pg.version} · {METHOD_LABEL[pg.method ?? ''] ?? pg.method} · lines {pct(pg.match)}
                       </p>
                     )}
+                    {pg.gradeStatus === 'GRADED' && (
+                      <p className="text-xs text-ink">
+                        <span className="font-semibold">{pg.pointsAuto}/{pg.maxPoints}</span>
+                        {pg.toReview ? <span className="text-warn"> · {pg.toReview} to review</span> : null}
+                      </p>
+                    )}
+                    {(pg.gradeStatus === 'PENDING' || pg.gradeStatus === 'GRADING') && <p className="text-xs text-muted">Grading…</p>}
+                    {pg.gradeStatus === 'FAILED' && <p className="text-xs text-warn">Grading failed</p>}
                     {pg.status === 'FAILED' && <p className="text-xs text-warn line-clamp-2">{pg.error}</p>}
                   </div>
                 </Card>
               </Link>
             ))}
           </div>
+          <CompareWithHandGrades batchId={batch.id} />
         </>
       )}
       <ConfirmDialog request={dialog} onClose={() => setDialog(null)} />
@@ -108,7 +123,7 @@ export function QuizBatchPage() {
   )
 }
 
-type PageDetail = QuizPage & { versions: string[]; boxes: { id: string; box: [number, number, number, number] }[] }
+type PageDetail = QuizPage & { versions: string[]; boxes: { id: string; box: [number, number, number, number] }[]; results: SlotResult[]; cost: number }
 
 export function QuizPageDebug() {
   const { pageId } = useParams<{ pageId: string }>()
@@ -118,7 +133,8 @@ export function QuizPageDebug() {
   const { data: page, error } = useQuery<PageDetail>({
     queryKey: ['quiz-grader', 'page', pageId],
     queryFn: () => api.get(`/quiz-grader/pages/${pageId}`).then((r) => r.data.data),
-    refetchInterval: (q) => (q.state.data && ['PENDING', 'PROCESSING'].includes(q.state.data.status) ? 1500 : false),
+    refetchInterval: (q) => (q.state.data && (['PENDING', 'PROCESSING'].includes(q.state.data.status)
+      || ['PENDING', 'GRADING'].includes(q.state.data.gradeStatus)) ? 1500 : false),
   })
   const { data: batch } = useQuery<BatchDetail>({
     queryKey: ['quiz-grader', 'batch', page?.batchId],
@@ -133,6 +149,10 @@ export function QuizPageDebug() {
   async function setVersion(version: string) {
     setMessage('')
     try { await api.post(`/quiz-grader/pages/${pageId}/version`, { version }); refresh() } catch (e) { setMessage(apiError(e, 'Could not set the version')) }
+  }
+  async function regrade() {
+    setMessage('')
+    try { await api.post(`/quiz-grader/pages/${pageId}/regrade`); refresh() } catch (e) { setMessage(apiError(e, 'Could not grade again')) }
   }
   async function retry() {
     setMessage('')
@@ -206,6 +226,26 @@ export function QuizPageDebug() {
                 {message && <p className="text-xs text-warn">{message}</p>}
               </Card>
 
+              {page.status === 'DONE' && page.gradeStatus !== 'NONE' && (
+                <Card className="p-4 space-y-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted">Grading</span>
+                    {page.gradeStatus === 'GRADED' ? <span className="text-ink font-semibold">{page.pointsAuto} / {page.maxPoints}</span>
+                      : page.gradeStatus === 'FAILED' ? <Pill variant="warn">Failed</Pill> : <Pill variant="live" dot>Grading</Pill>}
+                  </div>
+                  {page.gradeStatus === 'GRADED' && (
+                    <>
+                      <div className="flex justify-between"><span className="text-muted">To review</span><span className={cn(page.toReview ? 'text-warn' : 'text-ink')}>{page.toReview ?? 0}</span></div>
+                      <div className="flex justify-between"><span className="text-muted">Model cost</span><span className="text-ink">${page.cost.toFixed(3)}</span></div>
+                    </>
+                  )}
+                  {page.gradeError && <p className="text-xs text-warn">{page.gradeError}</p>}
+                  {(page.gradeStatus === 'FAILED' || page.gradeStatus === 'GRADED') && (
+                    <Button size="sm" onClick={() => void regrade()}><RotateCw size={13} />Grade again</Button>
+                  )}
+                </Card>
+              )}
+
               {page.versions.length > 1 && processed && (
                 <Card className="p-4">
                   <p className="text-sm font-semibold text-ink mb-1">{page.status === 'NEEDS_VERSION' ? 'Which version is this?' : 'Wrong version?'}</p>
@@ -227,22 +267,113 @@ export function QuizPageDebug() {
           {page.status === 'DONE' && page.slots && (
             <section className="mt-8">
               <h2 className="text-lg font-semibold text-ink mb-1">Boxes</h2>
-              <p className="text-xs text-muted mb-3">What each answer box cut out. Empty ones are skipped when grading.</p>
+              <p className="text-xs text-muted mb-3">What each answer box cut out, what the model read, and the points. Empty boxes and names are never sent to the model.</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {page.slots.map((s) => (
-                  <Card key={s.id} className="overflow-hidden">
-                    <AuthImage src={`/quiz-grader/pages/${page.id}/crops/${s.id}`} alt={s.id} />
-                    <div className="px-2 py-1.5 flex items-center justify-between text-xs">
-                      <span className="font-mono text-ink">{s.id}</span>
-                      {s.blank ? <span className="text-muted">empty</span> : <span className="text-ink-2">{s.ink} px ink</span>}
-                    </div>
-                  </Card>
-                ))}
+                {page.slots.map((s) => {
+                  const r = page.results.find((x) => x.slotId === s.id)
+                  return (
+                    <Card key={s.id} className={cn('overflow-hidden', r?.needsReview && 'ring-1 ring-warn/50')}>
+                      <AuthImage src={`/quiz-grader/pages/${page.id}/crops/${s.id}`} alt={s.id} />
+                      <div className="px-2 py-1.5 text-xs space-y-0.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-ink">{s.id}</span>
+                          {r ? <span className="font-semibold text-ink">{r.pointsAuto}/{r.maxPoints}</span>
+                            : s.blank ? <span className="text-muted">empty</span> : <span className="text-muted">{['name', 'netid'].includes(s.id) ? 'not sent' : ''}</span>}
+                        </div>
+                        {r && <p className="text-ink-2 break-words">{describeRead(r)}</p>}
+                        {r?.detail.match && r.detail.match.verdict !== 'exact' && (
+                          <p className="text-muted">closest: {r.detail.match.alias}</p>
+                        )}
+                        {r?.kind === 'structure' && r.detail.features && (
+                          <ul className="text-muted">
+                            {r.detail.features.map((f) => <li key={f.feature}>{f.present ? '✓' : '✗'} {f.feature}</li>)}
+                          </ul>
+                        )}
+                        {r?.needsReview && (
+                          <p className="text-warn flex gap-1"><AlertTriangle size={12} className="shrink-0 mt-px" />{r.reviewReasons.join('; ')}</p>
+                        )}
+                      </div>
+                    </Card>
+                  )
+                })}
               </div>
             </section>
           )}
         </>
       )}
     </ProfessorLayout>
+  )
+}
+
+interface Comparison {
+  byKind: { kind: string; compared: number; agree: number; flagged: number; unflaggedAgree: number; unflagged: number; afterReview: number }[]
+  disagreements: { page: number; slotId: string; read: string; auto: number; hand: number; flagged: string | null }[]
+  unmatchedPages: string[]
+}
+
+/** The Phase 0 check, on pages graded in Pulse: upload a hand-grades CSV, see agreement. */
+function CompareWithHandGrades({ batchId }: { batchId: string }) {
+  const [result, setResult] = useState<Comparison | null>(null)
+  const [error, setError] = useState('')
+  const share = (n: number, d: number) => (d ? `${((100 * n) / d).toFixed(1)}%` : '—')
+
+  async function run(file: File) {
+    setError('')
+    try {
+      const r = await api.post(`/quiz-grader/batches/${batchId}/compare`, { csv: await file.text() })
+      setResult(r.data.data)
+    } catch (e) {
+      setError(apiError(e, 'Could not compare'))
+    }
+  }
+
+  return (
+    <section className="mt-10">
+      <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
+        <div>
+          <h2 className="text-lg font-semibold text-ink">Compare with hand grades</h2>
+          <p className="text-xs text-muted">A CSV with a <span className="font-mono">page</span> column (1, 2, … or names ending in the number) and one column per box, points in each cell. The spike&rsquo;s hand-grades file works as is.</p>
+        </div>
+        <label className="inline-flex">
+          <span className="inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1.5 text-xs font-medium bg-surface border border-hairline-strong text-ink-2 hover:bg-surface-2 cursor-pointer">
+            <FileSpreadsheet size={13} />Choose CSV
+          </span>
+          <input type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void run(f) }} />
+        </label>
+      </div>
+      {error && <p className="text-sm text-warn mb-3">{error}</p>}
+      {result && (
+        <Card className="p-4 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs text-muted text-left">
+              <tr><th className="py-1 pr-4">Box kind</th><th className="pr-4">Compared</th><th className="pr-4">Agree</th><th className="pr-4">Flagged</th><th className="pr-4">Unflagged agree</th><th>After review</th></tr>
+            </thead>
+            <tbody>
+              {result.byKind.map((k) => (
+                <tr key={k.kind} className="border-t border-hairline">
+                  <td className="py-1.5 pr-4 text-ink">{k.kind}</td><td className="pr-4">{k.compared}</td><td className="pr-4">{share(k.agree, k.compared)}</td>
+                  <td className="pr-4">{share(k.flagged, k.compared)}</td><td className="pr-4">{share(k.unflaggedAgree, k.unflagged)}</td><td>{share(k.afterReview, k.compared)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="text-xs text-muted mt-2">&ldquo;Unflagged agree&rdquo; is the one to watch: those are scores nobody would look at. &ldquo;After review&rdquo; counts a flagged box as fixed.</p>
+          {result.unmatchedPages.length > 0 && <p className="text-xs text-warn mt-2">Not matched to a graded page: {result.unmatchedPages.join(', ')}</p>}
+          {result.disagreements.length > 0 && (
+            <table className="w-full text-xs mt-4">
+              <thead className="text-muted text-left"><tr><th className="py-1 pr-3">Page</th><th className="pr-3">Box</th><th className="pr-3">Read</th><th className="pr-3">Auto</th><th className="pr-3">Hand</th><th>Flagged</th></tr></thead>
+              <tbody>
+                {result.disagreements.map((d) => (
+                  <tr key={`${d.page}-${d.slotId}`} className="border-t border-hairline">
+                    <td className="py-1 pr-3">{d.page}</td><td className="pr-3 font-mono">{d.slotId}</td><td className="pr-3">{d.read}</td>
+                    <td className="pr-3">{d.auto}</td><td className="pr-3">{d.hand}</td><td className={d.flagged ? 'text-muted' : 'text-warn font-semibold'}>{d.flagged ?? 'no'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Card>
+      )}
+    </section>
   )
 }

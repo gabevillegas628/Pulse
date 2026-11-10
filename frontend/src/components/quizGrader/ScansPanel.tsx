@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Camera, FileUp, ScanLine } from 'lucide-react'
+import { Camera, FileUp, ScanLine, Table } from 'lucide-react'
 import { api } from '@/api/client'
 import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
@@ -21,7 +21,12 @@ export default function ScansPanel({ assessmentId }: { assessmentId: string }) {
   const [uploading, setUploading] = useState<string | null>(null)
   const [error, setError] = useState('')
 
-  const { data: vision } = useQuery<{ configured: boolean; healthy: boolean }>({
+  const { data: results } = useQuery<{ summary: { pages: number; graded: number; grading: number; toReview: number; cost: { dollars: number } } }>({
+    queryKey: ['quiz-grader', 'results', assessmentId],
+    queryFn: () => api.get(`/quiz-grader/content/${assessmentId}/results`).then((r) => r.data.data),
+    refetchInterval: (q) => (q.state.data?.summary.grading ? 2000 : false),
+  })
+  const { data: vision } = useQuery<{ configured: boolean; healthy: boolean; grading: boolean }>({
     queryKey: ['quiz-grader', 'vision'],
     queryFn: () => api.get('/quiz-grader/vision').then((r) => r.data.data),
   })
@@ -70,6 +75,21 @@ export default function ScansPanel({ assessmentId }: { assessmentId: string }) {
       )}
       {vision?.configured && !vision.healthy && (
         <p className="text-sm text-warn mb-3">The vision service is not answering right now, so new uploads cannot be processed.</p>
+      )}
+      {vision?.configured && !vision.grading && (
+        <p className="text-sm text-muted mb-3">Pages are lined up but not graded: grading needs ANTHROPIC_API_KEY on the server.</p>
+      )}
+      {results && results.summary.pages > 0 && (
+        <div className="flex flex-wrap items-center gap-3 mb-3 text-sm">
+          <span className="text-ink-2">
+            {results.summary.graded} of {results.summary.pages} graded
+            {results.summary.grading ? ` (${results.summary.grading} grading now)` : ''}
+            {results.summary.graded ? ` · ${results.summary.toReview} boxes to review · ${'$' + results.summary.cost.dollars.toFixed(2)}` : ''}
+          </span>
+          <Link to={`/professor/quiz-grader/${assessmentId}/results`} className="inline-flex items-center gap-1 text-signal hover:underline">
+            <Table size={14} />Results
+          </Link>
+        </div>
       )}
       {uploading && <p className="text-sm text-muted mb-3">Uploading {uploading}…</p>}
       {error && <p className="text-sm text-warn mb-3">{error}</p>}

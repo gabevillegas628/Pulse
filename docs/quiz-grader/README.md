@@ -193,6 +193,34 @@ To deploy: create the `vision` service and set `VISION_URL`/`VISION_TOKEN` on Pu
 Still open: how long to keep scans (open question 3). Delete an upload to remove its
 images now.
 
+## Phase 4: grading in Pulse
+
+**Status:** done. Not connected to the gradebook, on purpose, until there has been more
+testing.
+
+- **Automatic.** Once a page is lined up, a background worker sends its answer crops to
+  the model (one call for text boxes, one for structures; Haiku 5.5 and Sonnet 5.5, or
+  `MODEL_TEXT`/`MODEL_STRUCTURE`) and scores the readings in code against the key, with
+  the assessment's rules. Empty boxes are not sent; name and NetID boxes never are.
+  Needs `ANTHROPIC_API_KEY` on the server (already there for live themes).
+- **Results** per box (`QuizSlotResult`): reading, points, review reasons, and a group key
+  so identical answers can be reviewed together in Phase 5. Per page: total, boxes to
+  review, model cost. The page view shows each box's crop with its reading and points;
+  the upload's grid shows each page's score; **Results** lists every paper.
+- **Edits re-score for free.** What the model read is stored on the page, so saving an
+  edited key, layout or assessment re-scores every graded page that uses it with no
+  model calls (also a **Re-score with current key** button). Reads are cached by model,
+  prompt and image, so re-grading an unchanged page costs nothing.
+- **Pages from before grading** (like the first real upload) are graded with **Grade
+  ungraded pages** on the Results page.
+- **Compare with hand grades** on an upload's page takes the spike's hand-grades CSV and
+  shows the same agreement table, to repeat the Phase 0 check on pages graded in Pulse.
+
+Tests: `backend/scripts/smoke-quiz-grading.ts` (23 checks, against a running Pulse and
+vision service with a stand-in model, `backend/scripts/quiz-grader/mock-claude.mjs`).
+Not yet tried with the real model on real scans: that, plus the comparison, is the
+acceptance test.
+
 ## Changes from the handoff
 
 - **Seed YAML bug fixed.** Names containing a comma (`1,3-bisphosphoglycerate`,

@@ -256,6 +256,23 @@ router.get('/quiz-grader/content/:id/results', requireProfessor, async (req: Req
   }
 })
 
+// Grade every lined-up page not yet graded: pages uploaded before grading was set up,
+// and pages whose grading failed.
+router.post('/quiz-grader/content/:id/grade-ungraded', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const assessment = await prisma.quizContent.findFirst({ where: { id: p(req.params.id), ...ownedQuizContent(viewer(req)), kind: 'ASSESSMENT' }, select: { id: true } })
+    if (!assessment) throw new AppError('Not found', 404)
+    if (!gradingConfigured()) throw new AppError('Grading is not set up on this server (ANTHROPIC_API_KEY).', 503)
+    const r = await prisma.quizPage.updateMany({
+      where: { batch: { assessmentId: assessment.id }, status: 'DONE', gradeStatus: { in: ['NONE', 'FAILED'] } },
+      data: { gradeStatus: 'PENDING', gradeAttempts: 0, gradeError: null },
+    })
+    res.json({ success: true, data: { queued: r.count } })
+  } catch (err) {
+    next(err)
+  }
+})
+
 // Re-score every graded page against the key as it is now. No model calls.
 router.post('/quiz-grader/content/:id/rescore', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
