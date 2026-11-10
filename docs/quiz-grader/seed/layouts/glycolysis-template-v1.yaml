@@ -40,3 +40,16 @@ slots:
   - { id: int_pg2, type: structure, ref: intermediate.pg2, box: [0.495, 0.500, 0.325, 0.195] }
   - { id: int_pep, type: structure, ref: intermediate.pep, box: [0.495, 0.680, 0.325, 0.180] }
   - { id: int_pyruvate, type: structure, ref: intermediate.pyruvate, box: [0.495, 0.860, 0.450, 0.120] }
+# Intermediate names, written beside the drawings. On the left they share the structure's
+# box (one crop, name and drawing read separately); on the right students write the name
+# to the right of the drawing, out to the page edge, so those boxes run wider.
+  - { id: g6p_name, type: text, ref: intermediate.g6p.name, box: [0.030, 0.175, 0.400, 0.180] }
+  - { id: f6p_name, type: text, ref: intermediate.f6p.name, box: [0.030, 0.354, 0.400, 0.180] }
+  - { id: f16bp_name, type: text, ref: intermediate.f16bp.name, box: [0.030, 0.533, 0.400, 0.180] }
+  - { id: dhap_name, type: text, ref: intermediate.dhap.name, box: [0.000, 0.800, 0.220, 0.130] }
+  - { id: gap_name, type: text, ref: intermediate.gap.name, box: [0.240, 0.770, 0.200, 0.120] }
+  - { id: bpg13_name, type: text, ref: intermediate.bpg13.name, box: [0.495, 0.140, 0.495, 0.195] }
+  - { id: pg3_name, type: text, ref: intermediate.pg3.name, box: [0.495, 0.320, 0.495, 0.195] }
+  - { id: pg2_name, type: text, ref: intermediate.pg2.name, box: [0.495, 0.500, 0.495, 0.195] }
+  - { id: pep_name, type: text, ref: intermediate.pep.name, box: [0.495, 0.680, 0.495, 0.180] }
+  - { id: pyruvate_name, type: text, ref: intermediate.pyruvate.name, box: [0.495, 0.860, 0.495, 0.120] }

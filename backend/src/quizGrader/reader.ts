@@ -88,6 +88,10 @@ function describeTextSlot(key: PathwayKey, g: GradedSlot): string {
   switch (ref.kind) {
     case 'enzyme':
       return `${slot.id}: the enzyme name for step ${ref.stepNo} (${nameOf(key, ref.step.from)} → ${nameOf(key, ref.step.to)}), handwritten on the horizontal line. The expected answer is "${ref.step.enzyme.accept[0]}" (also accepted: ${ref.step.enzyme.accept.slice(1).join(', ') || 'none'}). Use this ONLY to help decipher messy letters.`
+    case 'name': {
+      const names = [ref.intermediate.name, ...(ref.intermediate.accept ?? [])]
+      return `${slot.id}: the NAME of an intermediate, written as words or an abbreviation (not the drawn structure, which may also be in this region). The expected name is "${names[0]}" (also accepted: ${names.slice(1).join(', ') || 'none'}). Use this ONLY to help decipher messy letters; transcribe what is written. If no name is written, status "blank".`
+    }
     case 'cofactors':
       return `${slot.id}: the cofactors for step ${ref.stepNo}, small items written near the ends of the curved arrow. ${SIDE_TEXT[slot.in_end ?? 'top']} Do not include the enzyme name written on the line.`
     default:

@@ -192,7 +192,7 @@ function GroupCard({ g, item, onGroup, onPaper }: {
   const [busy, setBusy] = useState(false)
   const first = g.members[0]!
   const autoPoints = useMemo(() => [...new Set(g.members.map((m) => m.pointsAuto))], [g.members])
-  const inexact = item.kind === 'enzyme' && first.status === 'read' && first.detail.match?.verdict !== 'exact'
+  const inexact = (item.kind === 'enzyme' || item.kind === 'name') && first.status === 'read' && first.detail.match?.verdict !== 'exact'
   const shown = more ? g.members : g.members.slice(0, 8)
   const act = async (points: number | null, withAlias = false) => {
     setBusy(true)

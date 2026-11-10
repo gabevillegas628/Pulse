@@ -558,7 +558,7 @@ async function main() {
       .map((r) => ({ id: r.slots[0]!.slot.id, png: r.png, slots: r.slots.filter((s) => !blank.has(s.slot.id)) }))
       .filter((r) => r.slots.length)
     const textRegions = regions
-      .map((r) => ({ ...r, slots: r.slots.filter((s) => s.ref.kind === 'enzyme' || s.ref.kind === 'cofactors') }))
+      .map((r) => ({ ...r, slots: r.slots.filter((s) => s.ref.kind === 'enzyme' || s.ref.kind === 'name' || s.ref.kind === 'cofactors') }))
       .filter((r) => r.slots.length)
     const structRegions = regions
       .map((r) => ({ ...r, slots: r.slots.filter((s) => s.ref.kind === 'structure') }))

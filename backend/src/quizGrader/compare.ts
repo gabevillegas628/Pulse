@@ -70,7 +70,7 @@ export function compare(results: ResultRow[], csv: string): Comparison {
     return Number.isNaN(h) ? [] : [{ r, hand: h, agrees: Math.abs(r.pointsAuto - h) < 0.01 }]
   })
 
-  const byKind = ['enzyme', 'cofactors', 'structure'].map((kind) => {
+  const byKind = ['enzyme', 'name', 'cofactors', 'structure'].map((kind) => {
     const xs = compared.filter((x) => x.r.kind === kind)
     const unflagged = xs.filter((x) => !x.r.needsReview)
     return {

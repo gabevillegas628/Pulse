@@ -140,23 +140,33 @@ export async function decidePaper(
 }
 
 /**
- * Add a written answer to the key as an accepted enzyme name ("alias learning"), so papers
+ * Add a written answer to the key as an accepted enzyme or intermediate name ("alias learning"), so papers
  * that wrote it score automatically from now on. Splices into the key's YAML like any edit,
  * then re-scores the assessment.
  */
 export async function addAlias(professorId: string, assessmentId: string, slotId: string, text: string): Promise<string> {
   const ctx = await contextFor(assessmentId)
   const slot = ctx.layout.slots.find((s) => s.id === slotId)
-  const m = slot && /^step\.(\w+)\.enzyme$/.exec(slot.ref)
-  if (!m) throw new Error('Only enzyme names can be added to the key from review')
-  const stepNo = m[1]!
+  const enzyme = slot && /^step\.(\w+)\.enzyme$/.exec(slot.ref)
+  const named = slot && /^intermediate\.(\w+)\.name$/.exec(slot.ref)
+  if (!enzyme && !named) throw new Error('Only enzyme and intermediate names can be added to the key from review')
   const keyRow = await prisma.quizContent.findUniqueOrThrow({
     where: { professorId_kind_slug: { professorId, kind: 'KEY', slug: ctx.assessment.key } },
     select: { id: true, source: true },
   })
-  const raw = parseSource(keyRow.source) as { steps: Record<string, { enzyme: { accept: string[] } }> }
-  const accept = raw.steps[stepNo]?.enzyme.accept
-  if (!accept) throw new Error(`Step ${stepNo} is not in the key`)
+  const raw = parseSource(keyRow.source) as {
+    steps: Record<string, { enzyme: { accept: string[] } }>
+    intermediates: Record<string, { name: string; accept?: string[] }>
+  }
+  let accept: string[] | undefined
+  if (enzyme) {
+    accept = raw.steps[enzyme[1]!]?.enzyme.accept
+    if (!accept) throw new Error(`Step ${enzyme[1]} is not in the key`)
+  } else {
+    const it = raw.intermediates[named![1]!]
+    if (!it) throw new Error(`Intermediate ${named![1]} is not in the key`)
+    accept = it.accept ??= []
+  }
   const alias = text.trim()
   if (!alias) throw new Error('Nothing to add')
   if (!accept.some((a) => a.toLowerCase() === alias.toLowerCase())) {
@@ -165,7 +175,10 @@ export async function addAlias(professorId: string, assessmentId: string, slotId
     await prisma.quizContent.update({ where: { id: keyRow.id }, data: { source } })
   }
   await prisma.quizDecisionLog.create({
-    data: { assessmentId, professorId, scope: 'alias', slotId, detail: { step: stepNo, alias, key: ctx.assessment.key } },
+    data: {
+      assessmentId, professorId, scope: 'alias', slotId,
+      detail: { ...(enzyme ? { step: enzyme[1] } : { intermediate: named![1] }), alias, key: ctx.assessment.key },
+    },
   })
   await rescoreAssessment(assessmentId)
   return alias

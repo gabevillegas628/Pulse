@@ -37,6 +37,11 @@ export interface SlotResult {
   reviewReasons: string[]
 }
 
+/** An intermediate's accepted names: its display name, then the key's aliases. */
+export function acceptedNames(it: { name: string; accept?: string[] }): string[] {
+  return [it.name, ...(it.accept ?? []).filter((a) => a.toLowerCase() !== it.name.toLowerCase())]
+}
+
 export interface GradeOptions extends CofactorOptions {
   fuzzyThreshold?: number
   confidenceThreshold?: number
@@ -96,9 +101,11 @@ export function gradePage(
       // it blank anyway, one of the two is wrong, and a person should look. On boxes two
       // slots share, the ink may be the other slot's (an enzyme name beside empty
       // cofactor ends): still worth a glance, since a miss silently scores 0.
+      // Not for intermediate names: they sit beside the drawings, so a name box nearly
+      // always has ink, and an unnamed intermediate would be flagged on every paper.
       const reasons = read.status === 'illegible'
         ? reviewReasons(g.review, { confidence: 0, illegible: true }, confT)
-        : reviewReasons(g.review, { confidence: 1, missedInk: true }, confT)
+        : g.ref.kind === 'name' ? [] : reviewReasons(g.review, { confidence: 1, missedInk: true }, confT)
       return finish({
         status: read.status,
         ...(read.status === 'blank' ? { blankBy: 'model' as const } : {}),
@@ -108,8 +115,9 @@ export function gradePage(
       }, reasons)
     }
 
-    if (g.ref.kind === 'enzyme') {
-      const match = matchText(read.transcription, g.ref.step.enzyme.accept, fuzzy)
+    if (g.ref.kind === 'enzyme' || g.ref.kind === 'name') {
+      const accept = g.ref.kind === 'enzyme' ? g.ref.step.enzyme.accept : acceptedNames(g.ref.intermediate)
+      const match = matchText(read.transcription, accept, fuzzy)
       return finish(
         {
           status: 'read',

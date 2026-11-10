@@ -5,6 +5,7 @@ import fs from 'fs'
 const LOG = process.argv[2]
 let count = 0
 const enz = { s1: 'Hexokinase', s2: 'phosphoglucose isomerse', s3: 'PFK-1', s4: 'aldolase', s5: 'TPI', s6: 'GAPDH', s7: 'phosphoglycerate kinase', s8: 'PGM', s9: 'enolase', s10: 'pyruvate kinase' }
+const names = { g6p: 'G6P', f6p: 'F6P', f16bp: 'fructose 1,6-bisphosphate', dhap: 'DHAP', gap: 'G3P', bpg13: '1,3-BPG', pg3: '3PG', pg2: '2PG', pep: 'PEP', pyruvate: 'pyruvate' }
 const cof = {
   s1: [['ATP', 'in'], ['ADP', 'out']], s3: [['ATP', 'in'], ['ADP', 'out']], s6: [['NAD+', 'in'], ['Pi', 'in'], ['NADH', 'out']],
   s7: [['ADP', 'in'], ['ATP', 'out']], s9: [['H2O', 'out']], s10: [['ADP', 'in'], ['ATP', 'out']],
@@ -24,6 +25,7 @@ http.createServer((req, res) => {
       const step = id.split('_')[0]
       if (isStruct) return { slot_id: id, status: 'read', description: 'a drawing', confidence: 0.9, features: [0, 1, 2, 3, 4].map((index) => ({ index, present: true, confidence: 0.9 })) }
       if (id.endsWith('_cofactors')) return { slot_id: id, status: 'read', transcription: '', confidence: 0.95, cofactors: (cof[step] ?? []).map(([text, side]) => ({ text, side })) }
+      if (id.endsWith('_name')) return { slot_id: id, status: 'read', transcription: names[id.replace(/_name$/, '')] ?? '?', cofactors: [], confidence: 0.95 }
       return { slot_id: id, status: 'read', transcription: enz[step] ?? '?', cofactors: [], confidence: 0.95 }
     })
     res.writeHead(200, { 'content-type': 'application/json' })

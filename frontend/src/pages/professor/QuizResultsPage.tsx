@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, ListChecks, RotateCw, Sparkles } from 'lucide-react'
+import { ArrowLeft, Crop, ListChecks, RotateCw, Sparkles } from 'lucide-react'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
+import ConfirmDialog, { type DialogRequest } from '@/components/ui/ConfirmDialog'
 import { apiError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { STATUS_LABEL, type QuizPage } from '@/lib/quizGrader'
@@ -15,16 +16,19 @@ interface ResultsData {
   summary: { pages: number; graded: number; grading: number; failed: number; toReview: number; cost: { dollars: number; unpriced: string[] } }
 }
 
-/** Every scanned paper of an assessment with its automatic score. Not connected to the gradebook. */
+/** Every scanned paper of an assessment with its score after review. Not connected to the gradebook. */
 export default function QuizResultsPage() {
   const { id } = useParams<{ id: string }>()
   const qc = useQueryClient()
   const [note, setNote] = useState('')
+  const [dialog, setDialog] = useState<DialogRequest | null>(null)
   const { data, error } = useQuery<ResultsData>({
     queryKey: ['quiz-grader', 'results', id],
     queryFn: () => api.get(`/quiz-grader/content/${id}/results`).then((r) => r.data.data),
     staleTime: 0,
-    refetchInterval: (q) => (q.state.data?.summary.grading ? 2000 : false),
+    // Keep updating while pages are being lined up or graded.
+    refetchInterval: (q) => (q.state.data && (q.state.data.summary.grading
+      || q.state.data.pages.some((pg) => pg.status === 'PENDING' || pg.status === 'PROCESSING')) ? 2000 : false),
   })
 
   async function rescore() {
@@ -36,6 +40,27 @@ export default function QuizResultsPage() {
       void qc.invalidateQueries({ queryKey: ['quiz-grader'] })
     } catch (e) {
       setNote(apiError(e, 'Could not re-score'))
+    }
+  }
+
+  function askReprocess() {
+    setDialog({
+      title: 'Process every page again?',
+      body: 'Every page is lined up, cut up and graded again, for after the layout’s boxes change. Your review decisions are kept, and only new or moved boxes are sent to the model.',
+      confirmLabel: 'Process again',
+      onConfirm: () => void reprocess(),
+    })
+  }
+
+  async function reprocess() {
+    setNote('')
+    try {
+      const r = await api.post(`/quiz-grader/content/${id}/reprocess`)
+      const n = r.data.data.queued as number
+      setNote(`Processing ${n} page${n === 1 ? '' : 's'} again…`)
+      void qc.invalidateQueries({ queryKey: ['quiz-grader'] })
+    } catch (e) {
+      setNote(apiError(e, 'Could not start'))
     }
   }
 
@@ -86,6 +111,9 @@ export default function QuizResultsPage() {
               <Button size="sm" onClick={() => void rescore()} title="Score every graded paper again with the key as it is now. No new model calls.">
                 <RotateCw size={13} />Re-score with current key
               </Button>
+              <Button size="sm" onClick={askReprocess} title="After changing the layout's boxes: cut every page up again and grade the new boxes">
+                <Crop size={13} />Re-process all pages
+              </Button>
             </div>
           </div>
           {note && <p className="text-sm text-muted mb-3">{note}</p>}
@@ -120,6 +148,7 @@ export default function QuizResultsPage() {
           </Card>
         </>
       )}
+      <ConfirmDialog request={dialog} onClose={() => setDialog(null)} />
     </ProfessorLayout>
   )
 }

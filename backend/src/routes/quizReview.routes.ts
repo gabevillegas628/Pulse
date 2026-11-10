@@ -11,6 +11,7 @@ import { requireProfessor, ProfessorRequest } from '../middleware/auth.middlewar
 import { ownedQuizContent } from '../utils/ownership.js'
 import { p } from '../utils/params.js'
 import { contextFor } from '../quizGrader/grading.js'
+import { acceptedNames } from '../quizGrader/grade.js'
 import { addAlias, decideGroup, decidePaper, effectiveResults, type EffectiveResult } from '../quizGrader/review.js'
 
 const router = Router()
@@ -32,6 +33,12 @@ async function slotLabels(assessmentId: string) {
   ctx.layout.slots.forEach((s, order) => {
     const m = /^step\.(\w+)\.(enzyme|cofactors)$/.exec(s.ref)
     const im = /^intermediate\.(\w+)$/.exec(s.ref)
+    const nm = /^intermediate\.(\w+)\.name$/.exec(s.ref)
+    if (nm) {
+      const it = ctx.key.intermediates[nm[1]!]
+      out.set(s.id, { label: `${it?.name ?? nm[1]} (name)`, kind: 'name', order, accept: it ? acceptedNames(it) : undefined })
+      return
+    }
     if (m) {
       const step = ctx.key.steps[m[1]!]
       out.set(s.id, {

@@ -87,13 +87,21 @@ async function main() {
     const page1 = (await api('GET', `/api/quiz-grader/pages/${r.pages[0].id}`, T)).body.data
     const res = new Map<string, { status: string; blankBy: string; pointsAuto: number; maxPoints: number; needsReview: boolean; reviewReasons: string[]; groupKey: string }>(
       page1.results.map((x: { slotId: string }) => [x.slotId, x]))
-    check('every scored box of version A has a result (19)', page1.results.length === 19, page1.results.length)
+    check('every scored box of version A has a result (19 + 10 intermediate names)', page1.results.length === 29, page1.results.length)
     check('the empty step-4 blank scores 0 without being read', res.get('s4_enzyme')?.status === 'blank' && res.get('s4_enzyme')?.blankBy === 'ink' && res.get('s4_enzyme')?.pointsAuto === 0)
     check('a right enzyme scores 1, not reviewed', res.get('s1_enzyme')?.pointsAuto === 1 && !res.get('s1_enzyme')?.needsReview)
     check('a misspelling is credited but sent to review', res.get('s2_enzyme')?.pointsAuto === 1 && res.get('s2_enzyme')?.needsReview === true)
     check('cofactors score all-or-nothing, Pi included', res.get('s6_cofactors')?.pointsAuto === 1 && res.get('s1_cofactors')?.pointsAuto === 1)
     check('structures are always reviewed', ['int_bpg13', 'int_pg2', 'int_pep'].every((s) => res.get(s)?.needsReview))
-    check('the page total is 18 of 19', page1.pointsAuto === 18 && page1.maxPoints === 19, [page1.pointsAuto, page1.maxPoints])
+    // The test page has writing near some intermediates only; the rest are empty boxes.
+    const nameResults = page1.results.filter((x: { kind: string }) => x.kind === 'name')
+    const namesRead = nameResults.filter((x: { status: string }) => x.status === 'read')
+    check('names that were written are read and scored; empty name boxes are not sent',
+      namesRead.length >= 5 && namesRead.every((x: { pointsAuto: number; needsReview: boolean }) => x.pointsAuto === 1 && !x.needsReview)
+      && nameResults.filter((x: { status: string }) => x.status !== 'read').every((x: { blankBy: string; pointsAuto: number }) => x.blankBy === 'ink' && x.pointsAuto === 0),
+      nameResults.map((x: { slotId: string; status: string; pointsAuto: number }) => `${x.slotId}:${x.status}:${x.pointsAuto}`))
+    const autoTotal = 18 + namesRead.length
+    check(`the page total is ${autoTotal} of 29 (18 as before, plus each name read)`, page1.pointsAuto === autoTotal && page1.maxPoints === 29, [page1.pointsAuto, page1.maxPoints])
     check('identical answers share a group key', res.get('s1_enzyme')?.groupKey === 'hexokinase')
     check('the page reports what its grading cost', typeof page1.cost === 'number' && page1.cost > 0)
 
@@ -112,12 +120,12 @@ async function main() {
     const edited = structuredClone(k.data)
     edited.steps['1'].enzyme.accept = ['glucokinase']
     await api('PUT', `/api/quiz-grader/content/${key.id}`, T, { data: edited, updatedAt: k.updatedAt })
-    await until('re-score after the key edit', async () => (await api('GET', `/api/quiz-grader/pages/${r.pages[0].id}`, T)).body.data.pointsAuto === 17, 20)
-    check('editing the key re-scores graded pages (hexokinase no longer accepted: 17)', true)
+    await until('re-score after the key edit', async () => (await api('GET', `/api/quiz-grader/pages/${r.pages[0].id}`, T)).body.data.pointsAuto === autoTotal - 1, 20)
+    check('editing the key re-scores graded pages (hexokinase no longer accepted: one point less)', true)
     check('re-scoring made no model calls', (await modelCalls()) === calls)
     const k2 = (await api('GET', `/api/quiz-grader/content/${key.id}`, T)).body.data
     await api('PUT', `/api/quiz-grader/content/${key.id}`, T, { data: k.data, updatedAt: k2.updatedAt })
-    await until('re-score after restoring the key', async () => (await api('GET', `/api/quiz-grader/pages/${r.pages[0].id}`, T)).body.data.pointsAuto === 18, 20)
+    await until('re-score after restoring the key', async () => (await api('GET', `/api/quiz-grader/pages/${r.pages[0].id}`, T)).body.data.pointsAuto === autoTotal, 20)
     const resc = await api('POST', `/api/quiz-grader/content/${quiz.id}/rescore`, T)
     check('re-score on demand covers both graded pages', resc.body.data.pages === 2)
 

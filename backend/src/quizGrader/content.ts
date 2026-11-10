@@ -84,6 +84,8 @@ export const assessmentSchema = z.object({
   defaults: z.object({
     points: z.object({
       enzyme: z.number().default(1),
+      /** An intermediate's name written on the form (G6P, "fructose 6-phosphate"…). */
+      name: z.number().default(1),
       cofactors: z.number().default(1),
       structure: z.number().default(2),
     }),
@@ -97,7 +99,9 @@ export const assessmentSchema = z.object({
   grade: z.object({
     enzymes: stepSelection.default('all'),
     cofactors: stepSelection.default('all'),
-  }),
+    /** Intermediate names: every one the layout has a box for, or a list of intermediate ids. */
+    names: z.union([z.literal('all'), z.array(z.string())]).default('all'),
+  }).default({}),
   versions: z.record(z.object({
     structures: z.array(z.string()).default([]),
     /** Page of the layout's PDF printed for this version; default: its position in `versions`. */
@@ -124,10 +128,12 @@ export const parseAssessment = (src: string): Assessment => assessmentSchema.par
 
 /**
  * What a slot's `ref` points at. Refs are `step.<n>.enzyme`, `step.<n>.cofactors`,
- * `intermediate.<id>`, or `student.<field>`.
+ * `intermediate.<id>` (its drawn structure), `intermediate.<id>.name` (its written name),
+ * or `student.<field>`.
  */
 export type ResolvedRef =
   | { kind: 'enzyme'; stepNo: string; step: Step }
+  | { kind: 'name'; id: string; intermediate: Intermediate }
   | { kind: 'cofactors'; stepNo: string; step: Step; spec: CofactorSpec }
   | { kind: 'structure'; id: string; intermediate: Intermediate }
   | { kind: 'identity'; field: string }
@@ -136,10 +142,10 @@ export function resolveRef(key: PathwayKey, ref: string): ResolvedRef {
   const parts = ref.split('.')
   if (parts[0] === 'student' && parts.length === 2) return { kind: 'identity', field: parts[1]! }
 
-  if (parts[0] === 'intermediate' && parts.length === 2) {
+  if (parts[0] === 'intermediate' && (parts.length === 2 || (parts.length === 3 && parts[2] === 'name'))) {
     const intermediate = key.intermediates[parts[1]!]
     if (!intermediate) throw new Error(`Unknown intermediate "${parts[1]}" in ref ${ref}`)
-    return { kind: 'structure', id: parts[1]!, intermediate }
+    return parts.length === 3 ? { kind: 'name', id: parts[1]!, intermediate } : { kind: 'structure', id: parts[1]!, intermediate }
   }
 
   if (parts[0] === 'step' && parts.length === 3) {
@@ -199,6 +205,8 @@ export function slotsForVersion(
     if (ref.kind === 'identity') graded = { slot, ref, maxPoints: 0, review: 'never', partialCredit: false }
     else if (ref.kind === 'enzyme' && selects(assessment.grade.enzymes, ref.stepNo))
       graded = { slot, ref, maxPoints: points.enzyme, review: text_review, partialCredit: false }
+    else if (ref.kind === 'name' && (assessment.grade.names === 'all' || assessment.grade.names.includes(ref.id)))
+      graded = { slot, ref, maxPoints: points.name, review: text_review, partialCredit: false }
     else if (ref.kind === 'cofactors' && selects(assessment.grade.cofactors, ref.stepNo))
       graded = { slot, ref, maxPoints: points.cofactors, review: text_review, partialCredit: partial_credit.cofactors }
     else if (ref.kind === 'structure' && v.structures.includes(ref.id))

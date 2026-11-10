@@ -245,6 +245,27 @@ acceptance test.
 Acceptance: a mock batch reviewed to zero entirely in the browser, with the Results page
 agreeing (0 boxes to review). Tests: `backend/scripts/smoke-quiz-review.ts` (22 checks).
 
+## Intermediate names
+
+A fourth kind of graded box, alongside enzyme names, cofactors and structures: an
+intermediate's written name (G6P, "fructose 6-phosphate"). In the layout it is a
+**Written name** box whose ref is `intermediate.<id>.name`; it is scored like an enzyme
+name against the intermediate's name plus its `accept` list in the key, inexact matches go
+to review, and review can add a written name to the key. An unnamed intermediate scores 0
+without being flagged (its box usually holds the drawing, so it is never "empty").
+
+The assessment controls it: `points: name:` (default 1) and `grade: names:` (`all`, the
+default, or a list of intermediate ids). The glycolysis layout has name boxes for its ten
+drawn intermediates: on the left they share the structure's box; on the right they run to
+the page edge, where students write the name beside the drawing.
+
+What counts, in general: enzyme and cofactor boxes for the steps `grade: enzymes/cofactors`
+selects (default all), name boxes for the intermediates `grade: names` selects, and
+structures only for the intermediates a version lists. Only boxes the layout has count.
+
+**Re-process all pages** (Results) cuts every page up again after a layout change, then
+grades the new boxes; review decisions are kept and unchanged crops come from the cache.
+
 ## Changes from the handoff
 
 - **Seed YAML bug fixed.** Names containing a comma (`1,3-bisphosphoglycerate`,

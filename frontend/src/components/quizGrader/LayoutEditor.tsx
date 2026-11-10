@@ -19,7 +19,7 @@ import PdfPage, { openPdf, type Pdf } from './PdfPage'
  */
 
 const TYPE_LABEL: Record<SlotType, string> = {
-  text: 'Enzyme name',
+  text: 'Written name',
   cofactor_set: 'Cofactors',
   structure: 'Structure',
   identity: 'Name / NetID',
@@ -272,7 +272,7 @@ export default function LayoutEditor({ item, draft, edit }: {
                 {(Object.keys(TYPE_LABEL) as SlotType[]).map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
               </select>
             </Labelled>
-            <Labelled label="Grades" hint="step.6.enzyme, step.6.cofactors, intermediate.pep, student.name">
+            <Labelled label="Grades" hint="step.6.enzyme · step.6.cofactors · intermediate.pep (its drawing) · intermediate.pep.name (its written name) · student.name">
               <input className={`${inputClass} font-mono text-xs`} value={sel.ref} onChange={(e) => edit((l) => { l.slots[selected]!.ref = e.target.value })} />
             </Labelled>
             {sel.type === 'cofactor_set' && (

@@ -12,7 +12,7 @@ import {
   parseAssessment, parseLayout, parsePathwayKey, resolveRef, slotsForVersion,
   type CofactorSpec,
 } from '../src/quizGrader/content.js'
-import { gradePage } from '../src/quizGrader/grade.js'
+import { acceptedNames, gradePage } from '../src/quizGrader/grade.js'
 import { readTextRegions, type StructureRead, type TextRead } from '../src/quizGrader/reader.js'
 import type Anthropic from '@anthropic-ai/sdk'
 import { matchText, normalize, scoreCofactors, scoreStructure } from '../src/quizGrader/scoring.js'
@@ -195,6 +195,37 @@ check('an answer box overlapping the name box is refused', (() => {
   const bad = { ...glyLayout, slots: glyLayout.slots.map((s) => (s.id === 's1_enzyme' ? { ...s, box: [0.2, 0.03, 0.3, 0.1] as [number, number, number, number] } : s)) }
   try { slotsForVersion(glyQuiz, bad, gly, 'A'); return false } catch (e) { return e instanceof Error && e.message.includes('overlaps name') }
 })())
+
+// ── Intermediate names ─────────────────────────────────────────────────────────
+
+{
+  const ref = resolveRef(gly, 'intermediate.g6p.name')
+  check('intermediate.<id>.name is a name, intermediate.<id> a structure',
+    ref.kind === 'name' && resolveRef(gly, 'intermediate.g6p').kind === 'structure')
+  const slotsA = slotsForVersion(glyQuiz, glyLayout, gly, 'A')
+  const names = slotsA.filter((s) => s.ref.kind === 'name')
+  check('every version grades all 10 intermediate names by default, 1 point each',
+    ['A', 'B', 'C'].every((v) => slotsForVersion(glyQuiz, glyLayout, gly, v).filter((s) => s.ref.kind === 'name').length === 10)
+    && names.every((s) => s.maxPoints === 1))
+  const some = { ...glyQuiz, grade: { ...glyQuiz.grade, names: ['g6p', 'pep'] } }
+  check('grade.names can limit which names count',
+    slotsForVersion(some, glyLayout, gly, 'A').filter((s) => s.ref.kind === 'name').map((s) => s.slot.id).join() === 'g6p_name,pep_name')
+  const accepted = acceptedNames(gly.intermediates.g6p!)
+  check('a name matches the display name and the key\'s aliases, as written by students',
+    ['G6P', 'Glucose-6-P', 'glucose 6-phosphate', 'Glc-6-P'].every((t) => matchText(t, accepted).verdict === 'exact'))
+  check('a different intermediate\'s name is wrong', matchText('F6P', accepted).verdict === 'wrong')
+
+  const text = new Map<string, TextRead>([
+    ['g6p_name', { slot_id: 'g6p_name', status: 'read', transcription: 'G6P', cofactors: [], confidence: 0.95 }],
+    ['f6p_name', { slot_id: 'f6p_name', status: 'read', transcription: 'fructose 6-phosphat', cofactors: [], confidence: 0.95 }],
+    ['pep_name', { slot_id: 'pep_name', status: 'blank', transcription: '', cofactors: [], confidence: 0.9 }],
+  ])
+  const by = new Map(gradePage(slotsA, new Set(), text, new Map()).map((r) => [r.slotId, r]))
+  check('a right name scores 1 without review', by.get('g6p_name')!.pointsAuto === 1 && !by.get('g6p_name')!.needsReview && by.get('g6p_name')!.kind === 'name')
+  check('a misspelt name is credited and reviewed', by.get('f6p_name')!.pointsAuto === 1 && by.get('f6p_name')!.needsReview)
+  check('an unnamed intermediate scores 0 without flagging (its box holds the drawing)',
+    by.get('pep_name')!.pointsAuto === 0 && !by.get('pep_name')!.needsReview)
+}
 
 // ── YAML editing: an edit changes only its own lines ──────────────────────────
 

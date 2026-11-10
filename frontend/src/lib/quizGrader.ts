@@ -131,7 +131,7 @@ export type GradeStatus = 'NONE' | 'PENDING' | 'GRADING' | 'GRADED' | 'FAILED'
 /** One answer box on one paper, scored. */
 export interface SlotResult {
   slotId: string
-  kind: 'enzyme' | 'cofactors' | 'structure'
+  kind: 'enzyme' | 'name' | 'cofactors' | 'structure'
   status: 'blank' | 'read' | 'illegible' | 'error'
   blankBy: 'ink' | 'model' | null
   transcription: string | null

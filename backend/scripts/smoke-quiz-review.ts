@@ -84,9 +84,10 @@ async function main() {
     check('an enzyme box comes with its accepted names', Array.isArray(s2item.accept) && s2item.accept.includes('phosphoglucose isomerase'))
 
     // Mark the group wrong: one decision, two papers.
+    const [a1, a2] = [(await page(p1.id)).pointsAuto, (await page(p2.id)).pointsAuto]
     await api('POST', `/api/quiz-grader/content/${quiz.id}/review/s2_enzyme/group`, T, { groupKey: misspelt.groupKey, points: 0 })
-    check('one group decision covers both papers', (await review()).open === 6 && (await page(p1.id)).pointsFinal === 17 && (await page(p2.id)).pointsFinal === 16)
-    check('the automatic score is kept alongside', (await page(p1.id)).pointsAuto === 18)
+    check('one group decision covers both papers', (await review()).open === 6 && (await page(p1.id)).pointsFinal === a1 - 1 && (await page(p2.id)).pointsFinal === a2 - 1)
+    check('the automatic score is kept alongside', (await page(p1.id)).pointsAuto === a1)
 
     // Change of mind: correct after all, and add it to the key.
     const yamlBefore = await (await fetch(`${BASE}/api/quiz-grader/content/${key.id}/yaml`, { headers: { Authorization: `Bearer ${T}` } })).text()
@@ -141,6 +142,18 @@ async function main() {
       }
     }
     check('every flagged box can be decided: nothing left to review', (await review()).open === 0 && (await results()).summary.toReview === 0)
+
+    // Re-processing every page (after a layout change) keeps every decision.
+    await until('nothing still processing', async () => (await results()).pages.every((pg: { status: string }) => pg.status !== 'PENDING' && pg.status !== 'PROCESSING'))
+    const totalsBefore = (await results()).pages.map((pg: { pointsFinal: number | null }) => pg.pointsFinal).join()
+    const rp = await api('POST', `/api/quiz-grader/content/${quiz.id}/reprocess`, T)
+    check('re-process queues every page', rp.body.data.queued === 6, rp.body)
+    await until('everything re-processed and re-graded', async () => {
+      const x = await results()
+      return x.summary.graded === 4 && x.pages.every((pg: { status: string }) => pg.status === 'DONE' || pg.status === 'NEEDS_VERSION') && !x.summary.grading
+    })
+    check('after re-processing, decisions still apply: same scores, nothing to review',
+      (await results()).pages.map((pg: { pointsFinal: number | null }) => pg.pointsFinal).join() === totalsBefore && (await review()).open === 0)
 
     // The log.
     const log = (await api('GET', `/api/quiz-grader/content/${quiz.id}/log`, T)).body.data.entries

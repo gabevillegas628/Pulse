@@ -10,6 +10,7 @@ layout: tca-template-v1
 defaults:
   points:
     enzyme: 1
+    name: 1          # an intermediate's name, where the layout has a box for it
     cofactors: 1
     structure: 1
   # All or nothing: every required cofactor on the right side, every structure feature.
@@ -22,6 +23,7 @@ defaults:
 grade:
   enzymes: all
   cofactors: all
+  names: all         # or a list of intermediate ids, e.g. [g6p, f6p]
 
 versions:
   A:

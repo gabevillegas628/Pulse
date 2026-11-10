@@ -74,7 +74,9 @@ export function matchText(transcription: string, accept: string[], threshold = D
   for (const alias of accept) {
     const a = normalize(alias)
     if (a === norm) return { verdict: 'exact', normalized: norm, alias, distance: 0, nearThreshold: false }
-    if (a.length < 5) continue
+    // Judged as written, before "6P" grows into "6phosphate": G6P against F6P is a
+    // different molecule, not a typo, however long the expansion makes them look.
+    if (alias.replace(/[^a-z0-9]/gi, '').length < 5) continue
     const d = normalizedDistance(norm, a)
     if (d < best.distance) best = { alias, distance: d }
   }

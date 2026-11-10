@@ -75,7 +75,7 @@ function inkBlanks(page: Pick<QuizPage, 'slots'>): Set<string> {
 function groupKey(r: SlotResult): string | null {
   if (r.status === 'blank') return '(blank)'
   if (r.status !== 'read') return `(${r.status})`
-  if (r.kind === 'enzyme') return r.match?.normalized ?? normalize(r.transcription ?? '')
+  if (r.kind === 'enzyme' || r.kind === 'name') return r.match?.normalized ?? normalize(r.transcription ?? '')
   if (r.kind === 'cofactors') {
     return (r.cofactors ?? []).map((c) => `${c.side}:${normalize(stripCoefficient(c.text))}`).sort().join(' ')
   }
@@ -158,7 +158,7 @@ async function gradeOne(pageId: string): Promise<void> {
     .filter((r) => r.slots.length)
 
   const client = new Anthropic({ apiKey: config.anthropicApiKey })
-  const textRegions = pick(['enzyme', 'cofactors'])
+  const textRegions = pick(['enzyme', 'name', 'cofactors'])
   const structRegions = pick(['structure'])
   const [text, struct] = await Promise.all([
     textRegions.length ? readTextRegions(client, ctx.key, textRegions, { model: MODEL_TEXT, cache: dbCache }) : null,
