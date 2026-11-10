@@ -46,7 +46,7 @@ export default function QuizResultsPage() {
   function askReprocess() {
     setDialog({
       title: 'Process every page again?',
-      body: 'Every page is lined up, cut up and graded again, for after the layout’s boxes change. Your review decisions are kept, and only new or moved boxes are sent to the model.',
+      body: 'Every page is lined up, cut up and graded again, for after the layout’s boxes change. Your review decisions are kept. Pages whose boxes did not change are graded from the cache at no cost; the others cost about what grading them did the first time.',
       confirmLabel: 'Process again',
       onConfirm: () => void reprocess(),
     })

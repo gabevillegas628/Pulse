@@ -264,7 +264,9 @@ selects (default all), name boxes for the intermediates `grade: names` selects, 
 structures only for the intermediates a version lists. Only boxes the layout has count.
 
 **Re-process all pages** (Results) cuts every page up again after a layout change, then
-grades the new boxes; review decisions are kept and unchanged crops come from the cache.
+grades it again; review decisions are kept. Model reads are cached per page and kind
+(written answers, structures), so what did not change costs nothing, and a page that
+gained name boxes has its written answers read again (a fraction of a cent with Haiku).
 
 ## Changes from the handoff
 

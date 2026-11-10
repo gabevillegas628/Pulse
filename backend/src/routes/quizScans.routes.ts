@@ -295,8 +295,8 @@ router.post('/quiz-grader/content/:id/grade-ungraded', requireProfessor, async (
 })
 
 // Line up and crop every page again, then grade it: after the layout's boxes change. Review
-// decisions are kept (they live apart from results), and unchanged crops are read from the
-// cache, so only new or moved boxes cost model calls.
+// decisions are kept (they live apart from results). Model reads are cached per request, so
+// a page whose crops did not change costs nothing; one that gained a box is read again.
 router.post('/quiz-grader/content/:id/reprocess', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const assessment = await prisma.quizContent.findFirst({ where: { id: p(req.params.id), ...ownedQuizContent(viewer(req)), kind: 'ASSESSMENT' }, select: { id: true } })
