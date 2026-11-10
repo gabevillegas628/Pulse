@@ -78,6 +78,8 @@ async function main() {
     const tcaQuiz = items.find((i) => i.slug === 'tca-quiz')!
     check('the complete glycolysis quiz has no warnings', glyQuiz.warnings.length === 0, glyQuiz.warnings)
     check('the TCA quiz warns its layout has no boxes yet', tcaQuiz.warnings.some((w) => w.includes('no box drawn')), tcaQuiz.warnings)
+    const tcaLayout = items.find((i) => i.kind === 'LAYOUT' && i.slug === 'tca-template-v1')!
+    check('the TCA layout itself warns it has no boxes yet', tcaLayout.warnings.some((w) => w.includes('29 slots')), tcaLayout.warnings)
 
     const keyItem = items.find((i) => i.kind === 'KEY' && i.slug === 'glycolysis')!
     check('a key is listed by its title', keyItem.title === 'Glycolysis')

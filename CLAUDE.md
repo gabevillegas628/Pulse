@@ -22,3 +22,6 @@ work phase by phase from `docs/quiz-grader/PLAN.md`, stopping at phase boundarie
   identity is matched by a person (or a QR sheet). Guards in `reader.ts` and
   `slotsForVersion` enforce this; keep them.
 - **Student work stays out of git.** Scans and crops are FERPA material.
+- **Edits splice, never re-render.** Stored YAML is changed only through `patchYaml`
+  (`backend/src/quizGrader/yamlPatch.ts`), which rewrites just the changed text. Saving
+  `stringify(parsed)` would silently reformat the whole file and break clean exports.

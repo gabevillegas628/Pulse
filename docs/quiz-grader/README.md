@@ -9,10 +9,13 @@ folder. Read `HANDOFF.md` first, then `SPEC.md`, `SCHEMA.md`, `PLAN.md`.
 
 | Piece | Location | Notes |
 |---|---|---|
-| Content (keys, layouts, assessments) | `docs/quiz-grader/seed/` | YAML. Moves into Postgres in Phase 1 with lossless import/export. |
+| Content (keys, layouts, assessments) | `QuizContent` table, per professor | Stored as YAML source. Starter files in `docs/quiz-grader/seed/`. |
+| Content UI | **Paper quizzes** in the professor header (`/professor/quiz-grader`) | List, import/export YAML, answer-key editor. |
+| Content API | `backend/src/routes/quizGrader.routes.ts` | Under `/api/quiz-grader`, professor only. |
 | Engine | `backend/src/quizGrader/` | `content.ts` (schemas, joining slots to the key), `scoring.ts` (normalisation, fuzzy match, cofactors, structures, review policy), `reader.ts` (Claude calls), `grade.ts` (one page → slot results). Pure except `reader.ts`. |
 | Phase 0 spike | `backend/scripts/quiz-grader-spike.ts` | Script only, no DB or UI. |
-| Tests | `backend/scripts/smoke-quiz-grader.ts` | `npm run test:quiz-grader --workspace=backend`; runs in CI. |
+| Tests | `backend/scripts/smoke-quiz-grader.ts` | `npm run test:quiz-grader --workspace=backend`; pure, runs in CI. |
+| API tests | `backend/scripts/smoke-quiz-content.ts` | Needs a running server and database, like the other smoke tests: `E2E_BASE=… npm run test:smoke:quiz-content --workspace=backend`. |
 | Later | a "Paper quizzes" tab on the class page | Professor-only. Students never use it. Grades can land in Pulse's gradebook, matched by `Student.netId`, not just a Canvas CSV. |
 
 Pulse already supplies much of what the handoff's architecture lists: Prisma/Postgres,
@@ -99,6 +102,30 @@ all or nothing** (`partial_credit: false` in the assessments). A required cofact
 on the wrong side as well as the right one fails its group. Structures stay
 **review-always**: the model's feature checklist is a suggestion; the instructor is more
 lenient than the checklist (e.g. full credit for a PEP drawn without its C=C).
+
+## Phase 1: content in the database
+
+**Status:** done. Answer keys, layouts and assessments live in Pulse, one row each per
+professor, as their YAML text. **Paper quizzes** in the professor header lists them,
+imports and exports YAML, loads the glycolysis/TCA starters, and edits answer keys:
+accepted enzyme names, cofactor groups in and out, optional cofactors, intermediates'
+names, structure features and weights. Layouts and assessments are import/export only
+until their editors exist (layout editor: Phase 2).
+
+**Lossless round trip.** The stored YAML is the record. An unedited export is
+byte-identical to the import. An edit is saved by splicing only the changed text into
+the file (`backend/src/quizGrader/yamlPatch.ts`), so comments and hand formatting
+survive and the export diffs cleanly: adding an alias in the editor changes exactly that
+one line. Re-rendering the parsed file was tried and rejected: the YAML library
+normalises spacing on every line.
+
+Guards: a save made from an out-of-date copy is refused; a key or layout an assessment
+uses cannot be deleted or renamed; schema problems are listed with their path
+(`steps.6.enzyme.accept: Required`); assessments warn about missing keys, layouts,
+unresolvable refs and undrawn boxes.
+
+Not yet wired: the spike script still reads `docs/quiz-grader/seed`, not the database.
+The grading pipeline (Phase 3–4) reads from the database.
 
 ## Changes from the handoff
 

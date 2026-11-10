@@ -70,9 +70,16 @@ export interface StoredContent { kind: QuizContentKind; slug: string; source: st
 /**
  * What an assessment needs from the rest of a professor's content, and what is missing:
  * its key and layout, every layout ref resolving against the key, every graded
- * structure existing. Warnings, not errors — a half-drawn layout is a normal state.
+ * structure existing. For a layout, slots with no box yet. Warnings, not errors — a
+ * half-drawn layout is a normal state.
  */
 export function crossCheck(item: StoredContent, all: StoredContent[]): string[] {
+  if (item.kind === 'LAYOUT') {
+    try {
+      const unboxed = layoutSchema.parse(parseSource(item.source)).slots.filter((s) => !s.box).length
+      return unboxed ? [`${unboxed} slot${unboxed > 1 ? 's have' : ' has'} no box drawn yet.`] : []
+    } catch { return [] }
+  }
   if (item.kind !== 'ASSESSMENT') return []
   const find = (kind: QuizContentKind, slug: string) => all.find((c) => c.kind === kind && c.slug === slug)
   const warnings: string[] = []
