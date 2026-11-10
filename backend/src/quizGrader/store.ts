@@ -55,7 +55,7 @@ export function schemaIssues(kind: QuizContentKind, raw: Raw): string[] {
 export const slugOf = (kind: QuizContentKind, raw: Raw) => String(raw[SLUG_FIELD[kind]])
 
 export function titleOf(kind: QuizContentKind, raw: Raw): string {
-  if (kind === 'KEY' && typeof raw.title === 'string') return raw.title
+  if ((kind === 'KEY' || kind === 'ASSESSMENT') && typeof raw.title === 'string' && raw.title.trim()) return raw.title
   return slugOf(kind, raw)
 }
 
@@ -148,4 +148,67 @@ export async function starterPdf(raw: Raw): Promise<Buffer | null> {
   const file = path.resolve(CONTENT_DIR, rel)
   if (!file.startsWith(CONTENT_DIR + path.sep)) return null
   try { return await fs.readFile(file) } catch { return null }
+}
+
+// ── New quizzes ────────────────────────────────────────────────────────────────
+
+/** A file name from a title: "Glycolysis quiz 2" → "glycolysis-quiz-2". */
+export function slugify(title: string): string {
+  return title.toLowerCase().normalize('NFKD').replace(/[^\w\s-]/g, '').trim().replace(/[\s_]+/g, '-').replace(/-+/g, '-').slice(0, 60) || 'quiz'
+}
+
+/**
+ * The three empty files a new quiz starts from. Everything after this is edited in the
+ * app, which splices into these, so the comments here stay in every export.
+ */
+export function newQuizFiles(slug: string, title: string): Record<QuizContentKind, string> {
+  const t = JSON.stringify(title)
+  return {
+    KEY: `# Answer key: ${title}
+# Accepted names for each enzyme, intermediate and cofactor, and the yes/no checks
+# for each drawn structure. Edited in the app; this file is its export.
+
+pathway: ${slug}
+title: ${t}
+intermediates: {}
+steps: {}
+`,
+    LAYOUT: `# Blank form: ${title}
+# Where each answer box sits on the printed page, as fractions of the page [x, y, w, h].
+# Drawn in the app on the uploaded PDF.
+
+layout: ${slug}-form
+page: { size: letter, source_pdf: "" }
+slots: []
+`,
+    ASSESSMENT: `# Quiz: ${title}
+# Points, review rules, and which structures each version grades.
+
+assessment: ${slug}
+title: ${t}
+key: ${slug}
+layout: ${slug}-form
+
+defaults:
+  points:
+    enzyme: 1
+    name: 1
+    cofactors: 1
+    structure: 1
+  partial_credit:
+    cofactors: false
+    structure: false
+  structure_review: always
+  text_review: low_confidence
+
+grade:
+  enzymes: all
+  cofactors: all
+  names: all
+
+versions:
+  A:
+    structures: []
+`,
+  }
 }

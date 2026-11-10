@@ -5,7 +5,7 @@
 import express, { Router, Request, Response, NextFunction } from 'express'
 import { PDFDocument } from 'pdf-lib'
 import { z } from 'zod'
-import type { QuizContent } from '@prisma/client'
+import type { QuizContent, QuizContentKind } from '@prisma/client'
 import { prisma } from '../db/index.js'
 import { AppError, isUniqueViolation } from '../middleware/error.middleware.js'
 import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
@@ -16,7 +16,7 @@ import { printablePdf } from '../quizGrader/print.js'
 import { rescoreAfterEdit } from '../quizGrader/grading.js'
 import { assessmentSchema, versionPage } from '../quizGrader/content.js'
 import {
-  ContentError, KIND_LABEL, crossCheck, dependents, kindOf, parseSource, schemaIssues, slugOf, starterFiles, starterPdf, titleOf, validate,
+  ContentError, KIND_LABEL, crossCheck, dependents, kindOf, newQuizFiles, parseSource, schemaIssues, slugOf, slugify, starterFiles, starterPdf, titleOf, validate,
   type Raw,
 } from '../quizGrader/store.js'
 
@@ -220,6 +220,125 @@ router.post('/quiz-grader/starter', requireProfessor, async (req: Request, res: 
   }
 })
 
+// ── Quizzes: an assessment with its answer key and blank form, edited as one ──────
+
+const PARTS = { quiz: 'ASSESSMENT', key: 'KEY', layout: 'LAYOUT' } as const
+type Part = keyof typeof PARTS
+
+/** A quiz with its key and layout rows, and the other quizzes sharing either. */
+function bundle(quiz: Row, all: Row[]) {
+  const detail = (r: Row) => {
+    let data: Raw | null = null
+    try { data = parseSource(r.source) } catch { /* summary carries the error */ }
+    return { ...summary(r, all), source: r.source, data }
+  }
+  let raw: Raw = {}
+  try { raw = parseSource(quiz.source) } catch { /* shown as the quiz's issue */ }
+  const key = all.find((r) => r.kind === 'KEY' && r.slug === raw.key) ?? null
+  const layout = all.find((r) => r.kind === 'LAYOUT' && r.slug === raw.layout) ?? null
+  const others = (r: Row | null) => (r ? dependents(r, all).filter((s) => s !== quiz.slug) : [])
+  return {
+    quiz: detail(quiz),
+    key: key && detail(key),
+    layout: layout && detail(layout),
+    sharedKey: others(key),
+    sharedLayout: others(layout),
+  }
+}
+
+async function loadQuiz(req: Request): Promise<{ row: Row; all: Row[] }> {
+  const row = await loadOne(req)
+  if (row.kind !== 'ASSESSMENT') throw new AppError('Not a quiz.', 404)
+  return { row, all: await loadAll(row.professorId) }
+}
+
+router.get('/quiz-grader/quizzes/:id', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { row, all } = await loadQuiz(req)
+    res.json({ success: true, data: bundle(row, all) })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * Save a quiz's edits: any of its three files, each the whole edited parse as GET
+ * returned it. All are checked before any is written, each is spliced (never
+ * re-rendered), and graded papers are re-scored once afterwards.
+ */
+router.put('/quiz-grader/quizzes/:id', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { row, all } = await loadQuiz(req)
+    const part = z.object({ data: z.record(z.unknown()), updatedAt: z.string().datetime() })
+    const body = z.object({ quiz: part.optional(), key: part.optional(), layout: part.optional() }).parse(req.body)
+    const current = bundle(row, all)
+
+    const writes: { row: Row; text: string; kind: QuizContentKind }[] = []
+    for (const name of Object.keys(PARTS) as Part[]) {
+      const edit = body[name]
+      if (!edit) continue
+      const target = all.find((r) => r.id === current[name]?.id)
+      if (!target) throw new AppError(`This quiz has no ${KIND_LABEL[PARTS[name]]} to save.`, 400)
+      if (new Date(edit.updatedAt).getTime() !== target.updatedAt.getTime()) {
+        throw new AppError('This quiz was changed since you opened it. Reload to see the latest version.', 409, 'QUIZ_CONTENT_STALE')
+      }
+      if (kindOf(edit.data) !== target.kind) throw new AppError(`The ${name} edit is not a ${KIND_LABEL[target.kind]}.`, 400)
+      validate(target.kind, edit.data)
+      if (slugOf(target.kind, edit.data) !== target.slug) throw new AppError('File names are changed from the Files view, not here.', 400)
+      const { text, method } = patchYaml(target.source, edit.data)
+      if (method !== 'unchanged') writes.push({ row: target, text, kind: target.kind })
+    }
+
+    if (writes.length) {
+      await prisma.$transaction(writes.map((w) => prisma.quizContent.update({ where: { id: w.row.id }, data: { source: w.text }, select: { id: true } })))
+      // Graded papers follow the edit, re-scored from what the model already read.
+      void (async () => { for (const w of writes) await rescoreAfterEdit(row.professorId, w.kind, w.row.slug) })()
+    }
+    const after = await loadAll(row.professorId)
+    res.json({ success: true, data: { ...bundle(after.find((r) => r.id === row.id)!, after), saved: writes.length } })
+  } catch (err) {
+    next(asAppError(err))
+  }
+})
+
+/** A new, empty quiz: its answer key, blank form and settings, named from the title. */
+router.post('/quiz-grader/quizzes', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+    const { title } = z.object({ title: z.string().trim().min(1).max(120) }).parse(req.body)
+    const taken = new Set((await prisma.quizContent.findMany({ where: { professorId: professor.id }, select: { slug: true } })).map((r) => r.slug))
+    const base = slugify(title)
+    let slug = base
+    for (let n = 2; taken.has(slug) || taken.has(`${slug}-form`); n++) slug = `${base}-${n}`
+    const files = newQuizFiles(slug, title)
+    const [quiz] = await prisma.$transaction([
+      prisma.quizContent.create({ data: { professorId: professor.id, kind: 'ASSESSMENT', slug, source: files.ASSESSMENT }, select: { id: true } }),
+      prisma.quizContent.create({ data: { professorId: professor.id, kind: 'KEY', slug, source: files.KEY }, select: { id: true } }),
+      prisma.quizContent.create({ data: { professorId: professor.id, kind: 'LAYOUT', slug: `${slug}-form`, source: files.LAYOUT }, select: { id: true } }),
+    ])
+    res.status(201).json({ success: true, data: { id: quiz.id } })
+  } catch (err) {
+    next(isUniqueViolation(err) ? new AppError('That name was taken a moment ago; try again.', 409) : asAppError(err))
+  }
+})
+
+/** Delete a quiz, with its key and blank form unless another quiz uses them. Not once it has scans. */
+router.delete('/quiz-grader/quizzes/:id', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { row, all } = await loadQuiz(req)
+    const scans = await prisma.quizBatch.count({ where: { assessmentId: row.id } })
+    if (scans) throw new AppError(`This quiz has ${scans} upload${scans > 1 ? 's' : ''} of scans. Delete ${scans > 1 ? 'them' : 'it'} first.`, 409)
+    const b = bundle(row, all)
+    const ids = [row.id]
+    if (b.key && !b.sharedKey.length) ids.push(b.key.id)
+    if (b.layout && !b.sharedLayout.length) ids.push(b.layout.id)
+    await prisma.quizContent.deleteMany({ where: { id: { in: ids }, professorId: row.professorId } })
+    res.json({ success: true, data: { deleted: ids.length } })
+  } catch (err) {
+    next(err)
+  }
+})
+
 // ── Blank forms and printing ───────────────────────────────────────────────────
 
 /** Upload a layout's blank form: one page per version. Replaces any earlier one. */
@@ -239,7 +358,9 @@ router.put(
       } catch {
         throw new AppError('That file could not be read as a PDF.', 400)
       }
-      await prisma.quizContent.update({ where: { id: row.id }, data: { pdf: new Uint8Array(bytes) } })
+      // updatedAt guards edits to the text against overwriting each other. The PDF is not
+      // the text, so uploading one must not make an open quiz page's next save look stale.
+      await prisma.quizContent.update({ where: { id: row.id }, data: { pdf: new Uint8Array(bytes), updatedAt: row.updatedAt } })
       res.json({ success: true, data: { pages } })
     } catch (err) {
       next(err)

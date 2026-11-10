@@ -156,6 +156,50 @@ async function main() {
     })
     check('only layouts take a PDF', keyPdf.status === 400)
 
+    // Quizzes: a new one from a title, edited as one bundle
+    const made = await http('POST', '/api/quiz-grader/quizzes', T, { title: 'Mini quiz' })
+    check('a new quiz is created from its title', made.status === 201, made.body)
+    const qid = made.body.data.id as string
+    const b0 = (await http('GET', `/api/quiz-grader/quizzes/${qid}`, T)).body.data
+    check('a new quiz comes with an empty key and blank form', !!b0.key && !!b0.layout && b0.quiz.title === 'Mini quiz' && b0.quiz.issues.length === 0)
+    const qAgain = await http('POST', '/api/quiz-grader/quizzes', T, { title: 'Mini quiz' })
+    const b1 = (await http('GET', `/api/quiz-grader/quizzes/${qAgain.body.data.id}`, T)).body.data
+    check('a second quiz with the same title gets its own files', b1.quiz.slug === 'mini-quiz-2' && b1.key.slug === 'mini-quiz-2')
+    await http('DELETE', `/api/quiz-grader/quizzes/${qAgain.body.data.id}`, T)
+
+    const key = structuredClone(b0.key.data)
+    key.intermediates.a = { name: 'A', accept: ['A'], features: [] }
+    key.intermediates.b = { name: 'B', accept: ['B'], features: [] }
+    key.steps['1'] = { from: ['a'], to: ['b'], enzyme: { accept: ['abase'] } }
+    const layout = structuredClone(b0.layout.data)
+    layout.slots.push({ id: 's1_enzyme', type: 'text', ref: 'step.1.enzyme', box: [0.1, 0.1, 0.2, 0.1] })
+    const quiz = structuredClone(b0.quiz.data)
+    quiz.versions.A.structures = ['b']
+    const put = await http('PUT', `/api/quiz-grader/quizzes/${qid}`, T, {
+      key: { data: key, updatedAt: b0.key.updatedAt },
+      layout: { data: layout, updatedAt: b0.layout.updatedAt },
+      quiz: { data: quiz, updatedAt: b0.quiz.updatedAt },
+    })
+    check('one save writes the key, boxes and settings together', put.status === 200 && put.body.data.saved === 3, put.body)
+    check('an empty key grows indented lines, comments kept', put.body.data.key.source.includes('\nintermediates:\n  a:\n') && put.body.data.key.source.startsWith('# Answer key: Mini quiz'))
+    const qStale = await http('PUT', `/api/quiz-grader/quizzes/${qid}`, T, { key: { data: key, updatedAt: b0.key.updatedAt } })
+    check('a save from a qStale page is refused', qStale.status === 409)
+    const pdfBytes = await (await fetch(`${BASE}/api/quiz-grader/content/${layouts[0]!.id}/pdf`, { headers: { Authorization: `Bearer ${T}` } })).arrayBuffer()
+    await fetch(`${BASE}/api/quiz-grader/content/${put.body.data.layout.id}/pdf`, {
+      method: 'PUT', headers: { Authorization: `Bearer ${T}`, 'Content-Type': 'application/pdf' }, body: new Uint8Array(pdfBytes),
+    })
+    const afterPdf = await http('PUT', `/api/quiz-grader/quizzes/${qid}`, T, {
+      layout: { data: { ...layout, slots: [] }, updatedAt: put.body.data.layout.updatedAt },
+    })
+    check('uploading the blank form does not make an open page qStale', afterPdf.status === 200, afterPdf.body)
+    const qRenamed = await http('PUT', `/api/quiz-grader/quizzes/${qid}`, T, { key: { data: { ...key, pathway: 'other' }, updatedAt: put.body.data.key.updatedAt } })
+    check('file names are not changed from the quiz page', qRenamed.status === 400)
+    const theirQuiz = await http('GET', `/api/quiz-grader/quizzes/${qid}`, T2)
+    check("another professor cannot open this quiz", theirQuiz.status === 404)
+    const qDel = await http('DELETE', `/api/quiz-grader/quizzes/${qid}`, T)
+    const left = await prisma.quizContent.count({ where: { professorId: prof.id, slug: { startsWith: 'mini-quiz' } } })
+    check('deleting a quiz removes its three files', qDel.status === 200 && left === 0)
+
     // Ownership
     const theirs = await http('GET', `/api/quiz-grader/content/${keyItem.id}`, T2)
     check("another professor cannot open this professor's key", theirs.status === 404)

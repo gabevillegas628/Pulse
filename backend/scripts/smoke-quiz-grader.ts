@@ -277,6 +277,25 @@ check('an answer box overlapping the name box is refused', (() => {
     want.steps['11'] = { from: ['a'], to: ['b'], enzyme: { accept: ['x'] } }
     return /\n  11:\n/.test(patchYaml(src, want).text)
   })())
+  check('a new key lands after the key it follows', (() => {
+    const src = read('assessments/glycolysis-quiz.yaml')
+    const old = parseYaml(src)
+    const { assessment, ...rest } = old
+    const r = patchYaml(src, { assessment, title: 'Glycolysis quiz', ...rest })
+    return r.method === 'splice' && r.text.includes('assessment: glycolysis-quiz\ntitle: Glycolysis quiz\nkey: glycolysis\n')
+  })())
+  check('an empty map in a new quiz grows into indented lines', (() => {
+    const src = 'pathway: x\ntitle: X\nintermediates: {}\nsteps: {}\n'
+    const want = { pathway: 'x', title: 'X', intermediates: { glc: { name: 'Glucose', accept: [], features: ['a ring'] } }, steps: {} }
+    const r = patchYaml(src, want)
+    return r.method === 'splice' && r.text.includes('\nintermediates:\n  glc:\n    name: Glucose\n') && r.text.includes('    features:\n      - a ring\n')
+  })())
+  check('an empty slot list grows one box per line', (() => {
+    const src = 'layout: x\npage: { size: letter, source_pdf: "" }\nslots: []\n'
+    const want = { layout: 'x', page: { size: 'letter', source_pdf: '' }, slots: [{ id: 'a', type: 'text', ref: 'step.1.enzyme', box: [0.1, 0.2, 0.3, 0.4] }] }
+    const r = patchYaml(src, want)
+    return r.method === 'splice' && r.text.endsWith('slots:\n  - {id: a, type: text, ref: step.1.enzyme, box: [0.1, 0.2, 0.3, 0.4]}\n')
+  })())
 }
 
 console.log(`\n  ${passed} passed, ${failed} failed`)

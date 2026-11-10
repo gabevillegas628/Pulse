@@ -82,7 +82,7 @@ export default function QuizResultsPage() {
   return (
     <ProfessorLayout>
       <Link to={`/professor/quiz-grader/${id}`} className="inline-flex items-center gap-1 text-sm text-muted hover:text-ink mb-4">
-        <ArrowLeft size={14} /> Assessment
+        <ArrowLeft size={14} /> Quiz
       </Link>
       {error ? <p className="text-sm text-warn">{apiError(error, 'Could not load results')}</p> : !data || !s ? null : (
         <>

@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, CircleAlert, Download, FileUp, Package, Printer, ScanLine, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ChevronRight, CircleAlert, Download, FileUp, Package, Plus, ScanLine, Trash2, X } from 'lucide-react'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import Button from '@/components/ui/Button'
@@ -10,19 +10,19 @@ import Empty from '@/components/ui/Empty'
 import Pill from '@/components/ui/Pill'
 import ConfirmDialog, { type DialogRequest } from '@/components/ui/ConfirmDialog'
 import { apiError, apiErrorCode } from '@/lib/errors'
-import { KIND_LABEL, downloadPrintable, saveText, type QuizContentKind, type QuizContentSummary } from '@/lib/quizGrader'
+import { KIND_LABEL, saveText, type QuizContentKind, type QuizContentSummary } from '@/lib/quizGrader'
 
 /**
- * Paper quizzes: the answer keys, layouts and assessments the quiz grader works from,
- * each kept as a YAML file. Keys are edited here; layouts and assessments are imported
- * and exported for now (the layout editor is Phase 2 of docs/quiz-grader/PLAN.md).
+ * Paper quizzes: one row per quiz, each opening the quiz page where it is set up,
+ * printed, scanned and graded. The YAML files underneath (settings, answer key, boxes)
+ * are tucked under Files, for import, export and backup.
  */
 
 const ORDER: QuizContentKind[] = ['ASSESSMENT', 'KEY', 'LAYOUT']
 const SECTION: Record<QuizContentKind, { title: string; blurb: string }> = {
-  ASSESSMENT: { title: 'Assessments', blurb: 'Which blanks a quiz grades, for how many points, in each version.' },
-  KEY: { title: 'Answer keys', blurb: 'Accepted enzyme names, cofactors and structure checks for a pathway. Reusable across quizzes.' },
-  LAYOUT: { title: 'Layouts', blurb: 'Where each blank sits on a printed form.' },
+  ASSESSMENT: { title: 'Quiz settings', blurb: 'Points, review rules and versions. One per quiz.' },
+  KEY: { title: 'Answer keys', blurb: 'Steps, intermediates and accepted answers.' },
+  LAYOUT: { title: 'Boxes', blurb: 'Where each answer sits on a blank form, with the form’s PDF.' },
 }
 
 function ago(iso: string) {
@@ -35,6 +35,8 @@ function ago(iso: string) {
 
 export default function QuizContentPage() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
+  const [newTitle, setNewTitle] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const [dialog, setDialog] = useState<DialogRequest | null>(null)
   const [notice, setNotice] = useState<{ tone: 'good' | 'warn'; text: string } | null>(null)
@@ -44,6 +46,7 @@ export default function QuizContentPage() {
     queryFn: () => api.get('/quiz-grader/content').then((r) => r.data.data.items),
   })
   const refresh = () => qc.invalidateQueries({ queryKey: ['quiz-grader'] })
+  const quizzes = (items ?? []).filter((i) => i.kind === 'ASSESSMENT')
 
   const starter = useMutation({
     mutationFn: () => api.post('/quiz-grader/starter').then((r) => r.data.data as { added: string[]; skipped: string[] }),
@@ -52,6 +55,12 @@ export default function QuizContentPage() {
       setNotice({ tone: 'good', text: r.added.length ? `Added ${r.added.length} starter files.` : 'You already have all the starter files.' })
     },
     onError: (e) => setNotice({ tone: 'warn', text: apiError(e, 'Could not load the starter content') }),
+  })
+
+  const create = useMutation({
+    mutationFn: (title: string) => api.post('/quiz-grader/quizzes', { title }).then((r) => r.data.data as { id: string }),
+    onSuccess: (r) => { refresh(); navigate(`/professor/quiz-grader/${r.id}?tab=key`) },
+    onError: (e) => setNotice({ tone: 'warn', text: apiError(e, 'Could not create the quiz') }),
   })
 
   async function importFile(file: File, replace = false): Promise<void> {
@@ -102,30 +111,9 @@ export default function QuizContentPage() {
       <div className="flex flex-wrap items-end justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-ink">Paper quizzes</h1>
-          <p className="text-sm text-muted mt-1">Answer keys and quiz setups for grading scanned, handwritten quizzes.</p>
+          <p className="text-sm text-muted mt-1">Print a quiz, scan the papers, and grade the handwriting against your answer key.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={() => starter.mutate()} disabled={starter.isPending}>
-            <Package size={15} />
-            Load glycolysis &amp; TCA starters
-          </Button>
-          <Button variant="primary" onClick={() => fileInput.current?.click()}>
-            <FileUp size={15} />
-            Import YAML
-          </Button>
-          <input
-            ref={fileInput}
-            type="file"
-            accept=".yaml,.yml,text/yaml,application/yaml"
-            multiple
-            className="hidden"
-            onChange={async (e) => {
-              const files = Array.from(e.target.files ?? [])
-              e.target.value = ''
-              for (const f of files) await importFile(f)
-            }}
-          />
-        </div>
+        <Button variant="primary" onClick={() => setNewTitle('')}><Plus size={15} />New quiz</Button>
       </div>
 
       {notice && (
@@ -135,53 +123,101 @@ export default function QuizContentPage() {
         </div>
       )}
 
-      {isLoading ? null : !items?.length ? (
-        <Card className="p-6">
-          <Empty icon={ScanLine} message="Nothing here yet. Load the starters, or import a YAML file." />
+      {newTitle !== null && (
+        <Card className="p-4 mb-5">
+          <form className="flex flex-wrap gap-2 items-end" onSubmit={(e) => { e.preventDefault(); if (newTitle.trim()) create.mutate(newTitle.trim()) }}>
+            <label className="flex-1 min-w-56">
+              <span className="text-xs font-semibold text-muted">Quiz name</span>
+              <input autoFocus className="w-full border border-hairline rounded-sm px-2.5 py-1.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
+                placeholder="e.g. Pentose phosphate pathway quiz" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} />
+            </label>
+            <Button type="button" onClick={() => setNewTitle(null)}>Cancel</Button>
+            <Button type="submit" variant="primary" disabled={!newTitle.trim() || create.isPending}>Create</Button>
+          </form>
+          <p className="text-xs text-muted mt-2">Next: write the answer key, upload the blank form, and draw a box for each answer.</p>
         </Card>
-      ) : (
-        <div className="space-y-8">
-          {ORDER.map((kind) => {
-            const rows = items.filter((i) => i.kind === kind)
-            if (!rows.length) return null
-            return (
-              <section key={kind}>
-                <h2 className="text-base font-semibold text-ink">{SECTION[kind].title}</h2>
-                <p className="text-xs text-muted mb-3">{SECTION[kind].blurb}</p>
-                <Card className="divide-y divide-hairline">
-                  {rows.map((item) => (
-                    <div key={item.id} className="px-4 py-3 flex flex-wrap items-center gap-3">
-                      <div className="min-w-0 flex-1">
-                        <Link to={`/professor/quiz-grader/${item.id}`} className="font-semibold text-ink hover:text-signal">
-                          {item.title}
-                        </Link>
-                        <span className="ml-2 text-xs font-mono text-muted">{item.slug}</span>
-                        <div className="text-xs text-muted mt-0.5">{KIND_LABEL[item.kind]} · updated {ago(item.updatedAt)}</div>
-                        {item.issues.length > 0 && (
-                          <p className="text-xs text-warn mt-1 flex gap-1"><CircleAlert size={13} className="shrink-0 mt-px" />{item.issues[0]}{item.issues.length > 1 ? ` (+${item.issues.length - 1} more)` : ''}</p>
-                        )}
-                        {item.warnings.map((w) => (
-                          <p key={w} className="text-xs text-muted mt-1 flex gap-1"><AlertTriangle size={13} className="shrink-0 mt-px" />{w}</p>
-                        ))}
-                      </div>
-                      {item.issues.length > 0 ? <Pill variant="warn">Has errors</Pill> : item.warnings.length > 0 ? <Pill variant="muted">Incomplete</Pill> : <Pill variant="good">Ready</Pill>}
-                      <div className="flex gap-1.5">
-                        {item.kind === 'ASSESSMENT' && (
-                          <Button size="sm" title="Print-ready PDF: every version, with corner markers"
-                            onClick={() => downloadPrintable(api, item.id, item.slug).catch((e) => setNotice({ tone: 'warn', text: apiError(e, 'Could not make the printable PDF') }))}>
-                            <Printer size={13} />Print
-                          </Button>
-                        )}
-                        <Button size="sm" onClick={() => void download(item)} title="Download YAML"><Download size={13} />YAML</Button>
-                        <Button size="sm" onClick={() => remove(item)} title="Delete" aria-label={`Delete ${item.title}`}><Trash2 size={13} /></Button>
-                      </div>
-                    </div>
-                  ))}
-                </Card>
-              </section>
-            )
-          })}
-        </div>
+      )}
+
+      {isLoading ? null : (
+        <>
+          {!quizzes.length ? (
+            <Card className="p-6 mb-8">
+              <Empty icon={ScanLine} message="No quizzes yet. Create one, or load the glycolysis and TCA examples." />
+              <div className="flex justify-center mt-2">
+                <Button onClick={() => starter.mutate()} disabled={starter.isPending}><Package size={15} />Load glycolysis &amp; TCA examples</Button>
+              </div>
+            </Card>
+          ) : (
+            <Card className="divide-y divide-hairline mb-10">
+              {quizzes.map((q) => (
+                <Link key={q.id} to={`/professor/quiz-grader/${q.id}`} className="px-4 py-3 flex items-center gap-3 hover:bg-surface-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-ink">{q.title}</p>
+                    <p className="text-xs text-muted">updated {ago(q.updatedAt)}</p>
+                    {q.issues.length > 0 && <p className="text-xs text-warn mt-1 flex gap-1"><CircleAlert size={13} className="shrink-0 mt-px" />{q.issues[0]}</p>}
+                  </div>
+                  {q.issues.length > 0 ? <Pill variant="warn">Has errors</Pill> : q.warnings.length > 0 ? <Pill variant="muted">Setting up</Pill> : <Pill variant="good">Ready</Pill>}
+                  <ChevronRight size={16} className="text-muted" />
+                </Link>
+              ))}
+            </Card>
+          )}
+
+          <details className="group">
+            <summary className="text-sm font-semibold text-ink cursor-pointer mb-1">Files</summary>
+            <p className="text-xs text-muted mb-4 max-w-2xl">
+              Each quiz is kept as three YAML files. You only need these to back up, share, or edit by hand and import again; a quiz’s Files tab has the same downloads.
+            </p>
+            <div className="flex flex-wrap gap-2 mb-6">
+              <Button size="sm" onClick={() => fileInput.current?.click()}><FileUp size={13} />Import YAML</Button>
+              <Button size="sm" onClick={() => starter.mutate()} disabled={starter.isPending}><Package size={13} />Load glycolysis &amp; TCA examples</Button>
+              <input
+                ref={fileInput}
+                type="file"
+                accept=".yaml,.yml,text/yaml,application/yaml"
+                multiple
+                className="hidden"
+                onChange={async (e) => {
+                  const files = Array.from(e.target.files ?? [])
+                  e.target.value = ''
+                  for (const f of files) await importFile(f)
+                }}
+              />
+            </div>
+            <div className="space-y-8">
+              {ORDER.map((kind) => {
+                const rows = (items ?? []).filter((i) => i.kind === kind)
+                if (!rows.length) return null
+                return (
+                  <section key={kind}>
+                    <h2 className="text-base font-semibold text-ink">{SECTION[kind].title}</h2>
+                    <p className="text-xs text-muted mb-3">{SECTION[kind].blurb}</p>
+                    <Card className="divide-y divide-hairline">
+                      {rows.map((item) => (
+                        <div key={item.id} className="px-4 py-3 flex flex-wrap items-center gap-3">
+                          <div className="min-w-0 flex-1">
+                            <Link to={`/professor/quiz-grader/${item.id}`} className="font-mono text-sm text-ink hover:text-signal">{item.slug}.yaml</Link>
+                            <div className="text-xs text-muted mt-0.5">{KIND_LABEL[item.kind]} · {item.title} · updated {ago(item.updatedAt)}</div>
+                            {item.issues.length > 0 && (
+                              <p className="text-xs text-warn mt-1 flex gap-1"><CircleAlert size={13} className="shrink-0 mt-px" />{item.issues[0]}{item.issues.length > 1 ? ` (+${item.issues.length - 1} more)` : ''}</p>
+                            )}
+                            {item.warnings.map((w) => (
+                              <p key={w} className="text-xs text-muted mt-1 flex gap-1"><AlertTriangle size={13} className="shrink-0 mt-px" />{w}</p>
+                            ))}
+                          </div>
+                          <div className="flex gap-1.5">
+                            <Button size="sm" onClick={() => void download(item)} title="Download YAML"><Download size={13} />YAML</Button>
+                            <Button size="sm" onClick={() => remove(item)} title="Delete" aria-label={`Delete ${item.slug}`}><Trash2 size={13} /></Button>
+                          </div>
+                        </div>
+                      ))}
+                    </Card>
+                  </section>
+                )
+              })}
+            </div>
+          </details>
+        </>
       )}
 
       <ConfirmDialog request={dialog} onClose={() => setDialog(null)} />

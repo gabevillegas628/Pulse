@@ -10,7 +10,7 @@ folder. Read `HANDOFF.md` first, then `SPEC.md`, `SCHEMA.md`, `PLAN.md`.
 | Piece | Location | Notes |
 |---|---|---|
 | Content (keys, layouts, assessments) | `QuizContent` table, per professor | Stored as YAML source. Starter files in `docs/quiz-grader/seed/`. |
-| Content UI | **Paper quizzes** in the professor header (`/professor/quiz-grader`) | List, import/export YAML, answer-key editor. |
+| Content UI | **Paper quizzes** in the professor header (`/professor/quiz-grader`) | One page per quiz: setup checklist, answer key, boxes, versions, scoring, print, scans. YAML import/export under Files. |
 | Content API | `backend/src/routes/quizGrader.routes.ts` | Under `/api/quiz-grader`, professor only. |
 | Engine | `backend/src/quizGrader/` | `content.ts` (schemas, joining slots to the key), `scoring.ts` (normalisation, fuzzy match, cofactors, structures, review policy), `reader.ts` (Claude calls), `grade.ts` (one page → slot results). Pure except `reader.ts`. |
 | Phase 0 spike | `backend/scripts/quiz-grader-spike.ts` | Script only, no DB or UI. |
@@ -267,6 +267,31 @@ structures only for the intermediates a version lists. Only boxes the layout has
 grades it again; review decisions are kept. Model reads are cached per page and kind
 (written answers, structures), so what did not change costs nothing, and a page that
 gained name boxes has its written answers read again (a fraction of a cent with Haiku).
+
+## Setting up a quiz (the quiz page)
+
+A quiz is one assessment plus its own answer key and blank form: **one key per quiz**.
+**Paper quizzes** lists quizzes; **New quiz** makes the three files from a title
+(`store.ts` `newQuizFiles`) and opens the quiz page, whose tabs are:
+
+- **Overview**: setup checklist (key, blank form, boxes, versions), print buttons, scans, results.
+- **Answer key**: intermediates first, then steps (from/to, enzyme names, cofactors).
+  Removing a step or intermediate also removes its boxes and version ticks.
+- **Boxes**: the list of everything gradable is derived from the key (student name and
+  NetID, each step's enzyme and cofactors, each intermediate's name and structure). Pick an
+  item, drag on the form. Drawing a box makes the item graded; the tick beside it turns
+  grading off and on without losing the box (this writes `grade:` in the settings). "Use the
+  enzyme's/structure's box" copies a shared box. Boxes touching the name/NetID box show red.
+- **Versions**: intermediates × versions ticks (structures graded) and the page each prints from.
+- **Scoring**: points per kind, all-or-nothing vs partial credit, review rules, in words.
+- **Files**: the three YAML files, to download.
+
+The page edits all three files as one draft; Save sends `PUT /quiz-grader/quizzes/:id` with
+whichever changed. Each is spliced by `patchYaml` (an empty `{}`/`[]` in a new quiz grows into
+indented lines; a new key lands after the key it follows), and graded papers are re-scored
+once. Uploading the blank form keeps the layout's `updatedAt`, so it never makes an open
+page's save look stale. The data model did not change: existing quizzes open as they are,
+and an optional `title:` names a quiz.
 
 ## Changes from the handoff
 

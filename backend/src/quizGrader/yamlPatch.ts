@@ -75,6 +75,21 @@ function diff(src: string, doc: Document, node: Node | null, oldV: Json, newV: J
   // item; one that grows, shrinks or changes keys is re-rendered whole, keeping its
   // bracket padding.
   if ((isSeq(node) || isMap(node)) && node.flow) {
+    // An empty `key: {}` or `key: []` in a new quiz's starter file, getting its first
+    // entries: written as indented lines like the rest of the file, not one long line.
+    const wasEmpty = (Array.isArray(oldV) && !oldV.length) || (isPlainObject(oldV) && !Object.keys(oldV).length)
+    const growsBig = (Array.isArray(newV) && newV.length > 0 && (BLOCK_LIST_KEYS.has(key ?? '') || newV.some((x) => typeof x === 'object' && x !== null)))
+      || (isPlainObject(newV) && Object.keys(newV).length > 0)
+    if (wasEmpty && growsBig && !inFlow && key != null) {
+      const colon = src.lastIndexOf(':', node.range[0])
+      const lineStart = src.lastIndexOf('\n', colon) + 1
+      const keyCol = src.slice(lineStart).search(/\S/)
+      const d = new Document()
+      d.contents = styled(d, newV, key)
+      const block = indentLines(d.toString(RENDER).trimEnd(), keyCol + 2)
+      edits.push({ start: colon + 1, end: node.range[1], text: '\n' + block })
+      return
+    }
     if (isSeq(node) && Array.isArray(oldV) && Array.isArray(newV) && oldV.length === newV.length) {
       newV.forEach((v, i) => diff(src, doc, node.items[i] as Node, oldV[i]!, v, key, edits, true))
       return
@@ -120,15 +135,22 @@ function diffBlockMap(src: string, doc: Document, node: YAMLMap, oldV: Record<st
 
   const added = Object.keys(newV).filter((k) => !(k in oldV))
   if (!added.length) return
-  const last = pairs[pairs.length - 1]
-  if (!last) throw new Unsupported()
-  const indent = column(src, (last.key as Node).range![0])
+  const first = pairs[0]
+  if (!first) throw new Unsupported()
+  const indent = column(src, (first.key as Node).range![0])
   // Keep number-looking keys (pathway step numbers) as numbers, like their siblings.
   const numericKeys = pairs.every((p) => isScalar(p.key) && typeof p.key.value === 'number')
-  const block = added
-    .map((k) => renderBlock({ [k]: newV[k]! }, numericKeys && /^\d+$/.test(k)))
-    .join('')
-  edits.push({ start: pairSpan(src, last)[1], end: pairSpan(src, last)[1], text: indentLines(block, indent) })
+  // Each new key goes after the existing key it follows in the new value, so a quiz's
+  // `title:` lands under its `assessment:` line rather than at the end of the file.
+  const order = Object.keys(newV)
+  const at = new Map<number, string>()
+  for (const k of added) {
+    let anchor: Pair | undefined
+    for (let i = order.indexOf(k) - 1; i >= 0 && !anchor; i--) anchor = pairs.find((p) => keyOf(p) === order[i])
+    const pos = anchor ? pairSpan(src, anchor)[1] : pairSpan(src, first)[0]
+    at.set(pos, (at.get(pos) ?? '') + renderBlock({ [k]: newV[k]! }, numericKeys && /^\d+$/.test(k)))
+  }
+  for (const [pos, block] of at) edits.push({ start: pos, end: pos, text: indentLines(block, indent) })
 }
 
 function diffBlockSeq(src: string, doc: Document, node: YAMLSeq, oldV: Json[], newV: Json[], key: string | null, edits: Edit[]) {

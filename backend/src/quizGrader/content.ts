@@ -79,6 +79,8 @@ const stepSelection = z.union([z.literal('all'), z.array(z.number())])
 
 export const assessmentSchema = z.object({
   assessment: z.string(),
+  /** What the professor calls the quiz; the file name when absent. */
+  title: z.string().optional(),
   key: z.string(),
   layout: z.string(),
   defaults: z.object({

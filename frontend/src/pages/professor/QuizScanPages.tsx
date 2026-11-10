@@ -63,7 +63,7 @@ export function QuizBatchPage() {
       {error ? <p className="text-sm text-warn">{apiError(error, 'Could not open this upload')}</p> : !batch ? null : (
         <>
           <Link to={`/professor/quiz-grader/${batch.assessmentId}`} className="inline-flex items-center gap-1 text-sm text-muted hover:text-ink mb-4">
-            <ArrowLeft size={14} /> Assessment
+            <ArrowLeft size={14} /> Quiz
           </Link>
           <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
             <div>
