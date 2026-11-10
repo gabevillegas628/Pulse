@@ -29,6 +29,7 @@
     "test:smoke:quiz-content": "tsx scripts/smoke-quiz-content.ts",
     "test:smoke:quiz-scans": "tsx scripts/smoke-quiz-scans.ts",
     "test:smoke:quiz-grading": "tsx scripts/smoke-quiz-grading.ts",
+    "test:smoke:quiz-review": "tsx scripts/smoke-quiz-review.ts",
     "quiz-grader:spike": "tsx scripts/quiz-grader-spike.ts",
     "rehearse": "tsx scripts/rehearse.ts"
   },

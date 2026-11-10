@@ -449,6 +449,7 @@ model QuizContent {
 
   @@unique([professorId, kind, slug])
   batches     QuizBatch[]
+  decisions   QuizGroupDecision[]
 }
 
 // One upload of scanned quizzes for an assessment: a PDF from the copier, or a photo.
@@ -521,6 +522,7 @@ model QuizPage {
   maxPoints      Float?
   toReview       Int?
   results        QuizSlotResult[]
+  overrides      QuizOverride[]
 
   @@unique([batchId, index])
   @@index([status])
@@ -568,4 +570,65 @@ model QuizReadCache {
   key       String   @id
   value     Json
   createdAt DateTime @default(now())
+}
+
+// ─── Review (Phase 5) ─────────────────────────────────────────────────────────
+//
+// A box's score is, in order: the professor's decision for that one paper
+// (QuizOverride), else their decision for everyone who wrote the same thing
+// (QuizGroupDecision), else the automatic score (QuizSlotResult.pointsAuto). Decisions
+// live apart from results, so re-scoring after a key edit never erases them.
+
+// "Everyone who wrote this, in this box, gets these points." Applies to papers uploaded
+// later with the same answer too.
+model QuizGroupDecision {
+  id           String      @id @default(cuid())
+  assessmentId String
+  assessment   QuizContent @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  slotId       String
+  // QuizSlotResult.groupKey: the normalised answer.
+  groupKey     String
+  points       Float
+  decidedById  String
+  decidedAt    DateTime    @default(now())
+
+  @@unique([assessmentId, slotId, groupKey])
+}
+
+// One paper's box, decided by hand: a regrade, a structure judged feature by feature, or
+// an exception to its group.
+model QuizOverride {
+  id          String   @id @default(cuid())
+  pageId      String
+  page        QuizPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  slotId      String
+  points      Float
+  // Structures: the professor's feature answers, in the key's order.
+  features    Json?
+  note        String?
+  decidedById String
+  decidedAt   DateTime @default(now())
+
+  @@unique([pageId, slotId])
+}
+
+// Every review decision, appended and never edited: who, when, which box or group, and
+// the score before and after. No foreign keys, so the record outlives what it describes.
+model QuizDecisionLog {
+  id           String   @id @default(cuid())
+  assessmentId String
+  professorId  String
+  // "group" | "paper" | "alias" (an answer added to the key from review)
+  scope        String
+  slotId       String
+  groupKey     String?
+  pageId       String?
+  // Points before and after; null after = the decision was withdrawn.
+  fromPoints   Float?
+  toPoints     Float?
+  papers       Int?
+  detail       Json?
+  createdAt    DateTime @default(now())
+
+  @@index([assessmentId, createdAt])
 }

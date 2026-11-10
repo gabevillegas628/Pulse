@@ -30,6 +30,7 @@ import addinRoutes from './routes/addin.routes.js'
 import adminRoutes from './routes/admin.routes.js'
 import quizGraderRoutes from './routes/quizGrader.routes.js'
 import quizScanRoutes from './routes/quizScans.routes.js'
+import quizReviewRoutes from './routes/quizReview.routes.js'
 import addinManifestRoutes from './routes/addin-manifest.js'
 
 const app = express()
@@ -178,6 +179,7 @@ app.use('/api', textbookRoutes)
 app.use('/api', diagRoutes)
 app.use('/api', quizGraderRoutes)
 app.use('/api', quizScanRoutes)
+app.use('/api', quizReviewRoutes)
 app.use('/api/addin', addinRoutes)
 app.use('/api/admin', adminRoutes)
 

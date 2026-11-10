@@ -21,6 +21,7 @@ import {
 import { gradingConfigured, rescoreAssessment } from '../quizGrader/grading.js'
 import { costOf } from '../quizGrader/pricing.js'
 import { compare, type ResultRow } from '../quizGrader/compare.js'
+import { effectiveResults, pageTotals } from '../quizGrader/review.js'
 
 const router = Router()
 
@@ -124,7 +125,19 @@ router.get('/quiz-grader/batches/:batchId', requireProfessor, async (req: Reques
   try {
     const batch = await ownedBatch(req, p(req.params.batchId))
     const pages = await prisma.quizPage.findMany({ where: { batchId: batch.id }, orderBy: { index: 'asc' }, omit: { reads: true, usage: true } })
-    res.json({ success: true, data: { ...batch, counts: counts(pages), pages } })
+    // Scores after review decisions; toReview is what is still undecided.
+    const totals = pageTotals((await effectiveResults({ assessmentId: batch.assessmentId })).filter((r) => r.page.batchId === batch.id))
+    res.json({
+      success: true,
+      data: {
+        ...batch,
+        counts: counts(pages),
+        pages: pages.map((pg) => {
+          const t = totals.get(pg.id)
+          return t ? { ...pg, pointsFinal: t.points, toReview: t.open } : { ...pg, pointsFinal: null }
+        }),
+      },
+    })
   } catch (err) {
     next(err)
   }
@@ -153,9 +166,13 @@ router.get('/quiz-grader/pages/:pageId', requireProfessor, async (req: Request, 
       versions = spec.versions.map((v) => v.name)
       boxes = spec.versions.find((v) => v.name === page.version)?.boxes ?? []
     } catch { /* content changed since; the page still shows */ }
-    const results = await prisma.quizSlotResult.findMany({ where: { pageId: page.id } })
+    const results = (await effectiveResults({ pageId: page.id })).map(({ page: _p, ...r }) => r)
+    const t = pageTotals(results).get(page.id)
     const usage = (page.usage ?? []) as { model: string; input_tokens: number; output_tokens: number }[]
-    res.json({ success: true, data: { ...page, reads: undefined, versions, boxes, results, cost: costOf(usage).dollars } })
+    res.json({
+      success: true,
+      data: { ...page, reads: undefined, versions, boxes, results, cost: costOf(usage).dollars, pointsFinal: t?.points ?? null, toReview: t ? t.open : page.toReview },
+    })
   } catch (err) {
     next(err)
   }
@@ -237,16 +254,20 @@ router.get('/quiz-grader/content/:id/results', requireProfessor, async (req: Req
     })
     const usage = pages.flatMap((pg) => (pg.usage ?? []) as { model: string; input_tokens: number; output_tokens: number }[])
     const graded = pages.filter((pg) => pg.gradeStatus === 'GRADED')
+    const totals = pageTotals(await effectiveResults({ assessmentId: assessment.id }))
     res.json({
       success: true,
       data: {
-        pages: pages.map(({ usage: _u, batch, ...pg }) => ({ ...pg, fileName: batch.fileName })),
+        pages: pages.map(({ usage: _u, batch, ...pg }) => {
+          const t = totals.get(pg.id)
+          return { ...pg, fileName: batch.fileName, pointsFinal: t?.points ?? null, toReview: t ? t.open : pg.toReview }
+        }),
         summary: {
           pages: pages.length,
           graded: graded.length,
           grading: pages.filter((pg) => pg.gradeStatus === 'PENDING' || pg.gradeStatus === 'GRADING').length,
           failed: pages.filter((pg) => pg.gradeStatus === 'FAILED').length,
-          toReview: graded.reduce((a, pg) => a + (pg.toReview ?? 0), 0),
+          toReview: graded.reduce((a, pg) => a + (totals.get(pg.id)?.open ?? 0), 0),
           cost: costOf(usage),
         },
       },
