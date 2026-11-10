@@ -9,6 +9,7 @@ import { installProcessHandlers } from './utils/reporting.js'
 import { startScheduler } from './scheduler.js'
 import { startQuizWorker } from './quizGrader/scans.js'
 import { startQuizGradeWorker } from './quizGrader/grading.js'
+import { startServerHeartbeat } from './quizGrader/servers.js'
 import { warmFromDb, startClockSweep } from './services/clock.service.js'
 import { prisma } from './db/index.js'
 
@@ -26,6 +27,7 @@ initIo(io)
 startScheduler()
 startQuizWorker()
 startQuizGradeWorker()
+startServerHeartbeat()
 startClockSweep()
 // Rebuilt from Response.submittedAt, so a restart mid-lecture does not silently
 // un-time every question. Not awaited: the server must boot either way.
