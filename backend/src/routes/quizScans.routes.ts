@@ -18,6 +18,9 @@ import { parseSource } from '../quizGrader/store.js'
 import {
   createDocument, deleteDocument, originalFile, pageDir, removeBatchFiles, specFor, visionConfigured, visionHealthy, VisionError,
 } from '../quizGrader/scans.js'
+import { gradingConfigured, rescoreAssessment } from '../quizGrader/grading.js'
+import { costOf } from '../quizGrader/pricing.js'
+import { compare, type ResultRow } from '../quizGrader/compare.js'
 
 const router = Router()
 
@@ -54,7 +57,7 @@ const counts = (pages: { status: string }[]) =>
 router.get('/quiz-grader/vision', requireProfessor, async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const configured = visionConfigured()
-    res.json({ success: true, data: { configured, healthy: configured ? await visionHealthy() : false } })
+    res.json({ success: true, data: { configured, healthy: configured ? await visionHealthy() : false, grading: gradingConfigured() } })
   } catch (err) {
     next(err)
   }
@@ -120,7 +123,7 @@ router.get('/quiz-grader/content/:id/batches', requireProfessor, async (req: Req
 router.get('/quiz-grader/batches/:batchId', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const batch = await ownedBatch(req, p(req.params.batchId))
-    const pages = await prisma.quizPage.findMany({ where: { batchId: batch.id }, orderBy: { index: 'asc' } })
+    const pages = await prisma.quizPage.findMany({ where: { batchId: batch.id }, orderBy: { index: 'asc' }, omit: { reads: true, usage: true } })
     res.json({ success: true, data: { ...batch, counts: counts(pages), pages } })
   } catch (err) {
     next(err)
@@ -150,7 +153,9 @@ router.get('/quiz-grader/pages/:pageId', requireProfessor, async (req: Request, 
       versions = spec.versions.map((v) => v.name)
       boxes = spec.versions.find((v) => v.name === page.version)?.boxes ?? []
     } catch { /* content changed since; the page still shows */ }
-    res.json({ success: true, data: { ...page, versions, boxes } })
+    const results = await prisma.quizSlotResult.findMany({ where: { pageId: page.id } })
+    const usage = (page.usage ?? []) as { model: string; input_tokens: number; output_tokens: number }[]
+    res.json({ success: true, data: { ...page, reads: undefined, versions, boxes, results, cost: costOf(usage).dollars } })
   } catch (err) {
     next(err)
   }
@@ -196,9 +201,86 @@ router.post('/quiz-grader/pages/:pageId/version', requireProfessor, async (req: 
     }
     await prisma.quizPage.update({
       where: { id: page.id },
-      data: { versionForced: version, status: 'PENDING', attempts: 0, error: null },
+      data: { versionForced: version, status: 'PENDING', attempts: 0, error: null, gradeStatus: 'NONE' },
     })
     res.json({ success: true })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Grade a page again with the model (after a failure). Cached reads are reused.
+router.post('/quiz-grader/pages/:pageId/regrade', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const page = await ownedPage(req)
+    if (page.status !== 'DONE') throw new AppError('The page has to be lined up first', 409)
+    if (!gradingConfigured()) throw new AppError('Grading is not set up on this server (ANTHROPIC_API_KEY).', 503)
+    await prisma.quizPage.update({ where: { id: page.id }, data: { gradeStatus: 'PENDING', gradeAttempts: 0, gradeError: null } })
+    res.json({ success: true })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Every page of an assessment with its score: the results table.
+router.get('/quiz-grader/content/:id/results', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const assessment = await prisma.quizContent.findFirst({ where: { id: p(req.params.id), ...ownedQuizContent(viewer(req)), kind: 'ASSESSMENT' }, select: { id: true } })
+    if (!assessment) throw new AppError('Not found', 404)
+    const pages = await prisma.quizPage.findMany({
+      where: { batch: { assessmentId: assessment.id } },
+      select: {
+        id: true, batchId: true, index: true, status: true, version: true, gradeStatus: true, gradeError: true,
+        pointsAuto: true, maxPoints: true, toReview: true, usage: true, batch: { select: { fileName: true, createdAt: true } },
+      },
+      orderBy: [{ batch: { createdAt: 'asc' } }, { index: 'asc' }],
+    })
+    const usage = pages.flatMap((pg) => (pg.usage ?? []) as { model: string; input_tokens: number; output_tokens: number }[])
+    const graded = pages.filter((pg) => pg.gradeStatus === 'GRADED')
+    res.json({
+      success: true,
+      data: {
+        pages: pages.map(({ usage: _u, batch, ...pg }) => ({ ...pg, fileName: batch.fileName })),
+        summary: {
+          pages: pages.length,
+          graded: graded.length,
+          grading: pages.filter((pg) => pg.gradeStatus === 'PENDING' || pg.gradeStatus === 'GRADING').length,
+          failed: pages.filter((pg) => pg.gradeStatus === 'FAILED').length,
+          toReview: graded.reduce((a, pg) => a + (pg.toReview ?? 0), 0),
+          cost: costOf(usage),
+        },
+      },
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Re-score every graded page against the key as it is now. No model calls.
+router.post('/quiz-grader/content/:id/rescore', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const assessment = await prisma.quizContent.findFirst({ where: { id: p(req.params.id), ...ownedQuizContent(viewer(req)), kind: 'ASSESSMENT' }, select: { id: true } })
+    if (!assessment) throw new AppError('Not found', 404)
+    res.json({ success: true, data: { pages: await rescoreAssessment(assessment.id) } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Compare an upload's automatic scores with hand grades (a CSV like the spike's).
+router.post('/quiz-grader/batches/:batchId/compare', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const batch = await ownedBatch(req, p(req.params.batchId))
+    const { csv } = z.object({ csv: z.string().min(1).max(2_000_000) }).parse(req.body)
+    const rows = await prisma.quizSlotResult.findMany({
+      where: { page: { batchId: batch.id, gradeStatus: 'GRADED' } },
+      include: { page: { select: { index: true } } },
+    })
+    const results: ResultRow[] = rows.map((r) => ({
+      pageIndex: r.page.index, slotId: r.slotId, kind: r.kind, status: r.status, transcription: r.transcription,
+      pointsAuto: r.pointsAuto, needsReview: r.needsReview, reviewReasons: r.reviewReasons as string[],
+    }))
+    res.json({ success: true, data: compare(results, csv) })
   } catch (err) {
     next(err)
   }
@@ -209,7 +291,7 @@ router.post('/quiz-grader/pages/:pageId/retry', requireProfessor, async (req: Re
   try {
     const page = await ownedPage(req)
     if (page.status === 'PROCESSING') throw new AppError('Already being processed', 409)
-    await prisma.quizPage.update({ where: { id: page.id }, data: { status: 'PENDING', attempts: 0, error: null } })
+    await prisma.quizPage.update({ where: { id: page.id }, data: { status: 'PENDING', attempts: 0, error: null, gradeStatus: 'NONE' } })
     res.json({ success: true })
   } catch (err) {
     next(err)

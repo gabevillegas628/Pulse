@@ -506,6 +506,66 @@ model QuizPage {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
+  // ── Grading (after the page is DONE) ──
+  gradeStatus    QuizGradeStatus @default(NONE)
+  gradeClaimedAt DateTime?
+  gradeAttempts  Int             @default(0)
+  gradeError     String?
+  gradedAt       DateTime?
+  // What the model said, kept so the page can be re-scored against an edited key
+  // without asking again: { text: { [slotId]: TextRead }, structure: { [slotId]: StructureRead } }.
+  reads          Json?
+  // Tokens per model call, for cost: [{ model, input_tokens, output_tokens, cached }].
+  usage          Json?
+  pointsAuto     Float?
+  maxPoints      Float?
+  toReview       Int?
+  results        QuizSlotResult[]
+
   @@unique([batchId, index])
   @@index([status])
+  @@index([gradeStatus])
+}
+
+enum QuizGradeStatus {
+  NONE     // not graded (not DONE yet, or grading not set up)
+  PENDING  // waiting for the grader
+  GRADING  // claimed; gradeClaimedAt says since when
+  GRADED
+  FAILED   // gave up after retries; gradeError says why
+}
+
+// One answer box on one paper, scored. Recomputed from QuizPage.reads whenever the key
+// changes; the model is not asked again.
+model QuizSlotResult {
+  id            String   @id @default(cuid())
+  pageId        String
+  page          QuizPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  slotId        String
+  kind          String   // enzyme | cofactors | structure
+  status        String   // blank | read | illegible | error
+  blankBy       String?  // ink | model
+  transcription String?
+  // What identical answers share, for reviewing by item: the normalised name, or the
+  // sorted cofactors with their sides. Null for structures.
+  groupKey      String?
+  // The rest of the scoring detail (match, cofactors, features, description).
+  detail        Json
+  confidence    Float
+  pointsAuto    Float
+  maxPoints     Float
+  needsReview   Boolean
+  reviewReasons Json
+  createdAt     DateTime @default(now())
+
+  @@unique([pageId, slotId])
+  @@index([slotId, groupKey])
+}
+
+// Model reads by (model, prompt version, prompt, images), so re-running a page never
+// pays twice. Holds transcriptions of student answers (never names), like the reads above.
+model QuizReadCache {
+  key       String   @id
+  value     Json
+  createdAt DateTime @default(now())
 }

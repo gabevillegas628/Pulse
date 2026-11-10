@@ -9,6 +9,7 @@
 import fs from 'fs/promises'
 import { openAsBlob } from 'fs'
 import path from 'path'
+import { Prisma } from '@prisma/client'
 import { prisma } from '../db/index.js'
 import { config } from '../config/index.js'
 import { uploadDir } from '../utils/uploads.js'
@@ -169,9 +170,20 @@ async function processPage(pageId: string): Promise<void> {
     if (!/^[\w-]+$/.test(c.id)) continue
     await fs.writeFile(path.join(dir, `crop-${c.id}.png`), Buffer.from(c.png, 'base64'))
   }
+  // A re-processed page's old scores no longer describe its crops.
+  await prisma.quizSlotResult.deleteMany({ where: { pageId: page.id } })
   await prisma.quizPage.update({
     where: { id: page.id },
     data: {
+      // Queue it for the grader (grading.ts) once it is lined up and its version known.
+      gradeStatus: result.version && config.anthropicApiKey ? 'PENDING' : 'NONE',
+      gradeAttempts: 0,
+      gradeError: null,
+      reads: Prisma.DbNull,
+      usage: Prisma.DbNull,
+      pointsAuto: null,
+      maxPoints: null,
+      toReview: null,
       status: result.version ? 'DONE' : 'NEEDS_VERSION',
       version: result.version,
       method: result.method,

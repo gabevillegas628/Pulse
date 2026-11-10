@@ -13,6 +13,7 @@ import { ownedQuizContent } from '../utils/ownership.js'
 import { p } from '../utils/params.js'
 import { patchYaml } from '../quizGrader/yamlPatch.js'
 import { printablePdf } from '../quizGrader/print.js'
+import { rescoreAfterEdit } from '../quizGrader/grading.js'
 import { assessmentSchema, versionPage } from '../quizGrader/content.js'
 import {
   ContentError, KIND_LABEL, crossCheck, dependents, kindOf, parseSource, schemaIssues, slugOf, starterFiles, starterPdf, titleOf, validate,
@@ -166,6 +167,8 @@ router.put('/quiz-grader/content/:id', requireProfessor, async (req: Request, re
       ? row
       : { ...(await prisma.quizContent.update({ where: { id: row.id }, data: { source: text, slug }, omit: { pdf: true } })), hasPdf: row.hasPdf }
     const after = all.map((r) => (r.id === saved.id ? saved : r))
+    // Graded papers follow the edit: re-scored from what the model already read.
+    if (method !== 'unchanged') void rescoreAfterEdit(row.professorId, row.kind, slug)
     res.json({ success: true, data: { ...summary(saved, after), source: saved.source, data: parseSource(saved.source), method } })
   } catch (err) {
     next(isUniqueViolation(err) ? new AppError('Another item already has that name.', 409) : asAppError(err))
