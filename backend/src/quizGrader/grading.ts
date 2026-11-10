@@ -151,7 +151,11 @@ async function gradeOne(pageId: string): Promise<void> {
   const regions: Region[] = []
   for (const group of byBox.values()) {
     const crop = path.join(dir, `crop-${group[0]!.slot.id}.png`)
-    regions.push({ id: group[0]!.slot.id, png: await fs.readFile(crop), slots: group })
+    const png = await fs.readFile(crop).catch((e: NodeJS.ErrnoException) => {
+      if (e.code === 'ENOENT') throw new MissingScan()
+      throw e
+    })
+    regions.push({ id: group[0]!.slot.id, png, slots: group })
   }
   const pick = (kinds: string[]) => regions
     .map((r) => ({ ...r, slots: r.slots.filter((s) => kinds.includes(s.ref.kind)) }))
@@ -210,6 +214,13 @@ export async function rescoreAfterEdit(professorId: string, kind: string, slug: 
 
 // ── The worker ─────────────────────────────────────────────────────────────────
 
+/** The page's cut-out boxes are not on this server's disk: retrying cannot help. */
+class MissingScan extends Error {
+  constructor() {
+    super('This page\'s images are not on this server\'s disk (a redeploy without a volume, or another Pulse server sharing the database). Upload the scan again.')
+  }
+}
+
 const MAX_ATTEMPTS = 3
 const STALE_MS = 5 * 60_000
 const CONCURRENCY = 2
@@ -240,7 +251,7 @@ async function runOne(): Promise<boolean> {
   } catch (e) {
     const page = await prisma.quizPage.findUnique({ where: { id }, select: { gradeAttempts: true } })
     const message = e instanceof Error ? e.message : String(e)
-    const giveUp = !page || page.gradeAttempts >= MAX_ATTEMPTS || e instanceof Anthropic.AuthenticationError
+    const giveUp = !page || page.gradeAttempts >= MAX_ATTEMPTS || e instanceof Anthropic.AuthenticationError || e instanceof MissingScan
     logger.warn('quiz page grading failed', { pageId: id, attempts: page?.gradeAttempts, giveUp, error: message })
     await prisma.quizPage.update({
       where: { id },

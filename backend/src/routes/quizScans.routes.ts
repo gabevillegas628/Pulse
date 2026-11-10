@@ -20,6 +20,7 @@ import {
 } from '../quizGrader/scans.js'
 import { gradingConfigured, rescoreAssessment } from '../quizGrader/grading.js'
 import { costOf } from '../quizGrader/pricing.js'
+import { scanStorageWarnings } from '../quizGrader/servers.js'
 import { compare, type ResultRow } from '../quizGrader/compare.js'
 import { effectiveResults, pageTotals } from '../quizGrader/review.js'
 
@@ -58,7 +59,10 @@ const counts = (pages: { status: string }[]) =>
 router.get('/quiz-grader/vision', requireProfessor, async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const configured = visionConfigured()
-    res.json({ success: true, data: { configured, healthy: configured ? await visionHealthy() : false, grading: gradingConfigured() } })
+    res.json({
+      success: true,
+      data: { configured, healthy: configured ? await visionHealthy() : false, grading: gradingConfigured(), storage: await scanStorageWarnings() },
+    })
   } catch (err) {
     next(err)
   }
@@ -185,7 +189,9 @@ router.get('/quiz-grader/pages/:pageId/:kind(original|aligned)', requireProfesso
     const file = req.params.kind === 'original'
       ? await originalFile(page.batchId, page.index)
       : path.join(pageDir(page.batchId, page.index), 'aligned.png')
-    if (!file || !(await fs.stat(file).then(() => true, () => false))) throw new AppError('Not processed yet', 404)
+    if (!file || !(await fs.stat(file).then(() => true, () => false))) {
+      throw new AppError(page.status === 'DONE' || page.status === 'NEEDS_VERSION' ? 'This page\'s images are not on this server\'s disk' : 'Not processed yet', 404)
+    }
     res.setHeader('Cache-Control', 'private, no-store')
     res.sendFile(file)
   } catch (err) {

@@ -186,6 +186,13 @@ Marker detection on uploads arrived in Phase 3.
   upload path: `backend/scripts/smoke-quiz-scans.ts` (22 checks) with fixtures from
   `vision/make_fixtures.py`, and `vision/test_pipeline.py`. These are synthetic pages
   built from the real forms; a run with your own scans and phone photos is the real test.
+- **One server, on a volume.** Scan images are on the Pulse server's own disk, while the
+  scan and grading queues are in the database. So `UPLOAD_DIR` must be inside the service's
+  volume (or every redeploy erases the scans), and only one Pulse server may work from a
+  database: two split a batch's pages between their disks, and each shows the other's pages
+  as missing (and fails to grade pages the other cut up). Each server checks in to
+  `QuizServer` every 30 seconds (`quizGrader/servers.ts`); the quiz page warns about either
+  problem, and a grade that finds its images missing fails at once saying so.
 
 To deploy: create the `vision` service and set `VISION_URL`/`VISION_TOKEN` on Pulse
 (`vision/README.md`). Until then the Scans section says scanning is not set up.

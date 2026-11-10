@@ -572,6 +572,17 @@ model QuizReadCache {
   createdAt DateTime @default(now())
 }
 
+// One row per running Pulse server, refreshed every 30 seconds. Scan images live on each
+// server's own disk, so two servers working from one database split a batch's pages
+// between two disks, and each shows the other's pages as missing. This is how the app
+// notices and says so. Rows are never read for anything else.
+model QuizServer {
+  id        String   @id
+  label     String
+  uploadDir String
+  seenAt    DateTime
+}
+
 // ─── Review (Phase 5) ─────────────────────────────────────────────────────────
 //
 // A box's score is, in order: the professor's decision for that one paper

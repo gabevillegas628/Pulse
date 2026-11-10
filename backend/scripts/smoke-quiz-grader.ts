@@ -17,6 +17,7 @@ import { readTextRegions, type StructureRead, type TextRead } from '../src/quizG
 import type Anthropic from '@anthropic-ai/sdk'
 import { matchText, normalize, scoreCofactors, scoreStructure } from '../src/quizGrader/scoring.js'
 import { patchYaml } from '../src/quizGrader/yamlPatch.js'
+import { storageProblem } from '../src/quizGrader/servers.js'
 import { parse as parseYaml } from 'yaml'
 
 let passed = 0
@@ -296,6 +297,17 @@ check('an answer box overlapping the name box is refused', (() => {
     const r = patchYaml(src, want)
     return r.method === 'splice' && r.text.endsWith('slots:\n  - {id: a, type: text, ref: step.1.enzyme, box: [0.1, 0.2, 0.3, 0.4]}\n')
   })())
+}
+
+console.log('\nScan storage outlasts a deploy')
+{
+  const rw = { RAILWAY_PROJECT_ID: 'p' }
+  check('off Railway, no verdict', storageProblem('/app/backend/uploads', {}) === null)
+  check('on Railway with no volume, a warning', /No volume/.test(storageProblem('/app/backend/uploads', rw) ?? ''))
+  check('uploads outside the volume, a warning', /outside the volume/.test(storageProblem('/app/backend/uploads', { ...rw, RAILWAY_VOLUME_MOUNT_PATH: '/data' }) ?? ''))
+  check('uploads in the volume, fine', storageProblem('/data', { ...rw, RAILWAY_VOLUME_MOUNT_PATH: '/data' }) === null)
+  check('uploads in a folder of the volume, fine', storageProblem('/data/uploads', { ...rw, RAILWAY_VOLUME_MOUNT_PATH: '/data/' }) === null)
+  check('a look-alike folder is not the volume', storageProblem('/data2', { ...rw, RAILWAY_VOLUME_MOUNT_PATH: '/data' }) !== null)
 }
 
 console.log(`\n  ${passed} passed, ${failed} failed`)

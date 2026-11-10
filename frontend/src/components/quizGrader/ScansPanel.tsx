@@ -27,7 +27,7 @@ export default function ScansPanel({ assessmentId }: { assessmentId: string }) {
     staleTime: 0,
     refetchInterval: (q) => (q.state.data?.summary.grading ? 2000 : false),
   })
-  const { data: vision } = useQuery<{ configured: boolean; healthy: boolean; grading: boolean }>({
+  const { data: vision } = useQuery<{ configured: boolean; healthy: boolean; grading: boolean; storage?: string[] }>({
     queryKey: ['quiz-grader', 'vision'],
     queryFn: () => api.get('/quiz-grader/vision').then((r) => r.data.data),
   })
@@ -71,6 +71,9 @@ export default function ScansPanel({ assessmentId }: { assessmentId: string }) {
         </div>
       </div>
 
+      {(vision?.storage ?? []).map((w) => (
+        <p key={w} className="text-sm text-warn bg-warn-soft border border-warn/30 rounded-sm px-3 py-2 mb-3">{w}</p>
+      ))}
       {vision && !vision.configured && (
         <p className="text-sm text-muted mb-3">Scanning is not set up on this server yet: the vision service needs deploying (vision/README.md).</p>
       )}
