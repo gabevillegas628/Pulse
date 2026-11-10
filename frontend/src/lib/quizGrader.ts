@@ -60,3 +60,22 @@ export function saveText(filename: string, text: string, type = 'application/yam
   a.remove()
   URL.revokeObjectURL(url)
 }
+
+/** A layout as the editor holds it: the raw YAML parse. */
+export type SlotType = 'text' | 'cofactor_set' | 'structure' | 'identity'
+export type InEnd = 'top' | 'bottom' | 'left' | 'right'
+export type Box = [number, number, number, number]
+export interface RawSlot {
+  id: string
+  type: SlotType
+  ref: string
+  in_end?: InEnd | null
+  box: Box | null
+  [k: string]: unknown
+}
+export interface RawLayout {
+  layout: string
+  page: { size: string; source_pdf: string; [k: string]: unknown }
+  slots: RawSlot[]
+  [k: string]: unknown
+}

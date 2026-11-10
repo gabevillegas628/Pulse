@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ArrowLeft, CircleAlert, Download, Plus, Trash2 } from 'lucide-react'
@@ -7,12 +7,13 @@ import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
 import ChipList from '@/components/quizGrader/ChipList'
+import LayoutEditor from '@/components/quizGrader/LayoutEditor'
 import { apiError } from '@/lib/errors'
-import { KIND_LABEL, saveText, type QuizContentDetail, type RawIntermediate, type RawKey, type RawStep } from '@/lib/quizGrader'
+import { KIND_LABEL, saveText, type QuizContentDetail, type RawIntermediate, type RawKey, type RawLayout, type RawStep } from '@/lib/quizGrader'
 
 /**
- * One answer key, layout or assessment. Answer keys are edited here; the others are
- * shown as their YAML until their own editors exist (layout editor: Phase 2).
+ * One answer key, layout or assessment. Answer keys and layouts are edited here;
+ * assessments are shown as their YAML until they have an editor.
  *
  * The editor holds the YAML's raw parse and sends the whole thing back on save; the
  * server rewrites only the text that changed, so the file's comments and formatting
@@ -36,8 +37,8 @@ export default function QuizContentEditorPage() {
       </Link>
       {isLoading ? null : error || !item ? (
         <p className="text-sm text-warn">{apiError(error, 'Could not open this item')}</p>
-      ) : item.kind === 'KEY' && item.data && !item.issues.length ? (
-        <KeyEditor item={item} onSaved={(next) => {
+      ) : (item.kind === 'KEY' || item.kind === 'LAYOUT') && item.data && !item.issues.length ? (
+        <DraftEditor item={item} onSaved={(next) => {
           qc.setQueryData(['quiz-grader', 'content', id], next)
           void qc.invalidateQueries({ queryKey: ['quiz-grader', 'content'], exact: true })
         }} />
@@ -87,14 +88,16 @@ function SourceView({ item }: { item: QuizContentDetail }) {
   )
 }
 
-// ── Answer key editor ──────────────────────────────────────────────────────────
+// ── Editing: save, discard and the unsaved-changes guard, shared by both editors ──
 
-function KeyEditor({ item, onSaved }: { item: QuizContentDetail; onSaved: (next: QuizContentDetail) => void }) {
-  const original = item.data as unknown as RawKey
-  const [draft, setDraft] = useState<RawKey>(() => structuredClone(original))
+type Draft = Record<string, unknown>
+
+function DraftEditor({ item, onSaved }: { item: QuizContentDetail; onSaved: (next: QuizContentDetail) => void }) {
+  const original = item.data as Draft
+  const [draft, setDraft] = useState<Draft>(() => structuredClone(original))
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ tone: 'good' | 'warn'; text: string } | null>(null)
-  useEffect(() => setDraft(structuredClone(item.data as unknown as RawKey)), [item.data])
+  useEffect(() => setDraft(structuredClone(item.data as Draft)), [item.data])
 
   const dirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(original), [draft, original])
 
@@ -106,8 +109,8 @@ function KeyEditor({ item, onSaved }: { item: QuizContentDetail; onSaved: (next:
     return () => window.removeEventListener('beforeunload', h)
   }, [dirty])
 
-  /** Change the draft through a mutable copy. */
-  const edit = (fn: (k: RawKey) => void) => setDraft((d) => { const c = structuredClone(d); fn(c); return c })
+  /** Change the draft through a mutable copy. Stable, so effects can depend on it. */
+  const edit = useCallback(<T,>(fn: (d: T) => void) => setDraft((d) => { const c = structuredClone(d); fn(c as T); return c }), [])
 
   async function save() {
     setSaving(true)
@@ -123,9 +126,6 @@ function KeyEditor({ item, onSaved }: { item: QuizContentDetail; onSaved: (next:
     }
   }
 
-  const name = (id: string) => draft.intermediates[id]?.name ?? id
-  const steps = Object.entries(draft.steps).sort(([a], [b]) => Number(a) - Number(b))
-
   return (
     <>
       <Header item={item}>
@@ -134,6 +134,31 @@ function KeyEditor({ item, onSaved }: { item: QuizContentDetail; onSaved: (next:
       </Header>
       <Problems item={item} />
       {message && <p className={`text-sm mb-4 ${message.tone === 'good' ? 'text-good' : 'text-warn'}`}>{message.text}</p>}
+
+      {item.kind === 'KEY'
+        ? <KeyFields draft={draft as unknown as RawKey} edit={edit as (fn: (k: RawKey) => void) => void} />
+        : <LayoutEditor item={item} draft={draft as unknown as RawLayout} edit={edit as (fn: (l: RawLayout) => void) => void} />}
+
+      {dirty && (
+        <div className="sticky bottom-4 mt-6 flex justify-end z-10">
+          <Card className="px-4 py-2.5 flex items-center gap-3">
+            <span className="text-sm text-ink-2">Unsaved changes</span>
+            <Button size="sm" variant="primary" disabled={saving} onClick={() => void save()}>{saving ? 'Saving…' : 'Save'}</Button>
+          </Card>
+        </div>
+      )}
+    </>
+  )
+}
+
+// ── Answer key fields ──────────────────────────────────────────────────────────
+
+function KeyFields({ draft, edit }: { draft: RawKey; edit: (fn: (k: RawKey) => void) => void }) {
+  const name = (id: string) => draft.intermediates[id]?.name ?? id
+  const steps = Object.entries(draft.steps).sort(([a], [b]) => Number(a) - Number(b))
+
+  return (
+    <>
 
       <Card className="p-4 mb-8">
         <label className="text-xs font-semibold text-muted">Title</label>
@@ -159,15 +184,6 @@ function KeyEditor({ item, onSaved }: { item: QuizContentDetail; onSaved: (next:
           <IntermediateCard key={id} id={id} it={it} onChange={(fn) => edit((k) => fn(k.intermediates[id]!))} />
         ))}
       </div>
-
-      {dirty && (
-        <div className="sticky bottom-4 mt-6 flex justify-end">
-          <Card className="px-4 py-2.5 flex items-center gap-3">
-            <span className="text-sm text-ink-2">Unsaved changes</span>
-            <Button size="sm" variant="primary" disabled={saving} onClick={() => void save()}>{saving ? 'Saving…' : 'Save'}</Button>
-          </Card>
-        </div>
-      )}
     </>
   )
 }
