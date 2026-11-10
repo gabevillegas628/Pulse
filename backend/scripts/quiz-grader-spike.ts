@@ -13,10 +13,13 @@
  * them to the page edge; marker-based alignment is Phase 3.
  *
  * Usage (from backend/):
- *   npx tsx scripts/quiz-grader-spike.ts --in <dir> --dry-run
+ *   npx tsx scripts/quiz-grader-spike.ts --in <file or folder> --dry-run
  *       Crops and blank detection only, no API calls. Writes overlay images so you can
  *       check the boxes land on the blanks, and a hand-grades template CSV to fill in.
- *   ANTHROPIC_API_KEY=... npx tsx scripts/quiz-grader-spike.ts --in <dir> --grades grades.csv
+ *   ANTHROPIC_API_KEY=... npx tsx scripts/quiz-grader-spike.ts --in <file or folder> --grades grades.csv
+ *
+ * Call it with npx as above rather than `npm run quiz-grader:spike --`: PowerShell
+ * drops the `--`, and npm then takes --version for itself and just prints its version.
  *       Full run. Reads are cached in <out>/cache, so a re-run only pays for new pages.
  *
  * Options:
@@ -93,7 +96,7 @@ function args() {
   }
   const input = get('in')
   if (!input) {
-    console.error('Missing --in <dir of scanned PDFs or images>. See the header of this file.')
+    console.error('Missing --in <a scanned PDF or image, or a folder of them>. See the header of this file.')
     process.exit(2)
   }
   return {
@@ -117,16 +120,24 @@ function pdfToPngs(pdf: string, outPrefix: string, page?: number) {
   execFileSync('pdftoppm', ['-r', String(DPI), '-gray', '-png', ...range, pdf, outPrefix])
 }
 
-/** Every input page as a W×H greyscale PNG under <out>/pages, named by source and page. */
+const SCAN_RE = /\.(pdf|png|jpe?g|tiff?)$/i
+
+/**
+ * Every input page as a W×H greyscale PNG under <out>/pages, named by source and page.
+ * `input` is a folder of scans or a single scan file.
+ */
 async function collectPages(input: string, out: string, limit: number): Promise<{ id: string; file: string }[]> {
   const dir = path.join(out, 'pages')
   await fs.mkdir(dir, { recursive: true })
   const pages: { id: string; file: string }[] = []
-  const files = (await fs.readdir(input)).filter((f) => /\.(pdf|png|jpe?g|tiff?)$/i.test(f)).sort()
+  const single = (await fs.stat(input)).isFile()
+  const folder = single ? path.dirname(input) : input
+  const files = single ? [path.basename(input)] : (await fs.readdir(input)).filter((f) => SCAN_RE.test(f)).sort()
+  if (single && !SCAN_RE.test(input)) throw new Error(`${input} is not a PDF, PNG, JPEG or TIFF`)
 
   for (const f of files) {
     if (pages.length >= limit) break
-    const src = path.join(input, f)
+    const src = path.join(folder, f)
     const stem = path.parse(f).name.replace(/[^\w.-]/g, '_')
 
     if (/\.pdf$/i.test(f)) {

@@ -33,14 +33,16 @@ structure crops to `MODEL_STRUCTURE` (default `claude-sonnet-5-5`), one request 
 page, then score in code.
 
 1. **Scan ~20 filled quizzes of one version** on the copier into PDFs (any number of
-   pages per PDF; each page is one quiz) or page images. Put them in one folder.
+   pages per PDF; each page is one quiz) or page images. Pass one file, or a folder of them.
    Phone photos only work after a scanner app has flattened and cropped them to the page
    edge (Notes, Drive, Adobe Scan). Real alignment is Phase 3.
 2. **Dry run.** No API calls. It checks the boxes and writes a grades template:
    ```bash
    cd backend
-   npm run quiz-grader:spike -- --in ~/scans --version A --dry-run
+   npx tsx scripts/quiz-grader-spike.ts --in ~/scans/quiz.pdf --version A --dry-run
    ```
+   Use `npx tsx` as shown, not `npm run quiz-grader:spike --`: PowerShell drops the `--`,
+   npm then takes `--version` for itself and just prints npm's version number.
    Open `quiz-spike-out/pages/<page>/overlay.png`: every box should sit over its blank
    (blue = text, purple = structure, grey = judged empty). The glycolysis boxes were
    measured by hand from the sample PDF, so nudge `box:` values in the layout if needed.
@@ -49,9 +51,11 @@ page, then score in code.
    Use fractions for partial credit (0.5).
 4. **Full run:**
    ```bash
-   ANTHROPIC_API_KEY=... npm run quiz-grader:spike -- --in ~/scans --version A \
+   npx tsx scripts/quiz-grader-spike.ts --in ~/scans/quiz.pdf --version A \
      --grades quiz-spike-out/hand-grades-template.csv
    ```
+   The API key comes from `backend/.env` (`ANTHROPIC_API_KEY`). To set it for one
+   PowerShell window instead: `$env:ANTHROPIC_API_KEY = "sk-ant-..."`.
    Read `quiz-spike-out/report.md`: agreement per slot type, the disagreements (unflagged
    ones first, since nobody would catch those), cost per page and seconds per page. Reads
    are cached in `quiz-spike-out/cache`, so re-running after fixing a hand grade is free.
