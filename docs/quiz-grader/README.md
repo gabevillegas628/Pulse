@@ -42,10 +42,11 @@ page, then score in code.
 2. **Dry run.** No API calls. It checks the boxes and writes a grades template:
    ```bash
    cd backend
-   npx tsx scripts/quiz-grader-spike.ts --in ~/scans/quiz.pdf --version A --dry-run
+   npx tsx scripts/quiz-grader-spike.ts --in ~/scans/quiz.pdf --dry-run
    ```
    Use `npx tsx` as shown, not `npm run quiz-grader:spike --`: PowerShell drops the `--`,
    npm then takes `--version` for itself and just prints npm's version number.
+   Each page's version is detected (see Phase 2); add `--version A` to force one.
    Each scan is first lined up against the blank form (shift, scale, tilt up to 1.5°);
    the output prints how far off each page was, and warns if under 60% of the form's
    lines could be matched. Open `quiz-spike-out/pages/<page>/overlay.png` — the
@@ -57,7 +58,7 @@ page, then score in code.
    Use fractions for partial credit (0.5).
 4. **Full run:**
    ```bash
-   npx tsx scripts/quiz-grader-spike.ts --in ~/scans/quiz.pdf --version A \
+   npx tsx scripts/quiz-grader-spike.ts --in ~/scans/quiz.pdf \
      --grades quiz-spike-out/hand-grades-template.csv
    ```
    The API key comes from `backend/.env` (`ANTHROPIC_API_KEY`). To set it for one
@@ -110,7 +111,7 @@ professor, as their YAML text. **Paper quizzes** in the professor header lists t
 imports and exports YAML, loads the glycolysis/TCA starters, and edits answer keys:
 accepted enzyme names, cofactor groups in and out, optional cofactors, intermediates'
 names, structure features and weights. Layouts and assessments are import/export only
-until their editors exist (layout editor: Phase 2).
+until their editors exist (layout editor: Phase 2, below).
 
 **Lossless round trip.** The stored YAML is the record. An unedited export is
 byte-identical to the import. An edit is saved by splicing only the changed text into
@@ -126,6 +127,36 @@ unresolvable refs and undrawn boxes.
 
 Not yet wired: the spike script still reads `docs/quiz-grader/seed`, not the database.
 The grading pipeline (Phase 3–4) reads from the database.
+
+## Phase 2: forms, boxes, printing
+
+**Status:** done. Changed from the handoff's plan with the instructor: no QR code; corner
+markers kept for phone capture later.
+
+- **Box editor.** A layout opens on its blank PDF (drawn in the browser with pdf.js), with
+  every slot's box over it. Drag to move, corners to resize, draw a box for a slot that has
+  none, arrow keys to nudge; edit each slot's kind, what it grades, and for cofactor arrows
+  which end is the tail. Saves splice into the YAML like key edits.
+- **Blank PDFs** are stored with their layout (one page per version). The starter layouts
+  come with the sample PDFs.
+- **Printing.** An assessment's **Print** gives each version's page with an ArUco marker
+  (DICT_4X4_50, ids 0–3) in each corner, the form shrunk to 90% to clear them
+  (`backend/src/quizGrader/print.ts`). Checked with OpenCV
+  (`backend/scripts/quiz-grader/verify-markers.py`): all four found on the flat print and
+  on simulated angled phone photos, and flattening from the markers alone lands the page
+  back on the form. Print at "actual size" if you can; fit-to-page is fine too.
+  `PRINT_SCALE` must not change once quizzes are printed.
+- **Version detection, no QR.** Marks printed on only one version's form (the stars, on
+  the glycolysis quiz) tell the versions apart; each page is matched against all of them
+  and called only when one clearly fits. Unsure pages are skipped with their scores, never
+  guessed. Versions map to PDF pages by position, or `page:` in the assessment.
+- **Copier scans** of new prints line up as before: the line matcher now covers 84–106%
+  scale. Pages printed without markers keep working.
+- **TCA layout** has boxes for name, NetID, all nine enzyme blanks and all nine cofactor
+  arrows. Each arrow's tail end was read off the form; **check them in the box editor**.
+  TCA structures are not graded, so they have no boxes.
+
+Not yet: marker *detection* on uploads (Phase 3 for scans, Phase 6 for phone photos).
 
 ## Changes from the handoff
 
@@ -157,5 +188,7 @@ The grading pipeline (Phase 3–4) reads from the database.
    are still empty; the arrows run around a circle, so `in_end` must be set per arrow.
 8. Lenient answers in the keys: ~~Pi optional for GAPDH~~ (required). Still open for TCA:
    ATP alongside GTP, Q/QH2 alongside FAD/FADH2.
-9. Per-student QR sheets.
+9. Per-student QR sheets: the one QR worth considering, to match papers to students
+   without reading names. Decide before Phase 4–5. (A per-*version* QR was dropped:
+   versions are detected from the printed form.)
 10. TAs reviewing.

@@ -51,7 +51,12 @@ export interface RawStep {
 
 /** Hand the browser a text file to save. */
 export function saveText(filename: string, text: string, type = 'application/yaml') {
-  const url = URL.createObjectURL(new Blob([text], { type }))
+  saveBlob(filename, new Blob([text], { type }))
+}
+
+/** Hand the browser a file to save. */
+export function saveBlob(filename: string, blob: Blob) {
+  const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
   a.download = filename
@@ -78,4 +83,10 @@ export interface RawLayout {
   page: { size: string; source_pdf: string; [k: string]: unknown }
   slots: RawSlot[]
   [k: string]: unknown
+}
+
+/** Download an assessment's print-ready PDF: one version, or every version. */
+export async function downloadPrintable(api: { get: (url: string, cfg: object) => Promise<{ data: unknown }> }, id: string, slug: string, version?: string) {
+  const r = await api.get(`/quiz-grader/content/${id}/print${version ? `?version=${encodeURIComponent(version)}` : ''}`, { responseType: 'blob' })
+  saveBlob(`${slug}${version ? `-${version}` : ''}.pdf`, r.data as Blob)
 }

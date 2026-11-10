@@ -3,7 +3,7 @@
 Work in order; each phase ends with something the instructor can try. Stop and ask at
 phase boundaries.
 
-## Phase 0 — Feasibility spike (before any UI)
+## Phase 0 — Feasibility spike (before any UI)  *(done — see README.md)*
 Script only. Hand-measure slot boxes for ONE glycolysis version; take ~20 real (or
 instructor-filled mock) quizzes; crop; run model reads; score with the seed key; compare
 with the instructor's hand grades.
@@ -11,12 +11,12 @@ with the instructor's hand grades.
 structures and cofactor sides), cost per page, and seconds per page. The instructor decides
 whether structures are auto-scored or review-only.
 
-## Phase 1 — Content layer
+## Phase 1 — Content layer  *(done — see README.md)*
 DB schema; YAML import/export for keys, layouts, assessments (lossless round-trip test);
 seed from `seed/`; simple key editor (aliases, cofactor groups, features, weights).
 **Done when:** editing a key in-app and exporting YAML diffs cleanly against the seed.
 
-## Phase 2 — Templates
+## Phase 2 — Templates  *(done in Pulse with changes: no QR; versions detected from the printed form — see README.md)*
 Upload blank PDF → layout editor (draw/resize/label boxes, assign type + ref) → stamp
 markers + per-version QR → printable PDFs.
 **Done when:** both sample quizzes have complete layouts and print-ready PDFs.

@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, CircleAlert, Download, FileUp, Package, ScanLine, Trash2, X } from 'lucide-react'
+import { AlertTriangle, CircleAlert, Download, FileUp, Package, Printer, ScanLine, Trash2, X } from 'lucide-react'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import Button from '@/components/ui/Button'
@@ -10,7 +10,7 @@ import Empty from '@/components/ui/Empty'
 import Pill from '@/components/ui/Pill'
 import ConfirmDialog, { type DialogRequest } from '@/components/ui/ConfirmDialog'
 import { apiError, apiErrorCode } from '@/lib/errors'
-import { KIND_LABEL, saveText, type QuizContentKind, type QuizContentSummary } from '@/lib/quizGrader'
+import { KIND_LABEL, downloadPrintable, saveText, type QuizContentKind, type QuizContentSummary } from '@/lib/quizGrader'
 
 /**
  * Paper quizzes: the answer keys, layouts and assessments the quiz grader works from,
@@ -166,6 +166,12 @@ export default function QuizContentPage() {
                       </div>
                       {item.issues.length > 0 ? <Pill variant="warn">Has errors</Pill> : item.warnings.length > 0 ? <Pill variant="muted">Incomplete</Pill> : <Pill variant="good">Ready</Pill>}
                       <div className="flex gap-1.5">
+                        {item.kind === 'ASSESSMENT' && (
+                          <Button size="sm" title="Print-ready PDF: every version, with corner markers"
+                            onClick={() => downloadPrintable(api, item.id, item.slug).catch((e) => setNotice({ tone: 'warn', text: apiError(e, 'Could not make the printable PDF') }))}>
+                            <Printer size={13} />Print
+                          </Button>
+                        )}
                         <Button size="sm" onClick={() => void download(item)} title="Download YAML"><Download size={13} />YAML</Button>
                         <Button size="sm" onClick={() => remove(item)} title="Delete" aria-label={`Delete ${item.title}`}><Trash2 size={13} /></Button>
                       </div>

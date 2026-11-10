@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, ArrowLeft, CircleAlert, Download, Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, CircleAlert, Download, Plus, Printer, Trash2 } from 'lucide-react'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import Button from '@/components/ui/Button'
@@ -9,7 +9,7 @@ import Card from '@/components/ui/Card'
 import ChipList from '@/components/quizGrader/ChipList'
 import LayoutEditor from '@/components/quizGrader/LayoutEditor'
 import { apiError } from '@/lib/errors'
-import { KIND_LABEL, saveText, type QuizContentDetail, type RawIntermediate, type RawKey, type RawLayout, type RawStep } from '@/lib/quizGrader'
+import { KIND_LABEL, downloadPrintable, saveText, type QuizContentDetail, type RawIntermediate, type RawKey, type RawLayout, type RawStep } from '@/lib/quizGrader'
 
 /**
  * One answer key, layout or assessment. Answer keys and layouts are edited here;
@@ -77,9 +77,29 @@ function Problems({ item }: { item: QuizContentDetail }) {
 }
 
 function SourceView({ item }: { item: QuizContentDetail }) {
+  const [printError, setPrintError] = useState('')
+  const versions = item.kind === 'ASSESSMENT' && !item.issues.length
+    ? Object.keys((item.data?.versions as Record<string, unknown> | undefined) ?? {})
+    : []
   return (
     <>
-      <Header item={item} />
+      <Header item={item}>
+        {versions.length > 0 && (
+          <>
+            {versions.length > 1 && (
+              <Button size="sm" onClick={() => downloadPrintable(api, item.id, item.slug).catch((e) => setPrintError(apiError(e, 'Could not print')))}>
+                <Printer size={13} />Print all versions
+              </Button>
+            )}
+            {versions.map((v) => (
+              <Button key={v} size="sm" onClick={() => downloadPrintable(api, item.id, item.slug, v).catch((e) => setPrintError(apiError(e, 'Could not print')))}>
+                <Printer size={13} />Version {v}
+              </Button>
+            ))}
+          </>
+        )}
+      </Header>
+      {printError && <p className="text-sm text-warn mb-4">{printError}</p>}
       <Problems item={item} />
       <Card className="p-4 overflow-x-auto">
         <pre className="text-xs font-mono text-ink-2 whitespace-pre">{item.source}</pre>
