@@ -1,0 +1,9 @@
+# Pinned to the versions the tests ran against. pypdfium2 (Apache-2.0/BSD) renders PDFs;
+# PyMuPDF was avoided on purpose: AGPL.
+fastapi==0.162.4
+uvicorn==0.54.0
+python-multipart==0.0.32
+numpy==2.5.3
+opencv-contrib-python-headless==5.0.0.93
+pypdfium2==5.13.0
+pillow==12.3.0
