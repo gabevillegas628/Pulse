@@ -120,6 +120,8 @@ export interface QuizPage {
   gradeStatus: GradeStatus
   gradeError: string | null
   pointsAuto: number | null
+  /** After review decisions; toReview counts boxes still undecided. */
+  pointsFinal?: number | null
   maxPoints: number | null
   toReview: number | null
 }
@@ -145,6 +147,12 @@ export interface SlotResult {
   maxPoints: number
   needsReview: boolean
   reviewReasons: string[]
+  /** The score after review: this paper's decision, else its group's, else automatic. */
+  points: number
+  source: 'paper' | 'group' | 'auto'
+  open: boolean
+  override: { points: number; note: string | null } | null
+  decision: { points: number } | null
 }
 
 /** How a box was read, in a few words. */

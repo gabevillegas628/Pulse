@@ -221,6 +221,30 @@ vision service with a stand-in model, `backend/scripts/quiz-grader/mock-claude.m
 Not yet tried with the real model on real scans: that, plus the comparison, is the
 acceptance test.
 
+## Phase 5: review
+
+**Status:** done. Still not connected to the gradebook.
+
+- **Review by item** (assessment → Results → **Review**): boxes listed with how many are
+  left to review; each box's papers grouped by what was written, flagged groups first,
+  with every paper's crop. **Correct**, **Wrong**, or **Keep** (the automatic score) decides
+  the whole group, and papers uploaded later with the same answer arrive decided. Click a
+  crop to decide that one paper instead.
+- **Add to the key from review**: accepting an enzyme answer that was not an exact match
+  offers "also accept it in the key"; the alias is spliced into the key's YAML (one line)
+  and the assessment is re-scored.
+- **Structures** are reviewed one drawing at a time: the model's feature checks are filled
+  in, the professor corrects them, and the points follow from the key's rules.
+- **By paper**: the page view has 0 / full / undo on every box.
+- **Precedence**: a paper's own decision, else its group's, else the automatic score.
+  Decisions are stored apart from results, so re-scoring after a key edit never erases
+  them. Scores everywhere (Results, upload grid, page view) are after decisions.
+- **Audit log**: every decision (group, paper, alias) with who, when, how many papers,
+  and points before and after; recent ones at the bottom of Review.
+
+Acceptance: a mock batch reviewed to zero entirely in the browser, with the Results page
+agreeing (0 boxes to review). Tests: `backend/scripts/smoke-quiz-review.ts` (22 checks).
+
 ## Changes from the handoff
 
 - **Seed YAML bug fixed.** Names containing a comma (`1,3-bisphosphoglycerate`,

@@ -103,7 +103,7 @@ export function QuizBatchPage() {
                     )}
                     {pg.gradeStatus === 'GRADED' && (
                       <p className="text-xs text-ink">
-                        <span className="font-semibold">{pg.pointsAuto}/{pg.maxPoints}</span>
+                        <span className="font-semibold">{pg.pointsFinal ?? pg.pointsAuto}/{pg.maxPoints}</span>
                         {pg.toReview ? <span className="text-warn"> · {pg.toReview} to review</span> : null}
                       </p>
                     )}
@@ -230,7 +230,7 @@ export function QuizPageDebug() {
                 <Card className="p-4 space-y-2 text-sm">
                   <div className="flex items-center justify-between">
                     <span className="text-muted">Grading</span>
-                    {page.gradeStatus === 'GRADED' ? <span className="text-ink font-semibold">{page.pointsAuto} / {page.maxPoints}</span>
+                    {page.gradeStatus === 'GRADED' ? <span className="text-ink font-semibold">{page.pointsFinal ?? page.pointsAuto} / {page.maxPoints}</span>
                       : page.gradeStatus === 'FAILED' ? <Pill variant="warn">Failed</Pill> : <Pill variant="live" dot>Grading</Pill>}
                   </div>
                   {page.gradeStatus === 'GRADED' && (
@@ -277,7 +277,7 @@ export function QuizPageDebug() {
                       <div className="px-2 py-1.5 text-xs space-y-0.5">
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-mono text-ink">{s.id}</span>
-                          {r ? <span className="font-semibold text-ink">{r.pointsAuto}/{r.maxPoints}</span>
+                          {r ? <span className="font-semibold text-ink">{r.points}/{r.maxPoints}</span>
                             : s.blank ? <span className="text-muted">empty</span> : <span className="text-muted">{['name', 'netid'].includes(s.id) ? 'not sent' : ''}</span>}
                         </div>
                         {r && <p className="text-ink-2 break-words">{describeRead(r)}</p>}
@@ -289,9 +289,10 @@ export function QuizPageDebug() {
                             {r.detail.features.map((f) => <li key={f.feature}>{f.present ? '✓' : '✗'} {f.feature}</li>)}
                           </ul>
                         )}
-                        {r?.needsReview && (
+                        {r?.open && (
                           <p className="text-warn flex gap-1"><AlertTriangle size={12} className="shrink-0 mt-px" />{r.reviewReasons.join('; ')}</p>
                         )}
+                        {r && <BoxDecision pageId={page.id} r={r} onDone={refresh} />}
                       </div>
                     </Card>
                   )
@@ -375,5 +376,25 @@ function CompareWithHandGrades({ batchId }: { batchId: string }) {
         </Card>
       )}
     </section>
+  )
+}
+
+/** Decide one box of one paper from the page view: a regrade, or an exception to its group. */
+function BoxDecision({ pageId, r, onDone }: { pageId: string; r: SlotResult; onDone: () => void }) {
+  const [error, setError] = useState('')
+  const set = async (points: number | null) => {
+    setError('')
+    try { await api.post(`/quiz-grader/pages/${pageId}/boxes/${r.slotId}`, { points }); onDone() } catch (e) { setError(apiError(e, 'Could not save')) }
+  }
+  const label = r.source === 'paper' ? 'set for this paper' : r.source === 'group' ? 'decided for its group' : r.pointsAuto !== r.points ? '' : 'automatic'
+  return (
+    <div className="pt-1 flex flex-wrap items-center gap-1">
+      <span className="text-muted mr-1">{label}</span>
+      {[...new Set([0, r.maxPoints])].filter((v) => v !== r.points || r.source !== 'paper').map((v) => (
+        <button key={v} onClick={() => void set(v)} className="px-1.5 py-0.5 rounded-sm border border-hairline hover:bg-surface-2">{v}</button>
+      ))}
+      {r.source === 'paper' && <button onClick={() => void set(null)} className="px-1.5 py-0.5 rounded-sm border border-hairline hover:bg-surface-2">undo</button>}
+      {error && <span className="text-warn">{error}</span>}
+    </div>
   )
 }

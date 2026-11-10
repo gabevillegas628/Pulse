@@ -28,6 +28,9 @@ work phase by phase from `docs/quiz-grader/PLAN.md`, stopping at phase boundarie
 - **Printed pages are permanent.** `PRINT_SCALE` and the marker geometry in
   `backend/src/quizGrader/print.ts` are read back from every quiz already printed; changing
   them breaks those pages. Add a new layout version instead.
+- **Decisions outlive scores.** Review decisions (QuizOverride, QuizGroupDecision) are
+  stored apart from QuizSlotResult, which re-scoring rewrites; effective scores come from
+  `review.ts`. Never fold decisions into result rows, and never edit QuizDecisionLog.
 - **Edits splice, never re-render.** Stored YAML is changed only through `patchYaml`
   (`backend/src/quizGrader/yamlPatch.ts`), which rewrites just the changed text. Saving
   `stringify(parsed)` would silently reformat the whole file and break clean exports.

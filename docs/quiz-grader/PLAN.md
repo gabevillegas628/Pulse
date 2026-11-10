@@ -28,13 +28,13 @@ boxes overlaid.
 **Done when:** a skewed phone photo and a copier scan both align so all boxes land on
 their blanks.
 
-## Phase 4 — Grading engine  *(built — see README.md; awaiting a run on real scans)*
+## Phase 4 — Grading engine  *(done — see README.md)*
 Slot handlers, prompts with structured output, batching, caching, roster matching,
 deterministic scoring, review flags.
 **Done when:** unit tests cover normalization, fuzzy matching, cofactor sides/partial
 credit, feature weighting; the Phase 0 set reproduces or beats the spike's agreement.
 
-## Phase 5 — Review UI
+## Phase 5 — Review UI  *(done — see README.md)*
 By-item grouped review, by-student view, structure feature toggles, overrides with audit
 log, alias-learning prompt, progress indicator ("37 items need review").
 **Done when:** the instructor grades a full mock batch end to end without touching the DB.

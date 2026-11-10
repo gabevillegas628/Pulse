@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Camera, FileUp, ScanLine, Table } from 'lucide-react'
+import { Camera, FileUp, ListChecks, ScanLine, Table } from 'lucide-react'
 import { api } from '@/api/client'
 import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
@@ -24,6 +24,7 @@ export default function ScansPanel({ assessmentId }: { assessmentId: string }) {
   const { data: results } = useQuery<{ summary: { pages: number; graded: number; grading: number; toReview: number; cost: { dollars: number } } }>({
     queryKey: ['quiz-grader', 'results', assessmentId],
     queryFn: () => api.get(`/quiz-grader/content/${assessmentId}/results`).then((r) => r.data.data),
+    staleTime: 0,
     refetchInterval: (q) => (q.state.data?.summary.grading ? 2000 : false),
   })
   const { data: vision } = useQuery<{ configured: boolean; healthy: boolean; grading: boolean }>({
@@ -89,6 +90,11 @@ export default function ScansPanel({ assessmentId }: { assessmentId: string }) {
           <Link to={`/professor/quiz-grader/${assessmentId}/results`} className="inline-flex items-center gap-1 text-signal hover:underline">
             <Table size={14} />Results
           </Link>
+          {results.summary.toReview > 0 && (
+            <Link to={`/professor/quiz-grader/${assessmentId}/review`} className="inline-flex items-center gap-1 text-signal hover:underline">
+              <ListChecks size={14} />Review ({results.summary.toReview} left)
+            </Link>
+          )}
         </div>
       )}
       {uploading && <p className="text-sm text-muted mb-3">Uploading {uploading}…</p>}
