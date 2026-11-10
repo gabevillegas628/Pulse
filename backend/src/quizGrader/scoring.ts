@@ -190,6 +190,8 @@ export function reviewReasons(
     unclearSide?: boolean
     extras?: string[]
     bothSides?: string[]
+    /** The model saw nothing, but the ink check found writing in the box. */
+    missedInk?: boolean
     illegible?: boolean
   },
   confidenceThreshold = DEFAULT_CONFIDENCE_THRESHOLD,
@@ -198,6 +200,7 @@ export function reviewReasons(
   if (policy === 'always') return ['policy: always']
   const reasons: string[] = []
   if (signals.illegible) reasons.push('illegible')
+  if (signals.missedInk) reasons.push('read as blank, but the box has writing')
   if (signals.confidence < confidenceThreshold) reasons.push(`confidence ${signals.confidence.toFixed(2)}`)
   // A near miss is a typo as often as it is a different word ("enolate", "hydrogenase"),
   // and only a person can tell which. One decision covers every paper with that spelling.

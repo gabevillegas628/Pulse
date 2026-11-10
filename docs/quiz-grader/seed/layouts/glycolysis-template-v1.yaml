@@ -8,7 +8,8 @@ markers: { dictionary: DICT_4X4_50, ids: [0, 1, 2, 3] }
 # the corners of step boxes where cofactors are written; the prompts say to ignore those.
 # Sizes revised after the Phase 0 run on real scans: structure and step-5 crops were cutting
 # writing off. Generous is safer than tight — a crop that includes a neighbour's writing
-# costs nothing, one that cuts an answer off costs a wrong grade.
+# costs nothing, one that cuts an answer off costs a wrong grade. Structures are drawn as
+# far down as beside the next arrow (Phase 0, page 8), so their boxes overlap the next one's.
 # Cofactor arrows on this form: the curve starts at the top (in) and the arrowhead is at the bottom (out).
 slots:
   - { id: name, type: identity, ref: student.name, box: [0.120, 0.012, 0.430, 0.055] }
@@ -29,13 +30,13 @@ slots:
   - { id: s9_cofactors, type: cofactor_set, ref: step.9.cofactors, in_end: top, box: [0.655, 0.609, 0.335, 0.131] }
   - { id: s10_enzyme, type: text, ref: step.10.enzyme, box: [0.655, 0.787, 0.335, 0.131] }
   - { id: s10_cofactors, type: cofactor_set, ref: step.10.cofactors, in_end: top, box: [0.655, 0.787, 0.335, 0.131] }
-  - { id: int_g6p, type: structure, ref: intermediate.g6p, box: [0.030, 0.175, 0.400, 0.160] }
-  - { id: int_f6p, type: structure, ref: intermediate.f6p, box: [0.030, 0.354, 0.400, 0.160] }
-  - { id: int_f16bp, type: structure, ref: intermediate.f16bp, box: [0.030, 0.533, 0.400, 0.160] }
+  - { id: int_g6p, type: structure, ref: intermediate.g6p, box: [0.030, 0.175, 0.400, 0.180] }
+  - { id: int_f6p, type: structure, ref: intermediate.f6p, box: [0.030, 0.354, 0.400, 0.180] }
+  - { id: int_f16bp, type: structure, ref: intermediate.f16bp, box: [0.030, 0.533, 0.400, 0.180] }
   - { id: int_dhap, type: structure, ref: intermediate.dhap, box: [0.000, 0.800, 0.220, 0.130] }
   - { id: int_gap, type: structure, ref: intermediate.gap, box: [0.240, 0.770, 0.200, 0.120] }
-  - { id: int_bpg13, type: structure, ref: intermediate.bpg13, box: [0.495, 0.140, 0.325, 0.160] }
-  - { id: int_pg3, type: structure, ref: intermediate.pg3, box: [0.495, 0.320, 0.325, 0.160] }
-  - { id: int_pg2, type: structure, ref: intermediate.pg2, box: [0.495, 0.500, 0.325, 0.160] }
-  - { id: int_pep, type: structure, ref: intermediate.pep, box: [0.495, 0.680, 0.325, 0.160] }
+  - { id: int_bpg13, type: structure, ref: intermediate.bpg13, box: [0.495, 0.140, 0.325, 0.195] }
+  - { id: int_pg3, type: structure, ref: intermediate.pg3, box: [0.495, 0.320, 0.325, 0.195] }
+  - { id: int_pg2, type: structure, ref: intermediate.pg2, box: [0.495, 0.500, 0.325, 0.195] }
+  - { id: int_pep, type: structure, ref: intermediate.pep, box: [0.495, 0.680, 0.325, 0.180] }
   - { id: int_pyruvate, type: structure, ref: intermediate.pyruvate, box: [0.495, 0.860, 0.450, 0.120] }

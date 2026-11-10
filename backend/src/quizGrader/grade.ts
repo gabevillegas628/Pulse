@@ -92,7 +92,13 @@ export function gradePage(
     const read = textReads.get(g.slot.id)
     if (!read) return finish({ status: 'error', confidence: 0, pointsAuto: 0 }, ['no model result'])
     if (read.status !== 'read') {
-      const reasons = read.status === 'illegible' ? reviewReasons(g.review, { confidence: 0, illegible: true }, confT) : []
+      // Reaching here means the ink check found writing in this box. If the model calls
+      // it blank anyway, one of the two is wrong, and a person should look. On boxes two
+      // slots share, the ink may be the other slot's (an enzyme name beside empty
+      // cofactor ends): still worth a glance, since a miss silently scores 0.
+      const reasons = read.status === 'illegible'
+        ? reviewReasons(g.review, { confidence: 0, illegible: true }, confT)
+        : reviewReasons(g.review, { confidence: 1, missedInk: true }, confT)
       return finish({
         status: read.status,
         ...(read.status === 'blank' ? { blankBy: 'model' as const } : {}),
