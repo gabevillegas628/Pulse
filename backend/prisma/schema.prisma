@@ -24,6 +24,7 @@ model Professor {
   updatedAt     DateTime  @updatedAt
   classes       Class[]
   quizContent   QuizContent[]
+  quizBatches   QuizBatch[]
 }
 
 model Student {
@@ -447,4 +448,64 @@ model QuizContent {
   updatedAt   DateTime        @updatedAt
 
   @@unique([professorId, kind, slug])
+  batches     QuizBatch[]
+}
+
+// One upload of scanned quizzes for an assessment: a PDF from the copier, or a photo.
+// The page images are student work (names, NetIDs, handwriting). They live under a
+// dot-directory of the upload volume that is never served statically, and only the
+// owning professor's authenticated requests read them.
+model QuizBatch {
+  id           String          @id @default(cuid())
+  professorId  String
+  professor    Professor       @relation(fields: [professorId], references: [id], onDelete: Restrict)
+  // Restrict: an assessment with scans cannot be deleted until its scans are.
+  assessmentId String
+  assessment   QuizContent     @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
+  fileName     String
+  // The upload as the vision service holds it, until every page has been fetched.
+  visionDocId  String?
+  pageCount    Int
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  pages        QuizPage[]
+
+  @@index([assessmentId])
+}
+
+enum QuizPageStatus {
+  PENDING       // waiting for the worker
+  PROCESSING    // claimed; claimedAt says since when
+  DONE          // aligned, version known, boxes cropped
+  NEEDS_VERSION // aligned, but the version could not be told; a person picks it
+  FAILED        // gave up after retries; `error` says why
+}
+
+model QuizPage {
+  id            String         @id @default(cuid())
+  batchId       String
+  batch         QuizBatch      @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  // 0-based position in the upload.
+  index         Int
+  status        QuizPageStatus @default(PENDING)
+  attempts      Int            @default(0)
+  claimedAt     DateTime?
+  // Set by the professor when detection could not tell, or got it wrong.
+  versionForced String?
+  version       String?
+  // How the page was lined up ("markers", "lines", "paper edges") and how well the
+  // form's printed lines matched afterwards (0-1).
+  method        String?
+  markers       Int?
+  match         Float?
+  // Each version's fit from detection, e.g. {"A": 0.99, "B": 0.42}.
+  fits          Json?
+  // Per box: [{ id, ink, blank }]. Crops are files beside the page image.
+  slots         Json?
+  error         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@unique([batchId, index])
+  @@index([status])
 }

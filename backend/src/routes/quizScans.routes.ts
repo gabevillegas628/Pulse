@@ -1,0 +1,219 @@
+/**
+ * Scanned quiz pages: upload, progress, images, fixing a version, retrying, deleting.
+ * Professor-only; every image is checked against the requesting professor.
+ */
+import { Router, Request, Response, NextFunction } from 'express'
+import multer from 'multer'
+import os from 'os'
+import fs from 'fs/promises'
+import path from 'path'
+import { z } from 'zod'
+import { prisma } from '../db/index.js'
+import { AppError } from '../middleware/error.middleware.js'
+import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
+import { ownedQuizContent } from '../utils/ownership.js'
+import { p } from '../utils/params.js'
+import { assessmentSchema } from '../quizGrader/content.js'
+import { parseSource } from '../quizGrader/store.js'
+import {
+  createDocument, deleteDocument, originalFile, pageDir, removeBatchFiles, specFor, visionConfigured, visionHealthy, VisionError,
+} from '../quizGrader/scans.js'
+
+const router = Router()
+
+const upload = multer({
+  dest: os.tmpdir(),
+  limits: { fileSize: 300 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype === 'application/pdf' || file.mimetype.startsWith('image/')) cb(null, true)
+    else cb(new AppError('Upload a PDF or a photo.', 400))
+  },
+})
+
+const viewer = (req: Request) => (req as ProfessorRequest).professor
+
+async function ownedBatch(req: Request, id: string) {
+  const batch = await prisma.quizBatch.findFirst({ where: { id, professorId: viewer(req).id } })
+  if (!batch) throw new AppError('Not found', 404)
+  return batch
+}
+
+async function ownedPage(req: Request) {
+  const page = await prisma.quizPage.findFirst({
+    where: { id: p(req.params.pageId), batch: { professorId: viewer(req).id } },
+    include: { batch: { select: { assessmentId: true } } },
+  })
+  if (!page) throw new AppError('Not found', 404)
+  return page
+}
+
+const counts = (pages: { status: string }[]) =>
+  pages.reduce<Record<string, number>>((acc, pg) => ({ ...acc, [pg.status]: (acc[pg.status] ?? 0) + 1 }), {})
+
+// Is scanning available, and is the vision service answering?
+router.get('/quiz-grader/vision', requireProfessor, async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const configured = visionConfigured()
+    res.json({ success: true, data: { configured, healthy: configured ? await visionHealthy() : false } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Upload a scanned PDF or a photo to an assessment.
+router.post('/quiz-grader/content/:id/batches', requireProfessor, upload.single('file'), async (req: Request, res: Response, next: NextFunction) => {
+  const file = req.file
+  try {
+    if (!file) throw new AppError('Choose a PDF or a photo to upload.', 400)
+    if (!visionConfigured()) throw new AppError('Scanning is not set up on this server yet (the vision service).', 503)
+    const assessment = await prisma.quizContent.findFirst({ where: { id: p(req.params.id), ...ownedQuizContent(viewer(req)) }, omit: { pdf: true } })
+    if (!assessment || assessment.kind !== 'ASSESSMENT') throw new AppError('Upload scans to an assessment.', 400)
+    if (!assessmentSchema.safeParse(parseSource(assessment.source)).success) throw new AppError('Fix this assessment’s problems first.', 400)
+    try {
+      await specFor(assessment.id) // fails early if the key, layout or blank PDF is missing
+    } catch (e) {
+      throw new AppError((e as Error).message, 400)
+    }
+
+    let doc: { id: string; pages: number }
+    try {
+      doc = await createDocument(file.path, file.originalname)
+    } catch (e) {
+      throw new AppError(e instanceof VisionError && e.status === 400 ? 'That file could not be read as a PDF or an image.' : (e as Error).message, e instanceof VisionError && e.status === 400 ? 400 : 502)
+    }
+    const batch = await prisma.quizBatch.create({
+      data: {
+        professorId: viewer(req).id,
+        assessmentId: assessment.id,
+        fileName: file.originalname.slice(0, 200),
+        visionDocId: doc.id,
+        pageCount: doc.pages,
+        pages: { create: Array.from({ length: doc.pages }, (_, index) => ({ index })) },
+      },
+    })
+    res.status(201).json({ success: true, data: { id: batch.id, pageCount: batch.pageCount } })
+  } catch (err) {
+    next(err)
+  } finally {
+    if (file) await fs.rm(file.path, { force: true }).catch(() => undefined)
+  }
+})
+
+// An assessment's uploads, with how far along each is.
+router.get('/quiz-grader/content/:id/batches', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const batches = await prisma.quizBatch.findMany({
+      where: { assessmentId: p(req.params.id), professorId: viewer(req).id },
+      include: { pages: { select: { status: true } } },
+      orderBy: { createdAt: 'desc' },
+    })
+    res.json({
+      success: true,
+      data: { batches: batches.map(({ pages, ...b }) => ({ ...b, counts: counts(pages) })) },
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// One upload's pages.
+router.get('/quiz-grader/batches/:batchId', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const batch = await ownedBatch(req, p(req.params.batchId))
+    const pages = await prisma.quizPage.findMany({ where: { batchId: batch.id }, orderBy: { index: 'asc' } })
+    res.json({ success: true, data: { ...batch, counts: counts(pages), pages } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.delete('/quiz-grader/batches/:batchId', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const batch = await ownedBatch(req, p(req.params.batchId))
+    await prisma.quizBatch.delete({ where: { id: batch.id } })
+    if (batch.visionDocId) await deleteDocument(batch.visionDocId)
+    await removeBatchFiles(batch.id)
+    res.json({ success: true })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// One page, with the boxes it was cropped to (for drawing them over the aligned image).
+router.get('/quiz-grader/pages/:pageId', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const page = await ownedPage(req)
+    let boxes: { id: string; box: number[] }[] = []
+    let versions: string[] = []
+    try {
+      const spec = await specFor(page.batch.assessmentId)
+      versions = spec.versions.map((v) => v.name)
+      boxes = spec.versions.find((v) => v.name === page.version)?.boxes ?? []
+    } catch { /* content changed since; the page still shows */ }
+    res.json({ success: true, data: { ...page, versions, boxes } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Page images: the upload, the aligned page, and one box's crop.
+router.get('/quiz-grader/pages/:pageId/:kind(original|aligned)', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const page = await ownedPage(req)
+    const file = req.params.kind === 'original'
+      ? await originalFile(page.batchId, page.index)
+      : path.join(pageDir(page.batchId, page.index), 'aligned.png')
+    if (!file || !(await fs.stat(file).then(() => true, () => false))) throw new AppError('Not processed yet', 404)
+    res.setHeader('Cache-Control', 'private, no-store')
+    res.sendFile(file)
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.get('/quiz-grader/pages/:pageId/crops/:slotId', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const page = await ownedPage(req)
+    const slot = p(req.params.slotId)
+    if (!/^[\w-]+$/.test(slot)) throw new AppError('Bad slot', 400)
+    const file = path.join(pageDir(page.batchId, page.index), `crop-${slot}.png`)
+    if (!(await fs.stat(file).then(() => true, () => false))) throw new AppError('No crop for that box', 404)
+    res.setHeader('Cache-Control', 'private, no-store')
+    res.sendFile(file)
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Say which version a page is (detection was unsure or wrong); it is processed again.
+router.post('/quiz-grader/pages/:pageId/version', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const page = await ownedPage(req)
+    const { version } = z.object({ version: z.string().min(1).nullable() }).parse(req.body)
+    if (version) {
+      const spec = await specFor(page.batch.assessmentId).catch(() => null)
+      if (!spec?.versions.some((v) => v.name === version)) throw new AppError(`No version "${version}"`, 400)
+    }
+    await prisma.quizPage.update({
+      where: { id: page.id },
+      data: { versionForced: version, status: 'PENDING', attempts: 0, error: null },
+    })
+    res.json({ success: true })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Process a page again: after a failure, or after the layout's boxes changed.
+router.post('/quiz-grader/pages/:pageId/retry', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const page = await ownedPage(req)
+    if (page.status === 'PROCESSING') throw new AppError('Already being processed', 409)
+    await prisma.quizPage.update({ where: { id: page.id }, data: { status: 'PENDING', attempts: 0, error: null } })
+    res.json({ success: true })
+  } catch (err) {
+    next(err)
+  }
+})
+
+export default router

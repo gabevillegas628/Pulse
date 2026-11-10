@@ -29,6 +29,7 @@ import diagRoutes from './routes/diag.routes.js'
 import addinRoutes from './routes/addin.routes.js'
 import adminRoutes from './routes/admin.routes.js'
 import quizGraderRoutes from './routes/quizGrader.routes.js'
+import quizScanRoutes from './routes/quizScans.routes.js'
 import addinManifestRoutes from './routes/addin-manifest.js'
 
 const app = express()
@@ -158,6 +159,10 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true })
 }
 
+// Scanned quizzes are student work: never served from here, only through the
+// professor-authenticated quiz-grader routes. (express.static would also skip the
+// dot-directory; this makes it explicit.)
+app.use('/uploads/.quiz-scans', (_req, res) => { res.status(404).end() })
 app.use('/uploads', express.static(uploadDir))
 
 app.use('/api/auth', authRoutes)
@@ -172,6 +177,7 @@ app.use('/api', uploadRoutes)
 app.use('/api', textbookRoutes)
 app.use('/api', diagRoutes)
 app.use('/api', quizGraderRoutes)
+app.use('/api', quizScanRoutes)
 app.use('/api/addin', addinRoutes)
 app.use('/api/admin', adminRoutes)
 

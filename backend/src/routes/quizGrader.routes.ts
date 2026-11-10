@@ -178,6 +178,8 @@ router.delete('/quiz-grader/content/:id', requireProfessor, async (req: Request,
     const row = await loadOne(req)
     const users = dependents(row, await loadAll(row.professorId))
     if (users.length) throw new AppError(`Still used by ${users.join(', ')}. Delete or change ${users.length === 1 ? 'that' : 'those'} first.`, 409)
+    const scans = await prisma.quizBatch.count({ where: { assessmentId: row.id } })
+    if (scans) throw new AppError(`This assessment has ${scans} upload${scans > 1 ? 's' : ''} of scans. Delete ${scans > 1 ? 'them' : 'it'} first.`, 409)
     await prisma.quizContent.delete({ where: { id: row.id } })
     res.json({ success: true })
   } catch (err) {

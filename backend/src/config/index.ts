@@ -25,4 +25,8 @@ export const config = {
   // an unlocked inbox is not a standing key to the account.
   passwordResetTtlMinutes: parseInt(process.env.PASSWORD_RESET_TTL_MINUTES ?? '60', 10),
   uploadDir: process.env.UPLOAD_DIR ?? './uploads',
+  // The quiz grader's vision service (vision/README.md). Scans are refused, with a
+  // message, until both are set.
+  visionUrl: (process.env.VISION_URL ?? '').replace(/\/+$/, ''),
+  visionToken: process.env.VISION_TOKEN ?? '',
 }
