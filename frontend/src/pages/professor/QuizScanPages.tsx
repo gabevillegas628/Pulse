@@ -130,6 +130,7 @@ export function QuizPageDebug() {
   const qc = useQueryClient()
   const [view, setView] = useState<'aligned' | 'original'>('aligned')
   const [message, setMessage] = useState('')
+  const [onlyLost, setOnlyLost] = useState(false)
   const { data: page, error } = useQuery<PageDetail>({
     queryKey: ['quiz-grader', 'page', pageId],
     queryFn: () => api.get(`/quiz-grader/pages/${pageId}`).then((r) => r.data.data),
@@ -141,6 +142,10 @@ export function QuizPageDebug() {
     queryFn: () => api.get(`/quiz-grader/batches/${page!.batchId}`).then((r) => r.data.data),
     enabled: !!page,
   })
+
+  // Boxes scored below full marks (after review decisions), in layout order.
+  const lost = (page?.slots ?? []).map((sl) => page?.results.find((x) => x.slotId === sl.id))
+    .filter((r): r is NonNullable<typeof r> => !!r && r.maxPoints > 0 && r.points < r.maxPoints)
 
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: ['quiz-grader', 'page', pageId] })
@@ -266,19 +271,53 @@ export function QuizPageDebug() {
 
           {page.status === 'DONE' && page.slots && (
             <section className="mt-8">
-              <h2 className="text-lg font-semibold text-ink mb-1">Boxes</h2>
-              <p className="text-xs text-muted mb-3">What each answer box cut out, what the model read, and the points. Empty boxes and names are never sent to the model.</p>
+              <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-ink mb-1">Boxes</h2>
+                  <p className="text-xs text-muted">What each answer box cut out, what the model read, and the points. Empty boxes and names are never sent to the model.</p>
+                </div>
+                {lost.length > 0 && (
+                  <label className="text-sm text-ink-2 flex items-center gap-2">
+                    <input type="checkbox" checked={onlyLost} onChange={(e) => setOnlyLost(e.target.checked)} /> Only boxes that lost points
+                  </label>
+                )}
+              </div>
+              {page.gradeStatus === 'GRADED' && (
+                <Card flat className="p-3 mb-4 text-sm">
+                  {lost.length === 0 ? <p className="text-good font-semibold">Full marks on every box.</p> : (
+                    <>
+                      <p className="text-ink mb-2"><span className="font-semibold">Lost points on {lost.length} box{lost.length === 1 ? '' : 'es'}</span> <span className="text-muted">(click one to jump to it)</span></p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {lost.map((r) => (
+                          <button key={r.slotId} onClick={() => document.getElementById(`box-${r.slotId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                            className={cn('font-mono text-xs px-2 py-0.5 rounded-sm border', r.points === 0 ? 'border-signal text-signal bg-signal-soft' : 'border-warn text-warn bg-warn-soft')}>
+                            {r.slotId} {r.points}/{r.maxPoints}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </Card>
+              )}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                 {page.slots.map((s) => {
                   const r = page.results.find((x) => x.slotId === s.id)
+                  const short = !!r && r.points < r.maxPoints
+                  if (onlyLost && !short) return null
+                  const tone = !r || r.maxPoints === 0 ? null : r.points === 0 ? 'zero' : short ? 'part' : 'full'
                   return (
-                    <Card key={s.id} className={cn('overflow-hidden', r?.needsReview && 'ring-1 ring-warn/50')}>
+                    <Card key={s.id} id={`box-${s.id}`} className={cn('overflow-hidden scroll-mt-4',
+                      tone === 'zero' ? 'ring-2 ring-signal' : tone === 'part' ? 'ring-2 ring-warn' : r?.needsReview && 'ring-1 ring-warn/50')}>
                       <AuthImage src={`/quiz-grader/pages/${page.id}/crops/${s.id}`} alt={s.id} />
-                      <div className="px-2 py-1.5 text-xs space-y-0.5">
+                      <div className={cn('px-2 py-1.5 text-xs space-y-0.5', tone === 'zero' ? 'bg-signal-soft' : tone === 'part' && 'bg-warn-soft')}>
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-mono text-ink">{s.id}</span>
-                          {r ? <span className="font-semibold text-ink">{r.points}/{r.maxPoints}</span>
-                            : s.blank ? <span className="text-muted">empty</span> : <span className="text-muted">{['name', 'netid'].includes(s.id) ? 'not sent' : ''}</span>}
+                          {r ? (
+                            <span className={cn('font-semibold px-1.5 rounded-sm',
+                              tone === 'zero' ? 'bg-signal text-white' : tone === 'part' ? 'bg-warn text-white' : tone === 'full' ? 'text-good' : 'text-ink')}>
+                              {tone === 'full' && '✓ '}{r.points}/{r.maxPoints}
+                            </span>
+                          ) : s.blank ? <span className="text-muted">empty</span> : <span className="text-muted">{['name', 'netid'].includes(s.id) ? 'not sent' : ''}</span>}
                         </div>
                         {r && <p className="text-ink-2 break-words">{describeRead(r)}</p>}
                         {r?.detail.match && r.detail.match.verdict !== 'exact' && (

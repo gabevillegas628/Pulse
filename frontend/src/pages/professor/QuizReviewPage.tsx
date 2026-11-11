@@ -124,7 +124,7 @@ export default function QuizReviewPage() {
           {tally.length > 0 && (
             <p className="text-sm text-ink-2">{tally.map(([k, n]) => `${n} ${REASON_TALLY[k]}`).join(' · ')}</p>
           )}
-          <p className="text-sm text-muted">One decision covers every paper that wrote the same thing, including papers uploaded later.</p>
+          <p className="text-sm text-muted">Answers are grouped by how they were read. One decision covers every paper in a group, including papers uploaded later.</p>
         </div>
         <label className="text-sm text-ink-2 flex items-center gap-2">
           <input type="checkbox" checked={onlyOpen} onChange={(e) => setOnlyOpen(e.target.checked)} /> Only boxes with something to review
@@ -226,7 +226,12 @@ function GroupCard({ g, item, onGroup, onPaper }: {
   const first = g.members[0]!
   const autoPoints = useMemo(() => [...new Set(g.members.map((m) => m.pointsAuto))], [g.members])
   const inexact = (item.kind === 'enzyme' || item.kind === 'name') && first.status === 'read' && first.detail.match?.verdict !== 'exact'
-  const shown = more ? g.members : g.members.slice(0, 8)
+  // Flagged papers first, then the rest of the group: the same reading, shown so a glance
+  // confirms they really say the same thing.
+  const flagged = g.members.filter((m) => m.open)
+  const others = g.members.filter((m) => !m.open)
+  const shownOthers = more ? others : others.slice(0, Math.max(0, 8 - flagged.length))
+  const all = g.count > 1 ? ` for all ${g.count}` : ''
   // Every reason any open paper in the group was flagged for, once each.
   const reasons = useMemo(() => [...new Map(g.members.filter((m) => m.open).flatMap((m) => m.reviewReasons).map((r) => [reasonKind(r), r])).values()], [g.members])
   const keep = !g.decision && autoPoints.length === 1 ? autoPoints[0]! : null
@@ -238,13 +243,16 @@ function GroupCard({ g, item, onGroup, onPaper }: {
     <Card className={cn('p-4', g.open > 0 && 'ring-1 ring-warn/40')}>
       <div className="flex flex-wrap items-start gap-3 mb-3">
         <div className="flex-1 min-w-0">
+          <p className="text-xs text-muted">{g.count === 1 ? '1 paper' : `${g.count} papers`} {first.status === 'read' ? 'read as' : 'were'}</p>
           <p className="font-semibold text-ink break-words">{readingOf(g, item.kind)}</p>
           <p className="text-xs text-muted">
-            {g.count} paper{g.count === 1 ? '' : 's'} · automatic {autoPoints.join('/')} of {item.maxPoints}
-            {first.detail.match && first.detail.match.verdict !== 'exact' ? ` · closest accepted: ${first.detail.match.alias}` : ''}
+            scored {autoPoints.join(' or ')} of {item.maxPoints} automatically
+            {first.detail.match && first.detail.match.verdict !== 'exact' ? ` · closest accepted answer: ${first.detail.match.alias}` : ''}
           </p>
         </div>
-        {g.decision ? <Pill variant="good">Decided: {g.decision.points}</Pill> : g.open > 0 ? <Pill variant="warn">{g.open} to review</Pill> : <Pill variant="muted">Automatic</Pill>}
+        {g.decision ? <Pill variant="good">Decided{all}: {g.decision.points}</Pill>
+          : g.open > 0 ? <Pill variant="warn">{g.open === g.count ? (g.count === 1 ? 'Flagged' : `All ${g.count} flagged`) : `${g.open} of ${g.count} flagged`}</Pill>
+          : <Pill variant="muted">Automatic</Pill>}
       </div>
       {g.open > 0 && reasons.length > 0 && (
         <div className="text-sm text-ink-2 bg-warn-soft/60 rounded-sm px-3 py-2 mb-3 space-y-0.5">
@@ -253,21 +261,34 @@ function GroupCard({ g, item, onGroup, onPaper }: {
         </div>
       )}
 
+      {flagged.length > 0 && others.length > 0 && <p className="text-xs font-semibold text-warn mb-1.5">Flagged</p>}
       <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2 mb-3">
-        {shown.map((m) => <PaperThumb key={m.pageId} m={m} slotId={item.slotId} max={item.maxPoints} onPaper={onPaper} />)}
+        {flagged.map((m) => <PaperThumb key={m.pageId} m={m} slotId={item.slotId} max={item.maxPoints} onPaper={onPaper} flagged={others.length > 0} />)}
       </div>
-      {g.members.length > 8 && (
-        <button className="text-xs text-signal hover:underline mb-3" onClick={() => setMore((v) => !v)}>{more ? 'Show fewer' : `Show all ${g.members.length}`}</button>
+      {others.length > 0 && (
+        <>
+          {flagged.length > 0 && <p className="text-xs text-muted mb-1.5">Read the same way, not flagged{shownOthers.length < others.length ? ` (${shownOthers.length} of ${others.length} shown)` : ''}</p>}
+          <div className={cn('grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2 mb-3', flagged.length > 0 && 'opacity-70')}>
+            {shownOthers.map((m) => <PaperThumb key={m.pageId} m={m} slotId={item.slotId} max={item.maxPoints} onPaper={onPaper} />)}
+          </div>
+          {shownOthers.length < others.length || more ? (
+            <button className="text-xs text-signal hover:underline mb-3" onClick={() => setMore((v) => !v)}>{more ? 'Show fewer' : `Show all ${others.length}`}</button>
+          ) : null}
+        </>
       )}
+      <p className="text-xs text-muted mb-2">
+        {g.count > 1 ? `A decision here applies to all ${g.count} papers that read this way, and to any uploaded later. ` : ''}
+        Click a crop to decide that paper alone.
+      </p>
 
       <div className="flex flex-wrap items-center gap-2">
         {keep !== null && (
           <Button size="sm" variant="primary" disabled={busy} onClick={() => void act(keep, alias && keep === item.maxPoints)} title="Agree with the automatic score">
-            <CheckCheck size={13} />Keep {keep}
+            <CheckCheck size={13} />Keep {keep}{all}
           </Button>
         )}
-        {keep !== item.maxPoints && <Button size="sm" variant={keep === null ? 'primary' : 'ghost'} disabled={busy} onClick={() => void act(item.maxPoints, alias)}><Check size={13} />Correct ({item.maxPoints})</Button>}
-        {keep !== 0 && <Button size="sm" disabled={busy} onClick={() => void act(0)}><X size={13} />Wrong (0)</Button>}
+        {keep !== item.maxPoints && <Button size="sm" variant={keep === null ? 'primary' : 'ghost'} disabled={busy} onClick={() => void act(item.maxPoints, alias)}><Check size={13} />Correct ({item.maxPoints}){all}</Button>}
+        {keep !== 0 && <Button size="sm" disabled={busy} onClick={() => void act(0)}><X size={13} />Wrong (0){all}</Button>}
         {g.decision && <Button size="sm" disabled={busy} onClick={() => void act(null)}><RotateCcw size={13} />Undo decision</Button>}
         {inexact && (
           <label className="text-xs text-ink-2 flex items-center gap-1.5 ml-1">
@@ -281,12 +302,12 @@ function GroupCard({ g, item, onGroup, onPaper }: {
 }
 
 /** One paper's crop; click to decide this paper alone. */
-function PaperThumb({ m, slotId, max, onPaper }: { m: Member; slotId: string; max: number; onPaper: (m: Member, points: number | null) => Promise<void> }) {
+function PaperThumb({ m, slotId, max, onPaper, flagged }: { m: Member; slotId: string; max: number; onPaper: (m: Member, points: number | null) => Promise<void>; flagged?: boolean }) {
   const [open, setOpen] = useState(false)
   return (
     <div className="relative">
-      <button onClick={() => setOpen((v) => !v)} className={cn('block w-full rounded-sm overflow-hidden border', m.source === 'paper' ? 'border-signal' : 'border-hairline')}
-        title={`Page ${m.index + 1}: ${m.points}/${max}${m.source === 'paper' ? ' (decided for this paper)' : ''}`}>
+      <button onClick={() => setOpen((v) => !v)} className={cn('block w-full rounded-sm overflow-hidden', m.source === 'paper' ? 'border border-signal' : flagged ? 'ring-2 ring-warn' : 'border border-hairline')}
+        title={`Page ${m.index + 1}: ${m.points}/${max}${m.source === 'paper' ? ' (decided for this paper)' : ''}${m.open && m.reviewReasons[0] ? ` · flagged: ${explainReason(m.reviewReasons[0])}` : ''}`}>
         <AuthImage src={`/quiz-grader/pages/${m.pageId}/crops/${slotId}`} alt={`Page ${m.index + 1}`} />
         <span className="absolute bottom-0 right-0 text-[10px] bg-surface/90 px-1">{m.points}</span>
       </button>

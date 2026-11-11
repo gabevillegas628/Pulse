@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Crop, Download, ListChecks, RotateCw, Sparkles, Users } from 'lucide-react'
+import { ArrowLeft, Crop, Download, ExternalLink, ListChecks, RotateCw, Sparkles, Users } from 'lucide-react'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import Button from '@/components/ui/Button'
@@ -20,6 +20,7 @@ interface ResultsData {
 export default function QuizResultsPage() {
   const { id } = useParams<{ id: string }>()
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const [note, setNote] = useState('')
   const [dialog, setDialog] = useState<DialogRequest | null>(null)
   const { data, error } = useQuery<ResultsData>({
@@ -139,7 +140,7 @@ export default function QuizResultsPage() {
               <thead className="text-xs text-muted text-left">
                 <tr>
                   <th className="px-4 py-2">Upload</th><th className="pr-4">Page</th><th className="pr-4">NetID</th><th className="pr-4">Version</th>
-                  <th className="pr-4">Score</th><th className="pr-4">To review</th><th className="pr-4">Status</th>
+                  <th className="pr-4">Score</th><th className="pr-4">To review</th><th className="pr-4">Status</th><th className="pr-4"><span className="sr-only">Open</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -150,7 +151,9 @@ export default function QuizResultsPage() {
                     : pg.gradeStatus === 'FAILED' ? 'Grading failed'
                     : pg.gradeStatus === 'NONE' ? 'Not graded' : 'Grading…'
                   return (
-                    <tr key={pg.id} className="border-t border-hairline hover:bg-surface-2">
+                    <tr key={pg.id} className="border-t border-hairline hover:bg-surface-2 cursor-pointer"
+                      title="Open this paper"
+                      onClick={(e) => { if (!(e.target as HTMLElement).closest('a, button')) navigate(`/professor/quiz-grader/pages/${pg.id}`) }}>
                       <td className="px-4 py-2 truncate max-w-[16rem]">{pg.fileName}</td>
                       <td className="pr-4"><Link to={`/professor/quiz-grader/pages/${pg.id}`} className="text-signal hover:underline">{pg.index + 1}</Link></td>
                       <td className="pr-4 font-mono">{pg.studentNetId ?? <span className="text-muted font-sans">—</span>}</td>
@@ -158,6 +161,11 @@ export default function QuizResultsPage() {
                       <td className="pr-4 font-semibold text-ink">{graded ? `${pg.pointsFinal ?? pg.pointsAuto}/${pg.maxPoints}` : '—'}</td>
                       <td className={cn('pr-4', pg.toReview ? 'text-warn' : 'text-muted')}>{graded ? pg.toReview : '—'}</td>
                       <td className={cn('pr-4 text-xs', pg.gradeStatus === 'FAILED' ? 'text-warn' : 'text-muted')}>{status}</td>
+                      <td className="pr-4 py-1.5 text-right">
+                        <Link to={`/professor/quiz-grader/pages/${pg.id}`}>
+                          <Button size="sm"><ExternalLink size={13} />Open</Button>
+                        </Link>
+                      </td>
                     </tr>
                   )
                 })}
