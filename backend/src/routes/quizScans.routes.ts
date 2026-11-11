@@ -254,7 +254,7 @@ router.get('/quiz-grader/content/:id/results', requireProfessor, async (req: Req
       where: { batch: { assessmentId: assessment.id } },
       select: {
         id: true, batchId: true, index: true, status: true, version: true, gradeStatus: true, gradeError: true,
-        pointsAuto: true, maxPoints: true, toReview: true, usage: true, slots: true, batch: { select: { fileName: true, createdAt: true } },
+        pointsAuto: true, maxPoints: true, toReview: true, usage: true, studentNetId: true, batch: { select: { fileName: true, createdAt: true } },
       },
       orderBy: [{ batch: { createdAt: 'asc' } }, { index: 'asc' }],
     })
@@ -264,14 +264,9 @@ router.get('/quiz-grader/content/:id/results', requireProfessor, async (req: Req
     res.json({
       success: true,
       data: {
-        pages: pages.map(({ usage: _u, slots, batch, ...pg }) => {
+        pages: pages.map(({ usage: _u, batch, ...pg }) => {
           const t = totals.get(pg.id)
-          // The NetID as the vision service's own handwriting model read it, if it did.
-          const read = ((slots ?? []) as { text?: string; textScore?: number | null }[]).find((s) => typeof s.text === 'string')
-          return {
-            ...pg, fileName: batch.fileName, pointsFinal: t?.points ?? null, toReview: t ? t.open : pg.toReview,
-            netidRead: read ? { text: read.text!, score: read.textScore ?? null } : null,
-          }
+          return { ...pg, fileName: batch.fileName, pointsFinal: t?.points ?? null, toReview: t ? t.open : pg.toReview }
         }),
         summary: {
           pages: pages.length,

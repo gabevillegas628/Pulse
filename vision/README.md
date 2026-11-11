@@ -23,21 +23,6 @@ and requests are not logged. Student work lives in Pulse, not here.
 
 Memory: ~300 MB idle, more while processing a page; the smallest plan with 1 GB is plenty.
 
-## Reading NetIDs (optional)
-
-Set `HANDWRITING_MODEL` on this service to an open handwriting model, e.g.
-`microsoft/trocr-small-handwritten` (fast) or `microsoft/trocr-base-handwritten` (larger,
-often more accurate). The service then reads each page's NetID box on this server and
-returns the text with the crops; Pulse shows it on the Results page. Names and NetIDs
-never go to Claude.
-
-- The model downloads from Hugging Face when the service starts (about 250 MB for small,
-  1.3 GB for base) and loads in the background; `/health` says `"handwriting": "loading"`,
-  then `"ready"` (or `"failed"`, with the reason in the logs). Pages processed before it is
-  ready simply have no reading. With no volume, it downloads again after each redeploy.
-- Memory: plan on about 1 GB more for small, 2 GB for base.
-- Unset the variable to switch it off; nothing else changes.
-
 ## Run locally
 
     pip install -r requirements.txt

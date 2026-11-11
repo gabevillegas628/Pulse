@@ -24,7 +24,6 @@ import time
 import cv2
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Response, UploadFile
 
-import handwriting
 import pipeline as P
 
 TOKEN = os.environ.get("VISION_TOKEN", "")
@@ -69,12 +68,9 @@ async def read_limited(f: UploadFile) -> bytes:
     return data
 
 
-handwriting.start()
-
-
 @app.get("/health")
 def health() -> dict:
-    return {"ok": True, "configured": bool(TOKEN), "handwriting": handwriting.status()}
+    return {"ok": True, "configured": bool(TOKEN)}
 
 
 @app.post("/documents", dependencies=[Depends(authorised)])
@@ -146,4 +142,4 @@ async def process(page: UploadFile = File(...), form: UploadFile = File(...), sp
         img = P.decode_image(await read_limited(page))
     except Exception:
         raise HTTPException(400, "Could not read the page image")
-    return P.process(img, f, boxes, force, reader=handwriting.read if handwriting.enabled() else None)
+    return P.process(img, f, boxes, force)

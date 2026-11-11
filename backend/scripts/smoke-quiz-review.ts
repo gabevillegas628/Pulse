@@ -162,6 +162,48 @@ async function main() {
     check('the log records group, paper and alias decisions with before and after', ['group', 'paper', 'alias'].every((s) => log.some((e: { scope: string }) => e.scope === s))
       && log.some((e: { scope: string; fromPoints: number; toPoints: number }) => e.scope === 'paper' && e.fromPoints === 1 && e.toPoints === 0))
 
+    // Students: a class with a roster, papers matched by hand, grades out as a CSV.
+    const cls = await prisma.class.create({ data: { professorId: prof.id, name: `Smoke class ${RUN_ID}`, joinCode: `SMK${RUN_ID}`.slice(0, 12) } })
+    const kids = await Promise.all(['zz101', 'zz102', 'zz103'].map((n) => prisma.student.create({
+      data: { netId: `${n}${RUN_ID}`.toLowerCase(), email: `${n}${RUN_ID}@example.invalid`.toLowerCase(), passwordHash: hash, enrollments: { create: { classId: cls.id } } },
+    })))
+    try {
+      const m0 = (await api('GET', `/api/quiz-grader/content/${quiz.id}/match`, T)).body.data
+      check('matching lists every paper with its name and NetID boxes', m0.pages.length === 6 && m0.classId === null
+        && m0.pages.some((pg: { nameBox: string | null; netidBox: string | null }) => pg.nameBox === 'name' && pg.netidBox === 'netid'), m0.pages[0])
+      const setCls = await api('PUT', `/api/quiz-grader/content/${quiz.id}/class`, T, { classId: cls.id })
+      check('linking the quiz to a class returns its roster', setCls.status === 200 && setCls.body.data.roster.length === 3)
+      check("another professor's class cannot be linked", (await api('PUT', `/api/quiz-grader/content/${quiz.id}/class`, T2, { classId: cls.id })).status === 404)
+      const graded = (await results()).pages.filter((pg: { gradeStatus: string }) => pg.gradeStatus === 'GRADED')
+      const put1 = await api('PUT', `/api/quiz-grader/pages/${graded[0].id}/student`, T, { netId: `  ${kids[0]!.netId.toUpperCase()} ` })
+      check('a NetID is stored trimmed and lower-cased', put1.body.data.netId === kids[0]!.netId)
+      await api('PUT', `/api/quiz-grader/pages/${graded[1].id}/student`, T, { netId: 'notinclass9' })
+      check('a NetID with odd characters is refused', (await api('PUT', `/api/quiz-grader/pages/${graded[1].id}/student`, T, { netId: '=cmd()' })).status === 400)
+      check("another professor cannot match this professor's paper", (await api('PUT', `/api/quiz-grader/pages/${graded[0].id}/student`, T2, { netId: 'x' })).status === 404)
+      check('results show the matched NetID', (await results()).pages.some((pg: { studentNetId: string | null }) => pg.studentNetId === kids[0]!.netId))
+
+      const csvRes = await fetch(`${BASE}/api/quiz-grader/content/${quiz.id}/export.csv?boxes=1`, { headers: { Authorization: `Bearer ${T}` } })
+      const csv = await csvRes.text()
+      const rows = csv.trim().split('\r\n').map((l) => l.split(','))
+      const head = rows[0]!
+      const row = (netId: string) => rows.find((r) => r[0] === netId)
+      const totals = (await results()).pages
+      const first = totals.find((pg: { id: string }) => pg.id === graded[0].id)
+      check('the CSV is a download with a header and a column per box', csvRes.headers.get('content-type')?.startsWith('text/csv') === true
+        && head.slice(0, 4).join() === 'netid,email,score,out_of' && head.includes('s1_enzyme'), head)
+      check("a matched paper's row has its email and its score after review", row(kids[0]!.netId)?.[1] === kids[0]!.email
+        && Number(row(kids[0]!.netId)?.[2]) === first.pointsFinal && Number(row(kids[0]!.netId)?.[3]) === first.maxPoints, row(kids[0]!.netId))
+      check('a NetID not on the roster is exported and noted', row('notinclass9')?.join().includes('not on the class roster') === true)
+      check('unmatched papers are exported and noted', rows.filter((r) => r[0] === '' && r.join().includes('not matched')).length === 4)
+      check('students with no paper are listed with no score', [kids[1]!, kids[2]!].every((k) => row(k.netId)?.[2] === '' && row(k.netId)?.join().includes('no paper')))
+      check("another professor cannot export this quiz's grades", (await fetch(`${BASE}/api/quiz-grader/content/${quiz.id}/export.csv`, { headers: { Authorization: `Bearer ${T2}` } })).status === 404)
+    } finally {
+      await prisma.quizContent.updateMany({ where: { classId: cls.id }, data: { classId: null } })
+      await prisma.enrollment.deleteMany({ where: { classId: cls.id } })
+      await prisma.student.deleteMany({ where: { id: { in: kids.map((k) => k.id) } } })
+      await prisma.class.delete({ where: { id: cls.id } })
+    }
+
     // Ownership.
     check("another professor cannot see this review", (await api('GET', `/api/quiz-grader/content/${quiz.id}/review`, T2)).status === 404)
     check("another professor cannot decide this paper's box", (await api('POST', `/api/quiz-grader/pages/${p1.id}/boxes/s1_enzyme`, T2, { points: 0 })).status === 404)
