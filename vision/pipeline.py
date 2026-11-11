@@ -377,20 +377,42 @@ def box_rect(box: list[float], w: int, h: int) -> tuple[int, int, int, int]:
     return left, top, right, bottom
 
 
-def crop_boxes(flat: np.ndarray, printed: np.ndarray, boxes: list[dict], ink_max: int) -> list[dict]:
-    """Each box's crop, its handwriting pixel count (ink away from anything printed), and whether it is blank."""
+def handwriting_only(flat: np.ndarray, printed: np.ndarray, ink_max: int, rect: tuple[int, int, int, int]) -> np.ndarray:
+    """A box's crop with the printed form painted out (the line written on), trimmed to the writing."""
+    l, t, r, btm = rect
+    crop = flat[t:btm, l:r].copy()
+    crop[printed[t:btm, l:r] & (crop > 60)] = 255
+    ys, xs = np.nonzero(crop < ink_max)
+    if len(xs) > 30:
+        pad = 12
+        crop = crop[max(0, ys.min() - pad):ys.max() + pad, max(0, xs.min() - pad):xs.max() + pad]
+    return crop
+
+
+def crop_boxes(flat: np.ndarray, printed: np.ndarray, boxes: list[dict], ink_max: int, reader=None) -> list[dict]:
+    """
+    Each box's crop, its handwriting pixel count (ink away from anything printed), and whether
+    it is blank. Boxes marked `read` (a NetID) also get `text` and `text_score` from `reader`,
+    when one is given and the box has writing.
+    """
     h, w = flat.shape
     new_ink = (flat < ink_max) & ~printed
     out = []
     for b in boxes:
-        l, t, r, btm = box_rect(b["box"], w, h)
+        rect = box_rect(b["box"], w, h)
+        l, t, r, btm = rect
         ink = int(new_ink[t:btm, l:r].sum())
         need = max(BLANK_MIN_PIXELS, BLANK_MIN_SHARE * (r - l) * (btm - t))
-        out.append({"id": b["id"], "png": png_b64(flat[t:btm, l:r]), "ink": ink, "blank": ink < need})
+        c = {"id": b["id"], "png": png_b64(flat[t:btm, l:r]), "ink": ink, "blank": ink < need}
+        if b.get("read") and reader and not c["blank"]:
+            got = reader(handwriting_only(flat, printed, ink_max, rect))
+            if got:
+                c["text"], c["text_score"] = got
+        out.append(c)
     return out
 
 
-def process(page: np.ndarray, form: Form, boxes_by_version: dict[str, list[dict]], force_version: str | None = None) -> dict:
+def process(page: np.ndarray, form: Form, boxes_by_version: dict[str, list[dict]], force_version: str | None = None, reader=None) -> dict:
     """Everything Pulse needs about one page."""
     ref = form.pages[force_version or form.versions[0]]  # versions share their lines
     flat, placement, match = align(page, ref)
@@ -409,5 +431,5 @@ def process(page: np.ndarray, form: Form, boxes_by_version: dict[str, list[dict]
         "crops": [],
     }
     if version is not None:
-        result["crops"] = crop_boxes(flat, form.printed[version], boxes_by_version.get(version, []), ink_max)
+        result["crops"] = crop_boxes(flat, form.printed[version], boxes_by_version.get(version, []), ink_max, reader)
     return result

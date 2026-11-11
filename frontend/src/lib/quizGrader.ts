@@ -115,7 +115,8 @@ export interface QuizPage {
   markers: number | null
   match: number | null
   fits: Record<string, number> | null
-  slots: { id: string; ink: number; blank: boolean }[] | null
+  /** text: the NetID as the vision service's own handwriting model read it (never Claude). */
+  slots: { id: string; ink: number; blank: boolean; text?: string; textScore?: number | null }[] | null
   error: string | null
   gradeStatus: GradeStatus
   gradeError: string | null
