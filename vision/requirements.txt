@@ -7,10 +7,3 @@ numpy==2.5.3
 opencv-contrib-python-headless==5.0.0.93
 pypdfium2==5.13.0
 pillow==12.3.0
-# Reading NetIDs (handwriting.py), used only when HANDWRITING_MODEL is set. CPU-only torch
-# from PyTorch's own index keeps the image about 1 GB smaller than the CUDA build.
---extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.15.0+cpu
-transformers==5.22.2
-sentencepiece==0.2.3
-protobuf==7.36.2

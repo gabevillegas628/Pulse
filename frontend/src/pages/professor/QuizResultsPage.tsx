@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
 import { STATUS_LABEL, type QuizPage } from '@/lib/quizGrader'
 
 interface ResultsData {
-  pages: (Pick<QuizPage, 'id' | 'batchId' | 'index' | 'status' | 'version' | 'gradeStatus' | 'gradeError' | 'pointsAuto' | 'pointsFinal' | 'maxPoints' | 'toReview'> & { fileName: string; netidRead: { text: string; score: number | null } | null })[]
+  pages: (Pick<QuizPage, 'id' | 'batchId' | 'index' | 'status' | 'version' | 'gradeStatus' | 'gradeError' | 'pointsAuto' | 'pointsFinal' | 'maxPoints' | 'toReview'> & { fileName: string })[]
   summary: { pages: number; graded: number; grading: number; failed: number; toReview: number; cost: { dollars: number; unpriced: string[] } }
 }
 
@@ -121,7 +121,7 @@ export default function QuizResultsPage() {
             <table className="w-full text-sm">
               <thead className="text-xs text-muted text-left">
                 <tr>
-                  <th className="px-4 py-2">Upload</th><th className="pr-4">Page</th><th className="pr-4" title="Read by Pulse's own handwriting model, not Claude. Not checked against your roster yet.">NetID (read)</th><th className="pr-4">Version</th>
+                  <th className="px-4 py-2">Upload</th><th className="pr-4">Page</th><th className="pr-4">Version</th>
                   <th className="pr-4">Score</th><th className="pr-4">To review</th><th className="pr-4">Status</th>
                 </tr>
               </thead>
@@ -136,9 +136,6 @@ export default function QuizResultsPage() {
                     <tr key={pg.id} className="border-t border-hairline hover:bg-surface-2">
                       <td className="px-4 py-2 truncate max-w-[16rem]">{pg.fileName}</td>
                       <td className="pr-4"><Link to={`/professor/quiz-grader/pages/${pg.id}`} className="text-signal hover:underline">{pg.index + 1}</Link></td>
-                      <td className="pr-4 font-mono">
-                        {pg.netidRead ? <>{pg.netidRead.text || '?'}{pg.netidRead.score != null && <span className="text-muted font-sans text-xs"> {Math.round(pg.netidRead.score * 100)}%</span>}</> : <span className="text-muted">—</span>}
-                      </td>
                       <td className="pr-4">{pg.version ?? '—'}</td>
                       <td className="pr-4 font-semibold text-ink">{graded ? `${pg.pointsFinal ?? pg.pointsAuto}/${pg.maxPoints}` : '—'}</td>
                       <td className={cn('pr-4', pg.toReview ? 'text-warn' : 'text-muted')}>{graded ? pg.toReview : '—'}</td>
