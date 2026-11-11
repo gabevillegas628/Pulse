@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Check, CheckCheck, RotateCcw, X } from 'lucide-react'
+import { ArrowLeft, Check, CheckCheck, CircleHelp, RotateCcw, X } from 'lucide-react'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import Button from '@/components/ui/Button'
@@ -10,6 +10,7 @@ import Pill from '@/components/ui/Pill'
 import AuthImage from '@/components/quizGrader/AuthImage'
 import { apiError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
+import { REASON_TALLY, explainReason, reasonKind, type ReasonKind } from '@/lib/quizGrader'
 
 /**
  * Review by item: one box at a time, every paper's answer grouped by what was written, so
@@ -17,11 +18,11 @@ import { cn } from '@/lib/utils'
  * Structures are judged one drawing at a time against the key's feature checks.
  */
 
-interface SlotSummary { slotId: string; label: string; kind: string; papers: number; open: number; groups: number }
+interface SlotSummary { slotId: string; label: string; kind: string; papers: number; open: number; groups: number; reasons?: string[] }
 interface Member {
   pageId: string; batchId: string; index: number; version: string | null
   status: string; blankBy: string | null; transcription: string | null
-  detail: { match: { verdict: string; alias: string } | null; cofactors: { text: string; side: string }[] | null; features: { feature: string; present: boolean }[] | null; description: string | null }
+  detail: { match: { verdict: string; alias: string } | null; cofactors: { text: string; side: string }[] | null; features: { feature: string; present: boolean; confidence?: number }[] | null; description: string | null }
   pointsAuto: number; maxPoints: number; points: number; source: 'paper' | 'group' | 'auto'
   open: boolean; needsReview: boolean; reviewReasons: string[]
   override: { points: number; features: boolean[] | null; note: string | null } | null
@@ -85,6 +86,28 @@ export default function QuizReviewPage() {
 
   const slots = (summary?.slots ?? []).filter((s) => !onlyOpen || s.open > 0 || s.slotId === selected)
   const flagged = summary ? summary.slots.reduce((a, s) => a + s.open, 0) : 0
+  const tally = useMemo(() => {
+    const t = new Map<ReasonKind, number>()
+    for (const s of summary?.slots ?? []) for (const r of s.reasons ?? []) t.set(reasonKind(r), (t.get(reasonKind(r)) ?? 0) + 1)
+    return [...t.entries()].sort((a, b) => b[1] - a[1])
+  }, [summary])
+
+  /** Every open answer in this box keeps its automatic score: one decision per group (structures: per paper). */
+  async function keepAll(it: Item) {
+    setError('')
+    try {
+      if (it.kind === 'structure') {
+        for (const m of it.groups.flatMap((g) => g.members).filter((m) => m.open)) {
+          await api.post(`/quiz-grader/pages/${m.pageId}/boxes/${it.slotId}`, { points: m.pointsAuto })
+        }
+      } else {
+        for (const g of it.groups.filter((g) => g.open > 0 && new Set(g.members.map((m) => m.pointsAuto)).size === 1)) {
+          await api.post(`/quiz-grader/content/${id}/review/${it.slotId}/group`, { groupKey: g.groupKey, points: g.members[0]!.pointsAuto })
+        }
+      }
+    } catch (e) { setError(apiError(e, 'Could not save those decisions')) }
+    refresh()
+  }
 
   return (
     <ProfessorLayout>
@@ -98,6 +121,9 @@ export default function QuizReviewPage() {
           <h1 className="text-2xl font-bold text-ink min-h-8">
             {!summary ? '' : flagged === 0 ? 'Nothing left to review' : `${flagged} box${flagged === 1 ? '' : 'es'} left to review`}
           </h1>
+          {tally.length > 0 && (
+            <p className="text-sm text-ink-2">{tally.map(([k, n]) => `${n} ${REASON_TALLY[k]}`).join(' · ')}</p>
+          )}
           <p className="text-sm text-muted">One decision covers every paper that wrote the same thing, including papers uploaded later.</p>
         </div>
         <label className="text-sm text-ink-2 flex items-center gap-2">
@@ -121,9 +147,16 @@ export default function QuizReviewPage() {
         <div className="min-w-0">
           {item && item.slotId === selected && (
             <>
-              <div className="mb-4">
-                <h2 className="text-lg font-semibold text-ink">{item.label}</h2>
-                {item.accept && <p className="text-xs text-muted">Accepted: {item.accept.join(' · ')}</p>}
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-ink">{item.label}</h2>
+                  {item.accept && <p className="text-xs text-muted">Accepted: {item.accept.join(' · ')}</p>}
+                </div>
+                {item.groups.some((g) => g.open > 0) && (
+                  <Button size="sm" onClick={() => void keepAll(item)} title="Agree with the automatic score on every flagged answer in this box">
+                    <CheckCheck size={13} />Keep all as scored
+                  </Button>
+                )}
               </div>
               {item.kind === 'structure'
                 ? <StructureList item={item} onDecide={decidePaper} />
@@ -194,6 +227,9 @@ function GroupCard({ g, item, onGroup, onPaper }: {
   const autoPoints = useMemo(() => [...new Set(g.members.map((m) => m.pointsAuto))], [g.members])
   const inexact = (item.kind === 'enzyme' || item.kind === 'name') && first.status === 'read' && first.detail.match?.verdict !== 'exact'
   const shown = more ? g.members : g.members.slice(0, 8)
+  // Every reason any open paper in the group was flagged for, once each.
+  const reasons = useMemo(() => [...new Map(g.members.filter((m) => m.open).flatMap((m) => m.reviewReasons).map((r) => [reasonKind(r), r])).values()], [g.members])
+  const keep = !g.decision && autoPoints.length === 1 ? autoPoints[0]! : null
   const act = async (points: number | null, withAlias = false) => {
     setBusy(true)
     try { await onGroup(g, points, withAlias ? g.sample : undefined) } finally { setBusy(false) }
@@ -207,10 +243,15 @@ function GroupCard({ g, item, onGroup, onPaper }: {
             {g.count} paper{g.count === 1 ? '' : 's'} · automatic {autoPoints.join('/')} of {item.maxPoints}
             {first.detail.match && first.detail.match.verdict !== 'exact' ? ` · closest accepted: ${first.detail.match.alias}` : ''}
           </p>
-          {g.open > 0 && first.reviewReasons.length > 0 && <p className="text-xs text-warn mt-0.5">{first.reviewReasons.join('; ')}</p>}
         </div>
         {g.decision ? <Pill variant="good">Decided: {g.decision.points}</Pill> : g.open > 0 ? <Pill variant="warn">{g.open} to review</Pill> : <Pill variant="muted">Automatic</Pill>}
       </div>
+      {g.open > 0 && reasons.length > 0 && (
+        <div className="text-sm text-ink-2 bg-warn-soft/60 rounded-sm px-3 py-2 mb-3 space-y-0.5">
+          {reasons.map((r) => <p key={r} className="flex gap-1.5"><CircleHelp size={15} className="shrink-0 mt-0.5 text-warn" />{explainReason(r, first.detail.match?.alias)}</p>)}
+          <p className="text-xs text-muted pl-5">Scored {autoPoints.join(' or ')} of {item.maxPoints} until you decide.</p>
+        </div>
+      )}
 
       <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2 mb-3">
         {shown.map((m) => <PaperThumb key={m.pageId} m={m} slotId={item.slotId} max={item.maxPoints} onPaper={onPaper} />)}
@@ -220,11 +261,13 @@ function GroupCard({ g, item, onGroup, onPaper }: {
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="primary" disabled={busy} onClick={() => void act(item.maxPoints, alias)}><Check size={13} />Correct ({item.maxPoints})</Button>
-        <Button size="sm" disabled={busy} onClick={() => void act(0)}><X size={13} />Wrong (0)</Button>
-        {!g.decision && autoPoints.length === 1 && (
-          <Button size="sm" disabled={busy} onClick={() => void act(autoPoints[0]!)} title="Keep the automatic score, and stop flagging it"><CheckCheck size={13} />Keep {autoPoints[0]}</Button>
+        {keep !== null && (
+          <Button size="sm" variant="primary" disabled={busy} onClick={() => void act(keep, alias && keep === item.maxPoints)} title="Agree with the automatic score">
+            <CheckCheck size={13} />Keep {keep}
+          </Button>
         )}
+        {keep !== item.maxPoints && <Button size="sm" variant={keep === null ? 'primary' : 'ghost'} disabled={busy} onClick={() => void act(item.maxPoints, alias)}><Check size={13} />Correct ({item.maxPoints})</Button>}
+        {keep !== 0 && <Button size="sm" disabled={busy} onClick={() => void act(0)}><X size={13} />Wrong (0)</Button>}
         {g.decision && <Button size="sm" disabled={busy} onClick={() => void act(null)}><RotateCcw size={13} />Undo decision</Button>}
         {inexact && (
           <label className="text-xs text-ink-2 flex items-center gap-1.5 ml-1">
@@ -296,10 +339,23 @@ function StructureCard({ m, item, onDecide }: { m: Member; item: Item; onDecide:
         </p>
       </div>
       <div className="space-y-2">
+        {m.open && m.reviewReasons.length > 0 && (
+          <p className="text-sm text-ink-2 flex gap-1.5">
+            <CircleHelp size={15} className="shrink-0 mt-0.5 text-warn" />
+            {reasonKind(m.reviewReasons[0]!) === 'unsure'
+              ? (m.detail.features ?? []).some((f) => (f.confidence ?? 1) < 0.8)
+                ? 'The model was not sure about the checks marked below. The rest it was sure of.'
+                : 'The model was not sure what this drawing shows overall.'
+              : explainReason(m.reviewReasons[0]!)}
+          </p>
+        )}
         {m.status !== 'read' ? <p className="text-sm text-muted">{m.status === 'blank' ? 'Left empty' : 'Could not be read'}</p> : features.map((f, i) => (
           <label key={f} className="flex items-start gap-2 text-sm text-ink-2">
             <input type="checkbox" className="mt-1" checked={checks[i] ?? false} onChange={(e) => setChecks((c) => c.map((x, j) => (j === i ? e.target.checked : x)))} />
-            <span>{f}</span>
+            <span>
+              {f}
+              {m.open && (m.detail.features?.[i]?.confidence ?? 1) < 0.8 && <span className="ml-1.5 text-xs text-warn font-semibold">model unsure</span>}
+            </span>
           </label>
         ))}
         <div className="flex flex-wrap items-center gap-2 pt-1">

@@ -311,3 +311,51 @@ export function idFromName(name: string, taken: Iterable<string>): string {
   for (let n = 2; used.has(id); n++) id = `${base}_${n}`
   return id
 }
+
+// ── Why a box is in review, in words ─────────────────────────────────────────
+
+export type ReasonKind = 'spelling' | 'near' | 'unsure' | 'missed' | 'illegible' | 'side' | 'extra' | 'always' | 'error'
+
+/** The tally's words, plural: "5 near-spellings". */
+export const REASON_TALLY: Record<ReasonKind, string> = {
+  spelling: 'near-spellings',
+  near: 'almost-matches',
+  unsure: 'unsure readings',
+  missed: 'read as empty, but written in',
+  illegible: 'unreadable',
+  side: 'unclear arrow sides',
+  extra: 'unlisted cofactors',
+  always: 'always reviewed',
+  error: 'not read',
+}
+
+/** Which kind of reason a stored review reason is (the grader's own wording, see scoring.ts). */
+export function reasonKind(r: string): ReasonKind {
+  if (r.startsWith('inexact')) return 'spelling'
+  if (r.startsWith('close to')) return 'near'
+  if (r.startsWith('confidence')) return 'unsure'
+  if (r.startsWith('read as blank')) return 'missed'
+  if (r === 'illegible') return 'illegible'
+  if (r.startsWith('cofactor side') || r.startsWith('on both sides')) return 'side'
+  if (r.startsWith('unexpected')) return 'extra'
+  if (r.startsWith('policy')) return 'always'
+  return 'error'
+}
+
+/** One reason as a sentence: what the grader noticed, so the person knows what to look at. */
+export function explainReason(r: string, closest?: string): string {
+  const after = (prefix: string) => r.slice(prefix.length).trim()
+  switch (reasonKind(r)) {
+    case 'spelling': return `Not spelled like any accepted answer. Closest: “${closest ?? after('inexact match to').replace(/^"|"$/g, '')}”. A typo, or a different word?`
+    case 'near': return `Close to${closest ? ` “${closest}”` : ' an accepted answer'}, but not close enough to count on its own.`
+    case 'unsure': return 'The model was not sure it read the handwriting right. Check the reading matches what is written.'
+    case 'missed': return 'Read as empty, but there is ink in the box. It may be another answer sharing the box, or writing the model missed.'
+    case 'illegible': return 'The model could not read the handwriting.'
+    case 'side': return r.startsWith('on both sides')
+      ? `${after('on both sides:')} was read at both ends of the arrow.`
+      : 'Could not tell which end of the arrow a cofactor was written at.'
+    case 'extra': return `Also wrote ${after('unexpected:')}, which the key does not list, and the answer is missing a cofactor. A misread?`
+    case 'always': return 'This quiz reviews every answer of this kind (Scoring tab).'
+    default: return 'The model did not return a reading for this box.'
+  }
+}
