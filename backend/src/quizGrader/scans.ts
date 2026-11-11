@@ -89,7 +89,7 @@ export async function deleteDocument(id: string): Promise<void> {
 // ── What a page is graded against ──────────────────────────────────────────────
 
 interface Spec {
-  versions: { name: string; page: number; boxes: { id: string; box: number[] }[] }[]
+  versions: { name: string; page: number; boxes: { id: string; box: number[]; read?: boolean }[] }[]
   form: Uint8Array
 }
 
@@ -113,7 +113,13 @@ export async function specFor(assessmentId: string): Promise<Spec> {
     versions: Object.keys(assessment.versions).map((name) => ({
       name,
       page: versionPage(assessment, name),
-      boxes: slotsForVersion(assessment, layout, key, name).map((g) => ({ id: g.slot.id, box: g.slot.box! })),
+      boxes: slotsForVersion(assessment, layout, key, name).map((g) => ({
+        id: g.slot.id,
+        box: g.slot.box!,
+        // The vision service reads the NetID itself, on its own server, when it has a
+        // handwriting model set up. It never reaches Claude.
+        ...(g.ref.kind === 'identity' && g.ref.field === 'netid' ? { read: true } : {}),
+      })),
     })),
   }
 }
@@ -126,7 +132,7 @@ interface ProcessResult {
   version: string | null
   version_detected: string | null
   aligned: string
-  crops: { id: string; png: string; ink: number; blank: boolean }[]
+  crops: { id: string; png: string; ink: number; blank: boolean; text?: string; text_score?: number }[]
 }
 
 // ── The worker ─────────────────────────────────────────────────────────────────
@@ -190,7 +196,7 @@ async function processPage(pageId: string): Promise<void> {
       markers: result.markers,
       match: result.match,
       fits: result.fits,
-      slots: result.crops.map(({ id, ink, blank }) => ({ id, ink, blank })),
+      slots: result.crops.map(({ id, ink, blank, text, text_score }) => ({ id, ink, blank, ...(text !== undefined ? { text, textScore: text_score ?? null } : {}) })),
       error: null,
       claimedAt: null,
     },

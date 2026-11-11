@@ -163,5 +163,43 @@ class Pipeline(unittest.TestCase):
         self.assertEqual(r["version_detected"], "B")
 
 
+
+class Handwriting(unittest.TestCase):
+    """Boxes marked `read` go to the reader, cleaned of the printed form; others never do."""
+
+    def test_reader_hook(self):
+        flat = np.full((400, 600), 255, np.uint8)
+        printed = np.zeros_like(flat, bool)
+        printed[80:84, 20:580] = True              # a printed line to write on
+        flat[80:84, 20:580] = 0
+        cv2.putText(flat, "ab123", (60, 75), cv2.FONT_HERSHEY_SIMPLEX, 1.5, 0, 3)  # the "handwriting"
+        seen = []
+
+        def reader(img):
+            seen.append(img)
+            return ("ab123", 0.9)
+
+        boxes = [
+            {"id": "netid", "box": [0.0, 0.0, 1.0, 0.25], "read": True},
+            {"id": "s1_enzyme", "box": [0.0, 0.0, 1.0, 0.25]},
+            {"id": "empty", "box": [0.0, 0.6, 1.0, 0.3], "read": True},
+        ]
+        out = {c["id"]: c for c in P.crop_boxes(flat, printed, boxes, 200, reader)}
+        self.assertEqual(out["netid"]["text"], "ab123")
+        self.assertEqual(out["netid"]["text_score"], 0.9)
+        self.assertNotIn("text", out["s1_enzyme"])
+        self.assertNotIn("text", out["empty"])     # blank: nothing to read
+        self.assertEqual(len(seen), 1)
+        # The printed line is painted out, and the crop is trimmed to the writing.
+        self.assertLess(seen[0].shape[1], 600)
+        self.assertFalse((seen[0] < 60).all(axis=1).any())
+
+    def test_no_reader_no_text(self):
+        flat = np.full((100, 100), 255, np.uint8)
+        flat[40:60, 20:80] = 0
+        c = P.crop_boxes(flat, np.zeros_like(flat, bool), [{"id": "netid", "box": [0, 0, 1, 1], "read": True}], 200)[0]
+        self.assertNotIn("text", c)
+
+
 if __name__ == "__main__":
     unittest.main()

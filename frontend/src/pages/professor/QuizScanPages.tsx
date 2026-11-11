@@ -281,6 +281,12 @@ export function QuizPageDebug() {
                             : s.blank ? <span className="text-muted">empty</span> : <span className="text-muted">{['name', 'netid'].includes(s.id) ? 'not sent' : ''}</span>}
                         </div>
                         {r && <p className="text-ink-2 break-words">{describeRead(r)}</p>}
+                        {s.text !== undefined && (
+                          <p className="text-ink-2 break-words" title="Read on Pulse's own server by a handwriting model; never sent to Claude">
+                            read as <span className="font-mono font-semibold">{s.text || '(nothing)'}</span>
+                            {s.textScore != null && <span className="text-muted"> · {Math.round(s.textScore * 100)}% sure</span>}
+                          </p>
+                        )}
                         {r?.detail.match && r.detail.match.verdict !== 'exact' && (
                           <p className="text-muted">closest: {r.detail.match.alias}</p>
                         )}

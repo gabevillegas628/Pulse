@@ -20,7 +20,8 @@ work phase by phase from `docs/quiz-grader/PLAN.md`, stopping at phase boundarie
   applies to many papers.
 - **Names and NetIDs never reach the model.** Only single answer-blank crops are sent;
   identity is matched by a person (or a QR sheet). Guards in `reader.ts` and
-  `slotsForVersion` enforce this; keep them.
+  `slotsForVersion` enforce this; keep them. The NetID may be read on our own vision
+  service by an open handwriting model (`vision/handwriting.py`), never by Claude.
 - **Student work stays out of git.** Scans and crops are FERPA material.
 - **Scans are never public.** Page images live under `<UPLOAD_DIR>/.quiz-scans/` and are
   served only by the ownership-checked routes in `quizScans.routes.ts`; app.ts blocks the
