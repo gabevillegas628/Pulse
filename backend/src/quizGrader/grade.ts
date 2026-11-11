@@ -147,7 +147,9 @@ export function gradePage(
       reviewReasons(g.review, {
         confidence: read.confidence,
         unclearSide: cofactorResult.unclearSide,
-        extras: cofactorResult.extras,
+        // An extra costs nothing on a full-marks answer (unless extras are penalised). On a
+        // short one it may be the missing cofactor misread, so then it is worth a look.
+        extras: cofactorResult.fraction < 1 || opts.extraPenalty ? cofactorResult.extras : [],
         bothSides: cofactorResult.bothSides,
       }, confT),
     )

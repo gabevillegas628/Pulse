@@ -148,6 +148,7 @@ check('structure all or nothing', scoreStructure(gly.intermediates.pep!, [true, 
   t('s10_enzyme', 'pyruvate kinase')
   text.set('s9_cofactors', { slot_id: 's9_cofactors', status: 'blank', transcription: '', cofactors: [], confidence: 0.9 })
   t('s7_cofactors', '', 0.95, [{ text: 'ADP', side: 'in' }, { text: 'ATP', side: 'out' }, { text: 'NADPH', side: 'out' }])
+  t('s10_cofactors', '', 0.95, [{ text: 'ADP', side: 'in' }, { text: 'ATG', side: 'out' }])
   text.set('s3_enzyme', { slot_id: 's3_enzyme', status: 'illegible', transcription: '', cofactors: [], confidence: 0.2 })
   const struct = new Map<string, StructureRead>([
     ['int_pep', { slot_id: 'int_pep', status: 'read', description: 'PEP', confidence: 0.9,
@@ -165,7 +166,9 @@ check('structure all or nothing', scoreStructure(gly.intermediates.pep!, [true, 
     by.get('s6_enzyme')!.pointsAuto === 1 && by.get('s6_enzyme')!.reviewReasons.some((r) => r.startsWith('inexact')))
   check('page: "Enolate" goes to review', by.get('s9_enzyme')!.needsReview)
   check('page: an exact match is not reviewed', !by.get('s10_enzyme')!.needsReview)
-  check('page: an unexpected cofactor goes to review', by.get('s7_cofactors')!.reviewReasons.some((r) => r.includes('NADPH')))
+  check('page: an extra cofactor on a full-marks answer is not flagged', by.get('s7_cofactors')!.pointsAuto === 1 && !by.get('s7_cofactors')!.needsReview)
+  check('page: an extra cofactor on a short answer goes to review (it may be the missing one misread)',
+    by.get('s10_cofactors')!.pointsAuto === 0 && by.get('s10_cofactors')!.reviewReasons.some((r) => r.includes('ATG')))
   check('page: ink-check blanks say so', by.get('s4_enzyme')!.blankBy === 'ink')
   check('page: the model calling an inked box blank goes to review (page 6, H2O missed)',
     by.get('s9_cofactors')!.status === 'blank' && by.get('s9_cofactors')!.blankBy === 'model'
