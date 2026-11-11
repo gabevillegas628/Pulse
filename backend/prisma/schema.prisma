@@ -96,6 +96,7 @@ model Class {
   enrollments       Enrollment[]
   sections          Section[]
   textbookViews     TextbookView[]
+  quizzes           QuizContent[]
 }
 
 model TextbookView {
@@ -444,6 +445,10 @@ model QuizContent {
   // draws on and what printing stamps corner markers onto. Small (a quiz page is tens of
   // kilobytes), so it lives in the row rather than on the upload volume.
   pdf         Bytes?
+  // Quizzes only: the Pulse class whose roster the papers are matched against. Kept here,
+  // not in the YAML: it is this professor's data, not part of a quiz someone could import.
+  classId     String?
+  class       Class?          @relation(fields: [classId], references: [id], onDelete: SetNull)
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
@@ -521,6 +526,11 @@ model QuizPage {
   pointsAuto     Float?
   maxPoints      Float?
   toReview       Int?
+  // ── Whose paper it is: a NetID picked by the professor from the class roster. The NetID
+  // itself, not a link to the student, so an export still says whose it was if the
+  // student later leaves the class. Never read by a model.
+  studentNetId   String?
+  matchedAt      DateTime?
   results        QuizSlotResult[]
   overrides      QuizOverride[]
 

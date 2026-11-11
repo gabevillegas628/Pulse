@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Camera, FileUp, ListChecks, ScanLine, Table } from 'lucide-react'
+import { Camera, FileUp, ListChecks, ScanLine, Table, Users } from 'lucide-react'
 import { api } from '@/api/client'
 import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
@@ -92,6 +92,9 @@ export default function ScansPanel({ assessmentId }: { assessmentId: string }) {
           </span>
           <Link to={`/professor/quiz-grader/${assessmentId}/results`} className="inline-flex items-center gap-1 text-signal hover:underline">
             <Table size={14} />Results
+          </Link>
+          <Link to={`/professor/quiz-grader/${assessmentId}/match`} className="inline-flex items-center gap-1 text-signal hover:underline">
+            <Users size={14} />Students
           </Link>
           {results.summary.toReview > 0 && (
             <Link to={`/professor/quiz-grader/${assessmentId}/review`} className="inline-flex items-center gap-1 text-signal hover:underline">

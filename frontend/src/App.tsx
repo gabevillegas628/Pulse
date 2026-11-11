@@ -21,6 +21,7 @@ import QuizContentPage from '@/pages/professor/QuizContentPage'
 import QuizContentEditorPage from '@/pages/professor/QuizContentEditorPage'
 import { QuizBatchPage, QuizPageDebug } from '@/pages/professor/QuizScanPages'
 import QuizResultsPage from '@/pages/professor/QuizResultsPage'
+import QuizMatchPage from '@/pages/professor/QuizMatchPage'
 import QuizReviewPage from '@/pages/professor/QuizReviewPage'
 
 // Student pages
@@ -154,6 +155,7 @@ export default function App() {
         <Route path="/professor/quiz-grader/batches/:batchId" element={<ProfessorProtected><QuizBatchPage /></ProfessorProtected>} />
         <Route path="/professor/quiz-grader/:id/results" element={<ProfessorProtected><QuizResultsPage /></ProfessorProtected>} />
         <Route path="/professor/quiz-grader/:id/review" element={<ProfessorProtected><QuizReviewPage /></ProfessorProtected>} />
+        <Route path="/professor/quiz-grader/:id/match" element={<ProfessorProtected><QuizMatchPage /></ProfessorProtected>} />
         <Route path="/professor/quiz-grader/pages/:pageId" element={<ProfessorProtected><QuizPageDebug /></ProfessorProtected>} />
 
         {/* Student routes */}

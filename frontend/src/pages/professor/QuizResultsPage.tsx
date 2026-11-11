@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Crop, ListChecks, RotateCw, Sparkles } from 'lucide-react'
+import { ArrowLeft, Crop, Download, ListChecks, RotateCw, Sparkles, Users } from 'lucide-react'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import Button from '@/components/ui/Button'
@@ -9,10 +9,10 @@ import Card from '@/components/ui/Card'
 import ConfirmDialog, { type DialogRequest } from '@/components/ui/ConfirmDialog'
 import { apiError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
-import { STATUS_LABEL, type QuizPage } from '@/lib/quizGrader'
+import { STATUS_LABEL, saveBlob, type QuizPage } from '@/lib/quizGrader'
 
 interface ResultsData {
-  pages: (Pick<QuizPage, 'id' | 'batchId' | 'index' | 'status' | 'version' | 'gradeStatus' | 'gradeError' | 'pointsAuto' | 'pointsFinal' | 'maxPoints' | 'toReview'> & { fileName: string })[]
+  pages: (Pick<QuizPage, 'id' | 'batchId' | 'index' | 'status' | 'version' | 'gradeStatus' | 'gradeError' | 'pointsAuto' | 'pointsFinal' | 'maxPoints' | 'toReview'> & { fileName: string; studentNetId: string | null })[]
   summary: { pages: number; graded: number; grading: number; failed: number; toReview: number; cost: { dollars: number; unpriced: string[] } }
 }
 
@@ -76,6 +76,17 @@ export default function QuizResultsPage() {
     }
   }
 
+  async function download() {
+    setNote('')
+    try {
+      const r = await api.get(`/quiz-grader/content/${id}/export.csv`, { responseType: 'blob' })
+      saveBlob('grades.csv', r.data as Blob)
+    } catch (e) {
+      setNote(apiError(e, 'Could not export'))
+    }
+  }
+
+  const unmatched = (data?.pages ?? []).filter((pg) => !pg.studentNetId).length
   const ungraded = (data?.pages ?? []).filter((pg) => pg.status === 'DONE' && (pg.gradeStatus === 'NONE' || pg.gradeStatus === 'FAILED')).length
   const s = data?.summary
   const dollars = (n: number) => '$' + n.toFixed(2)
@@ -105,6 +116,12 @@ export default function QuizResultsPage() {
                   <Sparkles size={13} />Grade {ungraded} ungraded page{ungraded === 1 ? '' : 's'}
                 </Button>
               )}
+              <Link to={`/professor/quiz-grader/${id}/match`}>
+                <Button size="sm" variant={!s.toReview && unmatched ? 'primary' : 'ghost'}><Users size={13} />Match students{unmatched ? ` (${unmatched} left)` : ''}</Button>
+              </Link>
+              <Button size="sm" onClick={() => void download()} title="NetID and score per paper, after your review decisions">
+                <Download size={13} />Download grades (CSV)
+              </Button>
               <Link to={`/professor/quiz-grader/${id}/review`}>
                 <Button size="sm" variant={s.toReview ? 'primary' : 'ghost'}><ListChecks size={13} />Review{s.toReview ? ` (${s.toReview} left)` : ''}</Button>
               </Link>
@@ -121,7 +138,7 @@ export default function QuizResultsPage() {
             <table className="w-full text-sm">
               <thead className="text-xs text-muted text-left">
                 <tr>
-                  <th className="px-4 py-2">Upload</th><th className="pr-4">Page</th><th className="pr-4">Version</th>
+                  <th className="px-4 py-2">Upload</th><th className="pr-4">Page</th><th className="pr-4">NetID</th><th className="pr-4">Version</th>
                   <th className="pr-4">Score</th><th className="pr-4">To review</th><th className="pr-4">Status</th>
                 </tr>
               </thead>
@@ -136,6 +153,7 @@ export default function QuizResultsPage() {
                     <tr key={pg.id} className="border-t border-hairline hover:bg-surface-2">
                       <td className="px-4 py-2 truncate max-w-[16rem]">{pg.fileName}</td>
                       <td className="pr-4"><Link to={`/professor/quiz-grader/pages/${pg.id}`} className="text-signal hover:underline">{pg.index + 1}</Link></td>
+                      <td className="pr-4 font-mono">{pg.studentNetId ?? <span className="text-muted font-sans">—</span>}</td>
                       <td className="pr-4">{pg.version ?? '—'}</td>
                       <td className="pr-4 font-semibold text-ink">{graded ? `${pg.pointsFinal ?? pg.pointsAuto}/${pg.maxPoints}` : '—'}</td>
                       <td className={cn('pr-4', pg.toReview ? 'text-warn' : 'text-muted')}>{graded ? pg.toReview : '—'}</td>

@@ -300,6 +300,23 @@ once. Uploading the blank form keeps the layout's `updatedAt`, so it never makes
 page's save look stale. The data model did not change: existing quizzes open as they are,
 and an optional `title:` names a quiz.
 
+## Students and grades out (part of Phase 7)
+
+Papers are matched to students by hand: **Results → Match students** shows each paper's
+name and NetID crops beside a search over the roster of the Pulse class the quiz is linked
+to (`QuizContent.classId`, set on that screen). Type a few letters, Enter takes the top match
+and moves to the next paper. The NetID is stored on the page (`QuizPage.studentNetId`), so an
+export still says whose paper it was if the student later leaves the class. A NetID not on
+the roster is allowed and flagged, as is one used on two papers. Nothing here reaches a
+model. (Reading NetIDs with an open handwriting model on the vision service was tried and
+dropped: too slow on CPU, and the readings were not usable.)
+
+**Download grades (CSV)** (`GET /quiz-grader/content/:id/export.csv`, `?boxes=1` for a column
+per box): one row per paper with NetID, email, score after review decisions, out of, boxes
+still to review, version, upload, page and a note (not matched, not on the roster, two papers,
+not graded, review not finished), then each roster student with no paper. Cells are guarded
+against spreadsheet formulas. Not connected to the Pulse gradebook yet.
+
 ## Changes from the handoff
 
 - **Seed YAML bug fixed.** Names containing a comma (`1,3-bisphosphoglycerate`,

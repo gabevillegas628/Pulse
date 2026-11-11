@@ -254,7 +254,7 @@ router.get('/quiz-grader/content/:id/results', requireProfessor, async (req: Req
       where: { batch: { assessmentId: assessment.id } },
       select: {
         id: true, batchId: true, index: true, status: true, version: true, gradeStatus: true, gradeError: true,
-        pointsAuto: true, maxPoints: true, toReview: true, usage: true, batch: { select: { fileName: true, createdAt: true } },
+        pointsAuto: true, maxPoints: true, toReview: true, usage: true, studentNetId: true, batch: { select: { fileName: true, createdAt: true } },
       },
       orderBy: [{ batch: { createdAt: 'asc' } }, { index: 'asc' }],
     })
