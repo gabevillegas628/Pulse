@@ -53,8 +53,10 @@ export default function QuizPage({ id }: { id: string }) {
   })
   return (
     <ProfessorLayout>
-      <Link to="/professor/quiz-grader" className="inline-flex items-center gap-1 text-sm text-muted hover:text-ink mb-4">
-        <ArrowLeft size={14} /> Paper quizzes
+      {/* Back to the class the quiz belongs to; a quiz from before classes goes to the overview. */}
+      <Link to={bundle?.class ? `/professor/classes/${bundle.class.id}?tab=papers` : '/professor/quiz-grader'}
+        className="inline-flex items-center gap-1 text-sm text-muted hover:text-ink mb-4">
+        <ArrowLeft size={14} /> {bundle?.class ? bundle.class.name : 'Paper quizzes'}
       </Link>
       {isLoading ? null : error || !bundle ? (
         <p className="text-sm text-warn">{apiError(error, 'Could not open this quiz')}</p>
@@ -269,6 +271,7 @@ function Overview({ bundle, draft, edit, form, dirty, go }: {
             d.quiz = e.target.value ? { assessment, title: e.target.value, ...rest } : { assessment, ...rest }
           })} />
       </Card>
+      <ClassCard bundle={bundle} />
 
       <h2 className="text-lg font-semibold text-ink mb-2">Setup</h2>
       <Card className="divide-y divide-hairline mb-5">
@@ -340,5 +343,64 @@ function Files({ bundle }: { bundle: QuizBundle }) {
         ))}
       </div>
     </>
+  )
+}
+
+// ── Which class the quiz belongs to: move it, or copy its setup to another ─────
+
+function ClassCard({ bundle }: { bundle: QuizBundle }) {
+  const qc = useQueryClient()
+  const navigate = useNavigate()
+  const [target, setTarget] = useState('')
+  const [message, setMessage] = useState<{ tone: 'good' | 'warn'; text: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const { data: classes } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ['quiz-grader', 'match', bundle.quiz.id, 'classes'],
+    queryFn: () => api.get(`/quiz-grader/content/${bundle.quiz.id}/match`).then((r) => r.data.data.classes),
+  })
+  const others = (classes ?? []).filter((c) => c.id !== bundle.class?.id)
+
+  async function act(kind: 'move' | 'copy') {
+    if (!target) return
+    setBusy(true)
+    setMessage(null)
+    try {
+      if (kind === 'move') {
+        await api.put(`/quiz-grader/content/${bundle.quiz.id}/class`, { classId: target })
+        void qc.invalidateQueries({ queryKey: ['quiz-grader'] })
+        setMessage({ tone: 'good', text: 'Moved, with its scans and grades. Papers already matched keep their NetIDs.' })
+      } else {
+        const r = await api.post(`/quiz-grader/quizzes/${bundle.quiz.id}/copy`, { classId: target })
+        void qc.invalidateQueries({ queryKey: ['quiz-grader'] })
+        navigate(`/professor/quiz-grader/${r.data.data.id}`)
+      }
+      setTarget('')
+    } catch (e) {
+      setMessage({ tone: 'warn', text: apiError(e, kind === 'move' ? 'Could not move' : 'Could not copy') })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Card className="p-4 mb-5">
+      <p className="text-xs font-semibold text-muted">Class</p>
+      <p className="text-sm text-ink mb-2">
+        {bundle.class
+          ? <><span className="font-semibold">{bundle.class.name}</span> <span className="text-muted">· papers are matched against its roster</span></>
+          : <span className="text-warn">Not in a class yet. Move it into the class that took it.</span>}
+      </p>
+      {others.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <select className="border border-hairline rounded-sm px-2 py-1.5 text-sm bg-surface" value={target} onChange={(e) => setTarget(e.target.value)} aria-label="Another class">
+            <option value="">Another class…</option>
+            {others.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <Button size="sm" disabled={!target || busy} onClick={() => void act('move')} title="This quiz, with its scans and grades, moves to that class">Move there</Button>
+          <Button size="sm" disabled={!target || busy} onClick={() => void act('copy')} title="A fresh copy of the setup (answer key, boxes, blank form, settings) for that class; no scans or grades">Copy setup there</Button>
+        </div>
+      )}
+      {message && <p className={cn('text-sm mt-2', message.tone === 'good' ? 'text-good' : 'text-warn')}>{message.text}</p>}
+    </Card>
   )
 }

@@ -18,6 +18,8 @@ export interface QuizContentSummary {
   issues: string[]
   /** Cross-file gaps, like a layout with no boxes yet. Normal while setting up. */
   warnings: string[]
+  /** Quizzes: the class they belong to (null for one made before quizzes belonged to classes). */
+  classId?: string | null
 }
 
 export interface QuizContentDetail extends QuizContentSummary {
@@ -207,6 +209,8 @@ export interface QuizBundle {
   /** Other quizzes using the same answer key or blank form: edits reach them too. */
   sharedKey: string[]
   sharedLayout: string[]
+  /** The class whose roster the papers are matched against; null for a quiz made before quizzes belonged to classes. */
+  class: { id: string; name: string } | null
 }
 
 export type ItemKind = 'identity' | 'enzyme' | 'cofactors' | 'name' | 'structure'

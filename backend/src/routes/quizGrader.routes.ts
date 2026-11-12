@@ -9,7 +9,8 @@ import type { QuizContent, QuizContentKind } from '@prisma/client'
 import { prisma } from '../db/index.js'
 import { AppError, isUniqueViolation } from '../middleware/error.middleware.js'
 import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
-import { ownedQuizContent } from '../utils/ownership.js'
+import { ownedClass, ownedQuizContent } from '../utils/ownership.js'
+import { copyQuizInto, quizSources } from '../quizGrader/copy.js'
 import { p } from '../utils/params.js'
 import { patchYaml } from '../quizGrader/yamlPatch.js'
 import { printablePdf } from '../quizGrader/print.js'
@@ -21,6 +22,12 @@ import {
 } from '../quizGrader/store.js'
 
 const router = Router()
+
+async function ownedClassOrThrow(req: Request, classId: string) {
+  const cls = await prisma.class.findFirst({ where: { id: classId, ...ownedClass((req as ProfessorRequest).professor) }, select: { id: true, name: true } })
+  if (!cls) throw new AppError('Class not found', 404)
+  return cls
+}
 
 /** A bad file is the author's to fix, so it is a 400 with their problem in it. */
 function asAppError(e: unknown): unknown {
@@ -47,6 +54,7 @@ function summary(row: Row, all: Row[]) {
     title: raw ? titleOf(row.kind, raw) : row.slug,
     updatedAt: row.updatedAt,
     hasPdf: row.hasPdf,
+    classId: row.classId,
     issues,
     warnings: issues.length ? [] : [...pdfWarnings(row, all), ...crossCheck(row, all)],
   }
@@ -190,29 +198,28 @@ router.delete('/quiz-grader/content/:id', requireProfessor, async (req: Request,
   }
 })
 
-// Load the glycolysis and TCA starter content, skipping anything already there by name.
+// Load the glycolysis and TCA examples into a class, skipping any the class already has.
 router.post('/quiz-grader/starter', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
+    const { classId } = z.object({ classId: z.string() }).parse(req.body)
+    await ownedClassOrThrow(req, classId)
+    const files = (await starterFiles()).map((f) => ({ ...f, raw: parseSource(f.source) }))
+    const named = (kind: QuizContentKind, slug: unknown) => files.find((f) => kindOf(f.raw) === kind && slugOf(kind, f.raw) === slug)
+    const inClass = await prisma.quizContent.findMany({ where: { classId, kind: 'ASSESSMENT' }, select: { slug: true } })
+    const base = (slug: string) => slug.replace(/-\d+$/, '')
     const added: string[] = []
     const skipped: string[] = []
-    for (const { file, source } of await starterFiles()) {
-      const raw = parseSource(source)
-      const kind = kindOf(raw)
-      const slug = slugOf(kind, raw)
-      const pdf = kind === 'LAYOUT' ? await starterPdf(raw) : null
-      const exists = await prisma.quizContent.findUnique({
-        where: { professorId_kind_slug: { professorId: professor.id, kind, slug } },
-        select: { id: true, pdf: true },
-      })
-      if (exists) {
-        // An existing starter layout without its PDF (loaded before PDFs were kept) gets one.
-        if (pdf && !exists.pdf) await prisma.quizContent.update({ where: { id: exists.id }, data: { pdf: new Uint8Array(pdf) } })
-        skipped.push(file)
-        continue
-      }
-      await prisma.quizContent.create({ data: { professorId: professor.id, kind, slug, source, ...(pdf ? { pdf: new Uint8Array(pdf) } : {}) } })
-      added.push(file)
+    for (const f of files.filter((x) => kindOf(x.raw) === 'ASSESSMENT')) {
+      const slug = slugOf('ASSESSMENT', f.raw)
+      // Copies are named slug, slug-2, ...: any of those in the class means it is there.
+      if (inClass.some((q) => base(q.slug) === base(slug))) { skipped.push(slug); continue }
+      const key = named('KEY', f.raw.key)
+      const layout = named('LAYOUT', f.raw.layout)
+      if (!key || !layout) continue
+      const pdf = await starterPdf(layout.raw)
+      await copyQuizInto(prisma, professor.id, classId, { quiz: f.source, key: key.source, layout: layout.source, pdf: pdf ? new Uint8Array(pdf) : null })
+      added.push(slug)
     }
     res.json({ success: true, data: { added, skipped } })
   } catch (err) {
@@ -255,7 +262,8 @@ async function loadQuiz(req: Request): Promise<{ row: Row; all: Row[] }> {
 router.get('/quiz-grader/quizzes/:id', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { row, all } = await loadQuiz(req)
-    res.json({ success: true, data: bundle(row, all) })
+    const cls = row.classId ? await prisma.class.findUnique({ where: { id: row.classId }, select: { id: true, name: true } }) : null
+    res.json({ success: true, data: { ...bundle(row, all), class: cls } })
   } catch (err) {
     next(err)
   }
@@ -295,7 +303,8 @@ router.put('/quiz-grader/quizzes/:id', requireProfessor, async (req: Request, re
       void (async () => { for (const w of writes) await rescoreAfterEdit(row.professorId, w.kind, w.row.slug) })()
     }
     const after = await loadAll(row.professorId)
-    res.json({ success: true, data: { ...bundle(after.find((r) => r.id === row.id)!, after), saved: writes.length } })
+    const cls = row.classId ? await prisma.class.findUnique({ where: { id: row.classId }, select: { id: true, name: true } }) : null
+    res.json({ success: true, data: { ...bundle(after.find((r) => r.id === row.id)!, after), class: cls, saved: writes.length } })
   } catch (err) {
     next(asAppError(err))
   }
@@ -305,14 +314,15 @@ router.put('/quiz-grader/quizzes/:id', requireProfessor, async (req: Request, re
 router.post('/quiz-grader/quizzes', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const professor = (req as ProfessorRequest).professor
-    const { title } = z.object({ title: z.string().trim().min(1).max(120) }).parse(req.body)
+    const { title, classId } = z.object({ title: z.string().trim().min(1).max(120), classId: z.string() }).parse(req.body)
+    await ownedClassOrThrow(req, classId)
     const taken = new Set((await prisma.quizContent.findMany({ where: { professorId: professor.id }, select: { slug: true } })).map((r) => r.slug))
     const base = slugify(title)
     let slug = base
     for (let n = 2; taken.has(slug) || taken.has(`${slug}-form`); n++) slug = `${base}-${n}`
     const files = newQuizFiles(slug, title)
     const [quiz] = await prisma.$transaction([
-      prisma.quizContent.create({ data: { professorId: professor.id, kind: 'ASSESSMENT', slug, source: files.ASSESSMENT }, select: { id: true } }),
+      prisma.quizContent.create({ data: { professorId: professor.id, classId, kind: 'ASSESSMENT', slug, source: files.ASSESSMENT }, select: { id: true } }),
       prisma.quizContent.create({ data: { professorId: professor.id, kind: 'KEY', slug, source: files.KEY }, select: { id: true } }),
       prisma.quizContent.create({ data: { professorId: professor.id, kind: 'LAYOUT', slug: `${slug}-form`, source: files.LAYOUT }, select: { id: true } }),
     ])
@@ -336,6 +346,53 @@ router.delete('/quiz-grader/quizzes/:id', requireProfessor, async (req: Request,
     res.json({ success: true, data: { deleted: ids.length } })
   } catch (err) {
     next(err)
+  }
+})
+
+// A class's paper quizzes, and the professor's quizzes not in any class yet (to move in).
+router.get('/quiz-grader/classes/:classId/quizzes', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+    const cls = await ownedClassOrThrow(req, p(req.params.classId))
+    const all = await loadAll(professor.id)
+    const quizzes = all.filter((r) => r.kind === 'ASSESSMENT')
+    const pages = await prisma.quizPage.findMany({
+      where: { batch: { assessmentId: { in: quizzes.map((q) => q.id) } } },
+      select: { gradeStatus: true, studentNetId: true, batch: { select: { assessmentId: true } } },
+    })
+    const stats = (id: string) => {
+      const mine = pages.filter((pg) => pg.batch.assessmentId === id)
+      return { papers: mine.length, graded: mine.filter((pg) => pg.gradeStatus === 'GRADED').length, matched: mine.filter((pg) => pg.studentNetId).length }
+    }
+    const row = (q: Row) => ({ ...summary(q, all), ...stats(q.id) })
+    res.json({
+      success: true,
+      data: {
+        class: cls,
+        quizzes: quizzes.filter((q) => q.classId === cls.id).map(row),
+        unfiled: quizzes.filter((q) => !q.classId).map(row),
+        // Other classes' quizzes, to copy from.
+        elsewhere: quizzes.filter((q) => q.classId && q.classId !== cls.id).map((q) => ({ id: q.id, title: summary(q, all).title, classId: q.classId })),
+      },
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Copy a quiz's setup (not its scans or grades) into a class.
+router.post('/quiz-grader/quizzes/:id/copy', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const professor = (req as ProfessorRequest).professor
+    const { row } = await loadQuiz(req)
+    const { classId } = z.object({ classId: z.string() }).parse(req.body)
+    await ownedClassOrThrow(req, classId)
+    const src = await quizSources(prisma, row.id)
+    if (!src) throw new AppError('This quiz is missing its answer key or boxes, so it cannot be copied.', 400)
+    const id = await copyQuizInto(prisma, professor.id, classId, src)
+    res.status(201).json({ success: true, data: { id } })
+  } catch (err) {
+    next(isUniqueViolation(err) ? new AppError('A name was taken a moment ago; try again.', 409) : asAppError(err))
   }
 })
 

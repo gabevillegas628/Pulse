@@ -12,6 +12,7 @@ import { gradeSession, isSkippedAnswer, sectionResponseCount } from '../utils/sc
 import { runAnswerCounts } from '../utils/answerCounts.js'
 import { generateUniqueCode } from '../utils/codes.js'
 import { p } from '../utils/params.js'
+import { copyQuizInto, quizSources } from '../quizGrader/copy.js'
 
 const nanoid = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 6)
 const nanoidDigits = customAlphabet('0123456789', 4)
@@ -422,7 +423,19 @@ router.post('/:id/duplicate', async (req: Request, res: Response, next: NextFunc
       })
     }, { maxWait: 10_000, timeout: 60_000 })
 
-    res.status(201).json({ success: true, data: { class: newClass } })
+    // Paper quizzes come along as setups only (key, boxes, blank form, settings): a new
+    // term starts with no scans or grades. After the transaction, so a quiz that cannot be
+    // copied (its key or boxes missing) never undoes the class.
+    const quizzes = await prisma.quizContent.findMany({ where: { classId: source.id, kind: 'ASSESSMENT' }, select: { id: true }, orderBy: { createdAt: 'asc' } })
+    let quizzesCopied = 0
+    for (const q of quizzes) {
+      const src = await quizSources(prisma, q.id)
+      if (!src) continue
+      await copyQuizInto(prisma, professor.id, newClass!.id, src)
+      quizzesCopied++
+    }
+
+    res.status(201).json({ success: true, data: { class: newClass, quizzesCopied } })
   } catch (err) {
     next(err)
   }

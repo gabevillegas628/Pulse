@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, ChevronRight, CircleAlert, Download, FileUp, Package, Plus, ScanLine, Trash2, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { AlertTriangle, ChevronRight, CircleAlert, Download, FileUp, ScanLine, Trash2, X } from 'lucide-react'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import Button from '@/components/ui/Button'
@@ -13,9 +13,9 @@ import { apiError, apiErrorCode } from '@/lib/errors'
 import { KIND_LABEL, saveText, type QuizContentKind, type QuizContentSummary } from '@/lib/quizGrader'
 
 /**
- * Paper quizzes: one row per quiz, each opening the quiz page where it is set up,
- * printed, scanned and graded. The YAML files underneath (settings, answer key, boxes)
- * are tucked under Files, for import, export and backup.
+ * Every paper quiz, grouped by the class it belongs to. Quizzes are made and run from a
+ * class's Paper Quizzes tab; this page is the overview across classes, plus the YAML
+ * files underneath (settings, answer key, boxes) for import, export and backup.
  */
 
 const ORDER: QuizContentKind[] = ['ASSESSMENT', 'KEY', 'LAYOUT']
@@ -35,8 +35,6 @@ function ago(iso: string) {
 
 export default function QuizContentPage() {
   const qc = useQueryClient()
-  const navigate = useNavigate()
-  const [newTitle, setNewTitle] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const [dialog, setDialog] = useState<DialogRequest | null>(null)
   const [notice, setNotice] = useState<{ tone: 'good' | 'warn'; text: string } | null>(null)
@@ -47,21 +45,15 @@ export default function QuizContentPage() {
   })
   const refresh = () => qc.invalidateQueries({ queryKey: ['quiz-grader'] })
   const quizzes = (items ?? []).filter((i) => i.kind === 'ASSESSMENT')
-
-  const starter = useMutation({
-    mutationFn: () => api.post('/quiz-grader/starter').then((r) => r.data.data as { added: string[]; skipped: string[] }),
-    onSuccess: (r) => {
-      refresh()
-      setNotice({ tone: 'good', text: r.added.length ? `Added ${r.added.length} starter files.` : 'You already have all the starter files.' })
-    },
-    onError: (e) => setNotice({ tone: 'warn', text: apiError(e, 'Could not load the starter content') }),
+  const { data: classes } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ['classes', 'list-for-quizzes'],
+    queryFn: () => api.get('/classes').then((r) => r.data.data.classes),
   })
-
-  const create = useMutation({
-    mutationFn: (title: string) => api.post('/quiz-grader/quizzes', { title }).then((r) => r.data.data as { id: string }),
-    onSuccess: (r) => { refresh(); navigate(`/professor/quiz-grader/${r.id}?tab=key`) },
-    onError: (e) => setNotice({ tone: 'warn', text: apiError(e, 'Could not create the quiz') }),
-  })
+  // Quizzes by class, in the classes' order; those in no class last.
+  const byClass = [
+    ...(classes ?? []).map((c) => ({ id: c.id, name: c.name, quizzes: quizzes.filter((q) => q.classId === c.id) })).filter((g) => g.quizzes.length),
+    { id: '', name: 'Not in any class yet', quizzes: quizzes.filter((q) => !q.classId || !(classes ?? []).some((c) => c.id === q.classId)) },
+  ].filter((g) => g.quizzes.length)
 
   async function importFile(file: File, replace = false): Promise<void> {
     const source = await file.text()
@@ -108,12 +100,9 @@ export default function QuizContentPage() {
 
   return (
     <ProfessorLayout>
-      <div className="flex flex-wrap items-end justify-between gap-3 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-ink">Paper quizzes</h1>
-          <p className="text-sm text-muted mt-1">Print a quiz, scan the papers, and grade the handwriting against your answer key.</p>
-        </div>
-        <Button variant="primary" onClick={() => setNewTitle('')}><Plus size={15} />New quiz</Button>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-ink">Paper quizzes</h1>
+        <p className="text-sm text-muted mt-1">Every paper quiz, by class. Make and run quizzes from a class&rsquo;s <span className="font-semibold">Paper Quizzes</span> tab.</p>
       </div>
 
       {notice && (
@@ -123,44 +112,38 @@ export default function QuizContentPage() {
         </div>
       )}
 
-      {newTitle !== null && (
-        <Card className="p-4 mb-5">
-          <form className="flex flex-wrap gap-2 items-end" onSubmit={(e) => { e.preventDefault(); if (newTitle.trim()) create.mutate(newTitle.trim()) }}>
-            <label className="flex-1 min-w-56">
-              <span className="text-xs font-semibold text-muted">Quiz name</span>
-              <input autoFocus className="w-full border border-hairline rounded-sm px-2.5 py-1.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-signal"
-                placeholder="e.g. Pentose phosphate pathway quiz" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} />
-            </label>
-            <Button type="button" onClick={() => setNewTitle(null)}>Cancel</Button>
-            <Button type="submit" variant="primary" disabled={!newTitle.trim() || create.isPending}>Create</Button>
-          </form>
-          <p className="text-xs text-muted mt-2">Next: write the answer key, upload the blank form, and draw a box for each answer.</p>
-        </Card>
-      )}
-
       {isLoading ? null : (
         <>
           {!quizzes.length ? (
             <Card className="p-6 mb-8">
-              <Empty icon={ScanLine} message="No quizzes yet. Create one, or load the glycolysis and TCA examples." />
-              <div className="flex justify-center mt-2">
-                <Button onClick={() => starter.mutate()} disabled={starter.isPending}><Package size={15} />Load glycolysis &amp; TCA examples</Button>
-              </div>
+              <Empty icon={ScanLine} message="No paper quizzes yet. Open a class and use its Paper Quizzes tab to make one or add the glycolysis and TCA examples." />
             </Card>
           ) : (
-            <Card className="divide-y divide-hairline mb-10">
-              {quizzes.map((q) => (
-                <Link key={q.id} to={`/professor/quiz-grader/${q.id}`} className="px-4 py-3 flex items-center gap-3 hover:bg-surface-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-ink">{q.title}</p>
-                    <p className="text-xs text-muted">updated {ago(q.updatedAt)}</p>
-                    {q.issues.length > 0 && <p className="text-xs text-warn mt-1 flex gap-1"><CircleAlert size={13} className="shrink-0 mt-px" />{q.issues[0]}</p>}
+            <div className="space-y-6 mb-10">
+              {byClass.map((g) => (
+                <section key={g.id || 'none'}>
+                  <div className="flex items-baseline justify-between gap-3 mb-2">
+                    <h2 className="text-base font-semibold text-ink">{g.name}</h2>
+                    {g.id
+                      ? <Link to={`/professor/classes/${g.id}?tab=papers`} className="text-xs text-signal hover:underline">Open class</Link>
+                      : <span className="text-xs text-muted">Open a quiz to move it into a class</span>}
                   </div>
-                  {q.issues.length > 0 ? <Pill variant="warn">Has errors</Pill> : q.warnings.length > 0 ? <Pill variant="muted">Setting up</Pill> : <Pill variant="good">Ready</Pill>}
-                  <ChevronRight size={16} className="text-muted" />
-                </Link>
+                  <Card className="divide-y divide-hairline">
+                    {g.quizzes.map((q) => (
+                      <Link key={q.id} to={`/professor/quiz-grader/${q.id}`} className="px-4 py-3 flex items-center gap-3 hover:bg-surface-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-ink">{q.title}</p>
+                          <p className="text-xs text-muted">updated {ago(q.updatedAt)}</p>
+                          {q.issues.length > 0 && <p className="text-xs text-warn mt-1 flex gap-1"><CircleAlert size={13} className="shrink-0 mt-px" />{q.issues[0]}</p>}
+                        </div>
+                        {q.issues.length > 0 ? <Pill variant="warn">Has errors</Pill> : q.warnings.length > 0 ? <Pill variant="muted">Setting up</Pill> : <Pill variant="good">Ready</Pill>}
+                        <ChevronRight size={16} className="text-muted" />
+                      </Link>
+                    ))}
+                  </Card>
+                </section>
               ))}
-            </Card>
+            </div>
           )}
 
           <details className="group">
@@ -170,7 +153,6 @@ export default function QuizContentPage() {
             </p>
             <div className="flex flex-wrap gap-2 mb-6">
               <Button size="sm" onClick={() => fileInput.current?.click()}><FileUp size={13} />Import YAML</Button>
-              <Button size="sm" onClick={() => starter.mutate()} disabled={starter.isPending}><Package size={13} />Load glycolysis &amp; TCA examples</Button>
               <input
                 ref={fileInput}
                 type="file"
