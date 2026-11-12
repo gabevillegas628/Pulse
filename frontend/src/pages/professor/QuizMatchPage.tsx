@@ -99,11 +99,16 @@ export default function QuizMatchPage() {
 
       <Card className="p-4 mb-5 flex flex-wrap items-center gap-3">
         <label className="text-sm font-semibold text-ink" htmlFor="quiz-class">Class</label>
-        <select id="quiz-class" className="border border-hairline rounded-sm px-2 py-1.5 text-sm bg-surface min-w-56"
-          value={data.classId ?? ''} onChange={(e) => void setClass(e.target.value || null)}>
-          <option value="">Choose the class that took this quiz…</option>
-          {data.classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
+        {data.classId ? (
+          // A quiz belongs to its class; moving it is done from the quiz's Overview.
+          <span className="text-sm text-ink">{data.classes.find((c) => c.id === data.classId)?.name ?? 'This quiz’s class'}</span>
+        ) : (
+          <select id="quiz-class" className="border border-hairline rounded-sm px-2 py-1.5 text-sm bg-surface min-w-56"
+            value="" onChange={(e) => void setClass(e.target.value || null)}>
+            <option value="">Put this quiz in the class that took it…</option>
+            {data.classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        )}
         {data.classId && (
           <span className="text-sm text-muted">
             {data.roster.length} students{missing.length && matched ? ` · ${missing.length} without a paper yet` : ''}

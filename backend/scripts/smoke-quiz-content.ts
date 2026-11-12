@@ -60,15 +60,18 @@ function lineDiff(a: string, b: string) {
 async function main() {
   const hash = await bcrypt.hash(`pw-${RUN_ID}`, 4)
   const prof = await prisma.professor.create({ data: { email: `qc-${RUN_ID}@example.invalid`, name: `Smoke QC ${RUN_ID}`, passwordHash: hash } })
+  // Paper quizzes belong to a class.
+  const cls0 = await prisma.class.create({ data: { professorId: prof.id, name: 'Smoke C', joinCode: `C${RUN_ID}`.toUpperCase().slice(0, 12) } })
   const other = await prisma.professor.create({ data: { email: `qc2-${RUN_ID}@example.invalid`, name: `Smoke QC2 ${RUN_ID}`, passwordHash: hash } })
   const T = tokenFor(prof.id)
   const T2 = tokenFor(other.id)
   try {
     // Starter content
-    const starter = await http('POST', '/api/quiz-grader/starter', T)
-    check('starter content loads 6 files', starter.status === 200 && starter.body.data.added.length === 6, starter.body)
-    const again = await http('POST', '/api/quiz-grader/starter', T)
-    check('loading starter content twice skips what is there', again.body.data.added.length === 0 && again.body.data.skipped.length === 6)
+    const starter = await http('POST', '/api/quiz-grader/starter', T, { classId: cls0.id })
+    check('the examples load 2 quizzes into the class', starter.status === 200 && starter.body.data.added.length === 2, starter.body)
+    const again = await http('POST', '/api/quiz-grader/starter', T, { classId: cls0.id })
+    check('loading the examples twice skips what the class has', again.body.data.added.length === 0 && again.body.data.skipped.length === 2)
+    check('the examples need a class of your own', (await http('POST', '/api/quiz-grader/starter', T2, { classId: cls0.id })).status === 404)
 
     const list = await http('GET', '/api/quiz-grader/content', T)
     const items = list.body.data.items as { id: string; kind: string; slug: string; title: string; issues: string[]; warnings: string[] }[]
@@ -157,12 +160,13 @@ async function main() {
     check('only layouts take a PDF', keyPdf.status === 400)
 
     // Quizzes: a new one from a title, edited as one bundle
-    const made = await http('POST', '/api/quiz-grader/quizzes', T, { title: 'Mini quiz' })
+    check('a new quiz needs a class', (await http('POST', '/api/quiz-grader/quizzes', T, { title: 'Mini quiz' })).status === 400)
+    const made = await http('POST', '/api/quiz-grader/quizzes', T, { title: 'Mini quiz', classId: cls0.id })
     check('a new quiz is created from its title', made.status === 201, made.body)
     const qid = made.body.data.id as string
     const b0 = (await http('GET', `/api/quiz-grader/quizzes/${qid}`, T)).body.data
     check('a new quiz comes with an empty key and blank form', !!b0.key && !!b0.layout && b0.quiz.title === 'Mini quiz' && b0.quiz.issues.length === 0)
-    const qAgain = await http('POST', '/api/quiz-grader/quizzes', T, { title: 'Mini quiz' })
+    const qAgain = await http('POST', '/api/quiz-grader/quizzes', T, { title: 'Mini quiz', classId: cls0.id })
     const b1 = (await http('GET', `/api/quiz-grader/quizzes/${qAgain.body.data.id}`, T)).body.data
     check('a second quiz with the same title gets its own files', b1.quiz.slug === 'mini-quiz-2' && b1.key.slug === 'mini-quiz-2')
     await http('DELETE', `/api/quiz-grader/quizzes/${qAgain.body.data.id}`, T)
@@ -200,6 +204,37 @@ async function main() {
     const left = await prisma.quizContent.count({ where: { professorId: prof.id, slug: { startsWith: 'mini-quiz' } } })
     check('deleting a quiz removes its three files', qDel.status === 200 && left === 0)
 
+    // Classes: a class's quizzes, copying into another class, duplicating a class
+    const inClass = (await http('GET', `/api/quiz-grader/classes/${cls0.id}/quizzes`, T)).body.data
+    check("a class lists its quizzes", inClass.quizzes.length === 2 && inClass.unfiled.length === 0 && inClass.class.id === cls0.id, inClass)
+    check("another professor cannot list this class's quizzes", (await http('GET', `/api/quiz-grader/classes/${cls0.id}/quizzes`, T2)).status === 404)
+    const cls1 = await prisma.class.create({ data: { professorId: prof.id, name: 'Smoke C1', joinCode: `D${RUN_ID}`.toUpperCase().slice(0, 12) } })
+    const copied = await http('POST', `/api/quiz-grader/quizzes/${glyQuiz.id}/copy`, T, { classId: cls1.id })
+    check('a quiz copies into another class', copied.status === 201, copied.body)
+    const cb = (await http('GET', `/api/quiz-grader/quizzes/${copied.body.data.id}`, T)).body.data
+    check('the copy has fresh names, points at its own key and boxes, and keeps the blank form',
+      cb.quiz.slug === 'glycolysis-quiz-2' && cb.key?.slug === 'glycolysis-2' && cb.layout?.slug === 'glycolysis-template-v1-2'
+      && cb.quiz.data.key === 'glycolysis-2' && cb.layout.hasPdf && cb.class?.id === cls1.id && cb.quiz.issues.length === 0, { q: cb.quiz.slug, k: cb.key?.slug, l: cb.layout?.slug })
+    const origKey = (await http('GET', `/api/quiz-grader/content/${keyItem.id}`, T)).body.data.source as string
+    check('only the naming line of the copied key changed', (() => {
+      const x = origKey.split('\n'), y = (cb.key.source as string).split('\n')
+      const diff = x.map((l, i) => (l === y[i] ? null : i)).filter((i) => i !== null)
+      return x.length === y.length && diff.length === 1 && y[diff[0]!] === 'pathway: glycolysis-2'
+    })())
+    check("a quiz cannot be copied into another professor's class", (await http('POST', `/api/quiz-grader/quizzes/${glyQuiz.id}/copy`, T2, { classId: cls1.id })).status === 404)
+    const dupRes = await http('POST', `/api/classes/${cls0.id}/duplicate`, T, { name: 'Smoke C dup' })
+    const dupId = dupRes.body.data?.class?.id as string
+    const inDup = dupId ? (await http('GET', `/api/quiz-grader/classes/${dupId}/quizzes`, T)).body.data : null
+    check('duplicating a class copies its paper quizzes (not their scans)', dupRes.status === 201 && dupRes.body.data.quizzesCopied === inClass.quizzes.length
+      && inDup?.quizzes.length === inClass.quizzes.length && inDup.quizzes.every((q: { papers: number }) => q.papers === 0), dupRes.body)
+    const unfiledQuiz = await prisma.quizContent.update({ where: { id: tcaQuiz.id }, data: { classId: null } })
+    check('a quiz in no class shows as one to move in', (await http('GET', `/api/quiz-grader/classes/${cls1.id}/quizzes`, T)).body.data.unfiled.some((q: { id: string }) => q.id === unfiledQuiz.id))
+    const beforeMove = await prisma.quizContent.findUniqueOrThrow({ where: { id: tcaQuiz.id }, select: { updatedAt: true } })
+    await http('PUT', `/api/quiz-grader/content/${tcaQuiz.id}/class`, T, { classId: cls1.id })
+    const afterMove = await prisma.quizContent.findUniqueOrThrow({ where: { id: tcaQuiz.id }, select: { updatedAt: true } })
+    check('moving a quiz does not make an open quiz page stale', beforeMove.updatedAt.getTime() === afterMove.updatedAt.getTime())
+    check('moving it in files it there', (await http('GET', `/api/quiz-grader/classes/${cls1.id}/quizzes`, T)).body.data.quizzes.some((q: { id: string }) => q.id === tcaQuiz.id))
+
     // Ownership
     const theirs = await http('GET', `/api/quiz-grader/content/${keyItem.id}`, T2)
     check("another professor cannot open this professor's key", theirs.status === 404)
@@ -207,6 +242,7 @@ async function main() {
     check("another professor's list is empty", theirList.body.data.items.length === 0)
   } finally {
     await prisma.quizContent.deleteMany({ where: { professorId: { in: [prof.id, other.id] } } })
+    await prisma.class.deleteMany({ where: { professorId: { in: [prof.id, other.id] } } })
     await prisma.professor.deleteMany({ where: { id: { in: [prof.id, other.id] } } })
     await prisma.$disconnect()
   }

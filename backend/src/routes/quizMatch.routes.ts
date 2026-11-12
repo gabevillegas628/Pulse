@@ -22,7 +22,7 @@ const viewer = (req: Request) => (req as ProfessorRequest).professor
 async function ownedQuiz(req: Request) {
   const q = await prisma.quizContent.findFirst({
     where: { id: p(req.params.id), ...ownedQuizContent(viewer(req)), kind: 'ASSESSMENT' },
-    select: { id: true, slug: true, source: true, professorId: true, classId: true },
+    select: { id: true, slug: true, source: true, professorId: true, classId: true, updatedAt: true },
   })
   if (!q) throw new AppError('Not found', 404)
   return q
@@ -104,7 +104,7 @@ router.put('/quiz-grader/content/:id/class', requireProfessor, async (req: Reque
     }
     // Not through the YAML: the class is not part of the quiz's files, and updatedAt is the
     // files' edit guard, so it is left alone.
-    await prisma.quizContent.update({ where: { id: quiz.id }, data: { classId } })
+    await prisma.quizContent.update({ where: { id: quiz.id }, data: { classId, updatedAt: quiz.updatedAt } })
     res.json({ success: true, data: { classId, roster: await roster(classId) } })
   } catch (err) {
     next(err)

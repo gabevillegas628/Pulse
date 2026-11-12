@@ -65,6 +65,8 @@ async function main() {
   if (!FIX) throw new Error('Set QUIZ_FIXTURES to a directory made by vision/make_fixtures.py')
   const hash = await bcrypt.hash(`pw-${RUN_ID}`, 4)
   const prof = await prisma.professor.create({ data: { email: `qs-${RUN_ID}@example.invalid`, name: `Smoke QS ${RUN_ID}`, passwordHash: hash } })
+  // Paper quizzes belong to a class.
+  const cls0 = await prisma.class.create({ data: { professorId: prof.id, name: 'Smoke S', joinCode: `S${RUN_ID}`.toUpperCase().slice(0, 12) } })
   const other = await prisma.professor.create({ data: { email: `qs2-${RUN_ID}@example.invalid`, name: `Smoke QS2 ${RUN_ID}`, passwordHash: hash } })
   const T = tokenFor(prof.id)
   const T2 = tokenFor(other.id)
@@ -73,7 +75,7 @@ async function main() {
     const v = await api('GET', '/api/quiz-grader/vision', T)
     check('the server reports the vision service as set up and answering', v.body.data.configured && v.body.data.healthy, v.body)
 
-    await api('POST', '/api/quiz-grader/starter', T)
+    await api('POST', '/api/quiz-grader/starter', T, { classId: cls0.id })
     const items = (await api('GET', '/api/quiz-grader/content', T)).body.data.items as { id: string; slug: string; kind: string }[]
     const quiz = items.find((i) => i.slug === 'glycolysis-quiz')!
     const key = items.find((i) => i.kind === 'KEY')!
@@ -146,6 +148,7 @@ async function main() {
     for (const id of batchIds) fs.rmSync(path.join(SCAN_ROOT, id), { recursive: true, force: true })
     await prisma.quizBatch.deleteMany({ where: { professorId: { in: [prof.id, other.id] } } })
     await prisma.quizContent.deleteMany({ where: { professorId: { in: [prof.id, other.id] } } })
+    await prisma.class.deleteMany({ where: { professorId: { in: [prof.id, other.id] } } })
     await prisma.professor.deleteMany({ where: { id: { in: [prof.id, other.id] } } })
     await prisma.$disconnect()
   }

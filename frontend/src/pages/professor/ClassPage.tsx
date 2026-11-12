@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useParams, useNavigate } from 'react-router-dom'
+import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -24,6 +24,7 @@ import StudentReportPanel from '@/components/StudentReportPanel'
 import { apiError } from '@/lib/errors'
 import { downloadCsv } from '@/lib/downloadCsv'
 import { statusPill } from '@/lib/status'
+import ClassPaperQuizzes from '@/components/quizGrader/ClassPaperQuizzes'
 
 
 interface Assignment {
@@ -64,6 +65,7 @@ interface Section {
 const CLASS_TABS = [
   { key: 'sessions',     label: 'Class Sessions' },
   { key: 'assignments',  label: 'Assignments' },
+  { key: 'papers',       label: 'Paper Quizzes' },
   { key: 'grades',       label: 'Grades' },
   { key: 'roster',       label: 'Roster' },
   { key: 'textbook',     label: 'Textbook' },
@@ -73,7 +75,11 @@ export default function ClassPage() {
   const { classId } = useParams<{ classId: string }>()
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const [tab, setTab] = useState<'sessions' | 'assignments' | 'roster' | 'textbook' | 'grades'>('sessions')
+  type ClassTab = 'sessions' | 'assignments' | 'papers' | 'roster' | 'textbook' | 'grades'
+  // The tab is in the URL (?tab=papers), so a paper quiz's back link lands on its tab.
+  const [params, setParams] = useSearchParams()
+  const tab = (CLASS_TABS.some((t) => t.key === params.get('tab')) ? params.get('tab') : 'sessions') as ClassTab
+  const setTab = (t: ClassTab) => setParams((p) => { p.set('tab', t); return p }, { replace: true })
   const [showTextbookSettings, setShowTextbookSettings] = useState(false)
   const [tbRepo, setTbRepo] = useState('')
   const [tbPath, setTbPath] = useState('')
@@ -685,6 +691,8 @@ export default function ClassPage() {
       )}
 
       {/* Grades tab */}
+      {tab === 'papers' && classId && <ClassPaperQuizzes classId={classId} />}
+
       {tab === 'grades' && (
         !gradebookData ? (
           <Empty message="Loading grades…" />
@@ -1020,6 +1028,7 @@ export default function ClassPage() {
             </div>
 
             <form onSubmit={submitDuplicate} className="space-y-4">
+              <p className="text-sm text-muted">Sessions, assignments and paper quizzes are copied. Paper quizzes come as their setup (answer key, boxes, blank form), without scans or grades.</p>
               <div>
                 <label className="block text-sm font-medium text-ink-2 mb-1">Class name</label>
                 <input

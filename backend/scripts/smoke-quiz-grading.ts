@@ -57,12 +57,14 @@ async function until(what: string, fn: () => Promise<boolean>, secs = 240): Prom
 
 async function main() {
   const prof = await prisma.professor.create({ data: { email: `qg-${RUN_ID}@example.invalid`, name: `Smoke QG ${RUN_ID}`, passwordHash: await bcrypt.hash('x', 4) } })
+  // Paper quizzes belong to a class.
+  const cls0 = await prisma.class.create({ data: { professorId: prof.id, name: 'Smoke G', joinCode: `G${RUN_ID}`.toUpperCase().slice(0, 12) } })
   const T = jwt.sign({ sub: prof.id, role: 'professor' }, config.jwtSecret, { expiresIn: '1h' })
   let batchId = ''
   try {
     const v = await api('GET', '/api/quiz-grader/vision', T)
     check('the server reports grading as set up', v.body.data.grading === true, v.body)
-    await api('POST', '/api/quiz-grader/starter', T)
+    await api('POST', '/api/quiz-grader/starter', T, { classId: cls0.id })
     const items = (await api('GET', '/api/quiz-grader/content', T)).body.data.items as { id: string; slug: string; kind: string }[]
     const quiz = items.find((i) => i.slug === 'glycolysis-quiz')!
     const key = items.find((i) => i.kind === 'KEY' && i.slug === 'glycolysis')!
@@ -157,6 +159,7 @@ async function main() {
     if (batchId) fs.rmSync(path.join(SCAN_ROOT, batchId), { recursive: true, force: true })
     await prisma.quizBatch.deleteMany({ where: { professorId: prof.id } })
     await prisma.quizContent.deleteMany({ where: { professorId: prof.id } })
+    await prisma.class.deleteMany({ where: { professorId: prof.id } })
     await prisma.professor.delete({ where: { id: prof.id } })
     await prisma.$disconnect()
   }

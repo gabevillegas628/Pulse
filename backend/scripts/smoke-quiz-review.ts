@@ -47,12 +47,14 @@ async function until(what: string, fn: () => Promise<boolean>, secs = 240) {
 async function main() {
   const hash = await bcrypt.hash('x', 4)
   const prof = await prisma.professor.create({ data: { email: `qr-${RUN_ID}@example.invalid`, name: `Smoke Reviewer ${RUN_ID}`, passwordHash: hash } })
+  // Paper quizzes belong to a class.
+  const cls0 = await prisma.class.create({ data: { professorId: prof.id, name: 'Smoke R', joinCode: `R${RUN_ID}`.toUpperCase().slice(0, 12) } })
   const other = await prisma.professor.create({ data: { email: `qr2-${RUN_ID}@example.invalid`, name: `Smoke QR2 ${RUN_ID}`, passwordHash: hash } })
   const T = jwt.sign({ sub: prof.id, role: 'professor' }, config.jwtSecret, { expiresIn: '1h' })
   const T2 = jwt.sign({ sub: other.id, role: 'professor' }, config.jwtSecret, { expiresIn: '1h' })
   const batches: string[] = []
   try {
-    await api('POST', '/api/quiz-grader/starter', T)
+    await api('POST', '/api/quiz-grader/starter', T, { classId: cls0.id })
     const items = (await api('GET', '/api/quiz-grader/content', T)).body.data.items as { id: string; slug: string; kind: string }[]
     const quiz = items.find((i) => i.slug === 'glycolysis-quiz')!
     const key = items.find((i) => i.kind === 'KEY' && i.slug === 'glycolysis')!
@@ -169,7 +171,7 @@ async function main() {
     })))
     try {
       const m0 = (await api('GET', `/api/quiz-grader/content/${quiz.id}/match`, T)).body.data
-      check('matching lists every paper with its name and NetID boxes', m0.pages.length === 6 && m0.classId === null
+      check('matching lists every paper with its name and NetID boxes', m0.pages.length === 6 && m0.classId === cls0.id
         && m0.pages.some((pg: { nameBox: string | null; netidBox: string | null }) => pg.nameBox === 'name' && pg.netidBox === 'netid'), m0.pages[0])
       const setCls = await api('PUT', `/api/quiz-grader/content/${quiz.id}/class`, T, { classId: cls.id })
       check('linking the quiz to a class returns its roster', setCls.status === 200 && setCls.body.data.roster.length === 3)
@@ -211,6 +213,7 @@ async function main() {
     for (const id of batches) fs.rmSync(path.join(SCAN_ROOT, id), { recursive: true, force: true })
     await prisma.quizBatch.deleteMany({ where: { professorId: { in: [prof.id, other.id] } } })
     await prisma.quizContent.deleteMany({ where: { professorId: { in: [prof.id, other.id] } } })
+    await prisma.class.deleteMany({ where: { professorId: { in: [prof.id, other.id] } } })
     await prisma.professor.deleteMany({ where: { id: { in: [prof.id, other.id] } } })
     await prisma.$disconnect()
   }

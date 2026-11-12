@@ -317,6 +317,24 @@ still to review, version, upload, page and a note (not matched, not on the roste
 not graded, review not finished), then each roster student with no paper. Cells are guarded
 against spreadsheet formulas. Not connected to the Pulse gradebook yet.
 
+## Quizzes belong to classes
+
+A paper quiz belongs to one class (`QuizContent.classId` on its settings file), like a
+session or an assignment. It is made and run from the class page's **Paper Quizzes** tab,
+and its papers are matched against that class's roster. **Paper quizzes**
+(`/professor/quiz-grader`) is now an overview by class, with the YAML import and export.
+
+- **New quiz** and **Add glycolysis & TCA examples** create quizzes in the class.
+- **Copy setup there** (quiz Overview, or "Copy a quiz from another class" on the tab) and
+  **Duplicate class** copy a quiz's answer key, boxes, blank form and settings, never its
+  scans or grades (`quizGrader/copy.ts`). File names are unique per professor, so a copy
+  gets fresh ones (`glycolysis-quiz-2`) and its settings are re-pointed at its own key and
+  boxes through `patchYaml`: only the naming lines change.
+- **Move there** moves a quiz with its scans and grades. Quizzes made before this change
+  show on every class tab under "Not in any class yet", one click to move in.
+- Moving a quiz or uploading its blank form keeps the files' `updatedAt`, which only guards
+  edits to their text.
+
 ## Changes from the handoff
 
 - **Seed YAML bug fixed.** Names containing a comma (`1,3-bisphosphoglycerate`,
