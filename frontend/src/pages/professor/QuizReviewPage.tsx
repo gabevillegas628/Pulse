@@ -93,9 +93,12 @@ export default function QuizReviewPage() {
   }, [summary])
 
   /** Every open answer in this box keeps its automatic score: one decision per group (structures: per paper). */
-  async function keepAll(it: Item) {
+  async function keepAll(shown: Item) {
     setError('')
     try {
+      // Fresh from the server, not the list as last loaded: a decision saved a moment ago
+      // must never be overwritten by an automatic score because the page had not caught up.
+      const it = (await api.get(`/quiz-grader/content/${id}/review/${shown.slotId}`)).data.data as Item
       if (it.kind === 'structure') {
         for (const m of it.groups.flatMap((g) => g.members).filter((m) => m.open)) {
           await api.post(`/quiz-grader/pages/${m.pageId}/boxes/${it.slotId}`, { points: m.pointsAuto })
