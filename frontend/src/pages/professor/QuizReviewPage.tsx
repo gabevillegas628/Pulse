@@ -213,7 +213,9 @@ function GroupList({ item, onGroup, onPaper }: {
       {here.map((g) => g.open === 0 && g.decision
         ? <DecidedRow key={g.key} text={readingOf(g, item.kind)} count={g.count} points={g.decision.points} max={item.maxPoints}
             onUndo={() => void onGroup(g, null)} />
-        : <GroupCard key={g.key} g={g} item={item} onGroup={onGroup} onPaper={onPaper} onDecided={() => setRecent((r) => new Set(r).add(g.key))} />)}
+        : <GroupCard key={g.key} g={g} item={item} onGroup={onGroup} onDecided={() => setRecent((r) => new Set(r).add(g.key))}
+            // A paper decided alone keeps its group in view too, so the decision stays visible.
+            onPaper={async (m, points) => { await onPaper(m, points); setRecent((r) => new Set(r).add(g.key)) }} />)}
       {open.length === 0 && <p className="text-sm text-good">Every flagged answer in this box is decided.</p>}
       {rest.length > 0 && (
         <button className="text-sm text-signal hover:underline" onClick={() => setShowDone((v) => !v)}>
@@ -263,8 +265,9 @@ function GroupCard({ g, item, onGroup, onPaper, onDecided }: {
   const inexact = (item.kind === 'enzyme' || item.kind === 'name') && first.status === 'read' && first.detail.match?.verdict !== 'exact'
   // Flagged papers first, then the rest of the group: the same reading, shown so a glance
   // confirms they really say the same thing.
-  const flagged = g.members.filter((m) => m.open)
-  const others = g.members.filter((m) => !m.open)
+  // Papers you decided alone stay up here with the flagged ones, not among the faded rest.
+  const flagged = g.members.filter((m) => m.open || m.source === 'paper')
+  const others = g.members.filter((m) => !m.open && m.source !== 'paper')
   const shownOthers = more ? others : others.slice(0, Math.max(0, 8 - flagged.length))
   const all = g.count > 1 ? ` for all ${g.count}` : ''
   // Every reason any open paper in the group was flagged for, once each.
@@ -290,6 +293,7 @@ function GroupCard({ g, item, onGroup, onPaper, onDecided }: {
         </div>
         {g.decision ? <Pill variant="good">Decided{all}: {g.decision.points}</Pill>
           : g.open > 0 ? <Pill variant="warn">{g.open === g.count ? (g.count === 1 ? 'Flagged' : `All ${g.count} flagged`) : `${g.open} of ${g.count} flagged`}</Pill>
+          : g.members.some((m) => m.source === 'paper') ? <Pill variant="good">Decided paper by paper</Pill>
           : <Pill variant="muted">Automatic</Pill>}
       </div>
       {g.open > 0 && reasons.length > 0 && (
@@ -355,6 +359,9 @@ function PaperThumb({ m, slotId, max, onPaper, flagged }: { m: Member; slotId: s
         title={`Page ${m.index + 1}: ${m.points}/${max}${m.source === 'paper' ? ' (decided for this paper)' : ''}${m.open && m.reviewReasons[0] ? ` · flagged: ${explainReason(m.reviewReasons[0])}` : ''} · click to enlarge`}>
         <AuthImage src={src} alt={`Page ${m.index + 1}`} />
         <span className="absolute bottom-0 left-0 text-[10px] bg-surface/90 px-1 text-muted">p{m.index + 1}</span>
+        {m.source === 'paper' && (
+          <span className="absolute top-0 left-0 text-[11px] font-semibold bg-signal text-white px-1.5 py-0.5">your call: {m.points}</span>
+        )}
         <span className="absolute bottom-0 right-0 text-[11px] font-semibold bg-surface/90 px-1">{m.points}</span>
       </button>
       {open && (
