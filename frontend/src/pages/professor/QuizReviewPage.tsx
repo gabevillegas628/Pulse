@@ -201,11 +201,19 @@ function GroupList({ item, onGroup, onPaper }: {
   onPaper: (m: Member, points: number | null) => Promise<void>
 }) {
   const [showDone, setShowDone] = useState(false)
+  // Groups decided while this box is open stay where they were, collapsed, so their
+  // decision can be seen and undone. Cleared on moving to another box.
+  const [recent, setRecent] = useState<Set<string>>(new Set())
+  useEffect(() => { setRecent(new Set()); setShowDone(false) }, [item.slotId])
+  const here = item.groups.filter((g) => g.open > 0 || recent.has(g.key))
   const open = item.groups.filter((g) => g.open > 0)
-  const rest = item.groups.filter((g) => g.open === 0)
+  const rest = item.groups.filter((g) => g.open === 0 && !recent.has(g.key))
   return (
     <div className="space-y-3">
-      {open.map((g) => <GroupCard key={g.key} g={g} item={item} onGroup={onGroup} onPaper={onPaper} />)}
+      {here.map((g) => g.open === 0 && g.decision
+        ? <DecidedRow key={g.key} text={readingOf(g, item.kind)} count={g.count} points={g.decision.points} max={item.maxPoints}
+            onUndo={() => void onGroup(g, null)} />
+        : <GroupCard key={g.key} g={g} item={item} onGroup={onGroup} onPaper={onPaper} onDecided={() => setRecent((r) => new Set(r).add(g.key))} />)}
       {open.length === 0 && <p className="text-sm text-good">Every flagged answer in this box is decided.</p>}
       {rest.length > 0 && (
         <button className="text-sm text-signal hover:underline" onClick={() => setShowDone((v) => !v)}>
@@ -217,9 +225,33 @@ function GroupList({ item, onGroup, onPaper }: {
   )
 }
 
-function GroupCard({ g, item, onGroup, onPaper }: {
+const CORRECT = '!border-good !text-good hover:!bg-good-soft'
+const WRONG = '!border-signal !text-signal hover:!bg-signal-soft'
+
+/** The tag on the button that matches the automatic score. */
+function AsScored() {
+  return <span className="ml-1 text-[10px] font-normal uppercase tracking-wide opacity-70">as scored</span>
+}
+
+/** A group or drawing decided while this box is open: kept in place, one line, undoable. */
+function DecidedRow({ text, count, points, max, onUndo }: { text: string; count?: number; points: number; max: number; onUndo: () => void }) {
+  const verdict = points === max ? `Correct (${points})` : points === 0 ? 'Wrong (0)' : `${points} of ${max}`
+  return (
+    <Card flat className="px-4 py-2.5 flex flex-wrap items-center gap-3 text-sm">
+      <Check size={15} className="text-good shrink-0" />
+      <span className="flex-1 min-w-0 text-ink-2 truncate">
+        <span className="font-semibold text-ink">Decided: {verdict}</span>
+        {count && count > 1 ? ` for all ${count}` : ''} · {text}
+      </span>
+      <Button size="sm" onClick={onUndo}><RotateCcw size={13} />Undo</Button>
+    </Card>
+  )
+}
+
+function GroupCard({ g, item, onGroup, onPaper, onDecided }: {
   g: Group
   item: Item
+  onDecided?: () => void
   onGroup: (g: Group, points: number | null, addAlias?: string) => Promise<void>
   onPaper: (m: Member, points: number | null) => Promise<void>
 }) {
@@ -240,7 +272,10 @@ function GroupCard({ g, item, onGroup, onPaper }: {
   const keep = !g.decision && autoPoints.length === 1 ? autoPoints[0]! : null
   const act = async (points: number | null, withAlias = false) => {
     setBusy(true)
-    try { await onGroup(g, points, withAlias ? g.sample : undefined) } finally { setBusy(false) }
+    try {
+      await onGroup(g, points, withAlias ? g.sample : undefined)
+      if (points !== null) onDecided?.()
+    } finally { setBusy(false) }
   }
   return (
     <Card className={cn('p-4', g.open > 0 && 'ring-1 ring-warn/40')}>
@@ -285,13 +320,19 @@ function GroupCard({ g, item, onGroup, onPaper }: {
       </p>
 
       <div className="flex flex-wrap items-center gap-2">
-        {keep !== null && (
-          <Button size="sm" variant="primary" disabled={busy} onClick={() => void act(keep, alias && keep === item.maxPoints)} title="Agree with the automatic score">
+        {/* Always in this order, whatever was scored: Correct, Wrong, then Keep for a
+            partial score. The one matching the automatic score is tagged, never moved. */}
+        <Button size="sm" disabled={busy} onClick={() => void act(item.maxPoints, alias)} className={CORRECT}>
+          <Check size={13} />Correct ({item.maxPoints}){all}{keep === item.maxPoints && <AsScored />}
+        </Button>
+        <Button size="sm" disabled={busy} onClick={() => void act(0)} className={WRONG}>
+          <X size={13} />Wrong (0){all}{keep === 0 && <AsScored />}
+        </Button>
+        {keep !== null && keep !== 0 && keep !== item.maxPoints && (
+          <Button size="sm" disabled={busy} onClick={() => void act(keep)} title="Agree with the automatic partial score">
             <CheckCheck size={13} />Keep {keep}{all}
           </Button>
         )}
-        {keep !== item.maxPoints && <Button size="sm" variant={keep === null ? 'primary' : 'ghost'} disabled={busy} onClick={() => void act(item.maxPoints, alias)}><Check size={13} />Correct ({item.maxPoints}){all}</Button>}
-        {keep !== 0 && <Button size="sm" disabled={busy} onClick={() => void act(0)}><X size={13} />Wrong (0){all}</Button>}
         {g.decision && <Button size="sm" disabled={busy} onClick={() => void act(null)}><RotateCcw size={13} />Undo decision</Button>}
         {inexact && (
           <label className="text-xs text-ink-2 flex items-center gap-1.5 ml-1">
@@ -327,7 +368,7 @@ function PaperThumb({ m, slotId, max, onPaper, flagged }: { m: Member; slotId: s
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-muted">Decide this paper alone:</span>
               {[...new Set([max, 0])].map((v) => (
-                <Button key={v} size="sm" onClick={() => { setOpen(false); void onPaper(m, v) }}>{v === max ? `Correct (${max})` : 'Wrong (0)'}</Button>
+                <Button key={v} size="sm" className={v === max ? CORRECT : WRONG} onClick={() => { setOpen(false); void onPaper(m, v) }}>{v === max ? `Correct (${max})` : 'Wrong (0)'}</Button>
               ))}
               {m.source === 'paper' && <Button size="sm" onClick={() => { setOpen(false); void onPaper(m, null) }}>Undo</Button>}
             </div>
@@ -362,14 +403,23 @@ function StructureList({ item, onDecide }: { item: Item; onDecide: (m: Member, p
   const papers = item.groups.flatMap((g) => g.members)
   const open = papers.filter((m) => m.open)
   const [showDone, setShowDone] = useState(false)
-  const done = papers.filter((m) => !m.open)
+  const [recent, setRecent] = useState<Set<string>>(new Set())
+  useEffect(() => { setRecent(new Set()); setShowDone(false) }, [item.slotId])
+  const here = papers.filter((m) => m.open || recent.has(m.pageId))
+  const done = papers.filter((m) => !m.open && !recent.has(m.pageId))
+  const decide = async (m: Member, points: number | null, features?: boolean[]) => {
+    await onDecide(m, points, features)
+    if (points !== null) setRecent((r) => new Set(r).add(m.pageId))
+  }
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted">Check what the drawing shows. The model&rsquo;s answers are filled in; the points follow from the key&rsquo;s rules.</p>
-      {open.map((m) => <StructureCard key={m.pageId} m={m} item={item} onDecide={onDecide} />)}
+      {here.map((m) => !m.open && m.source === 'paper'
+        ? <DecidedRow key={m.pageId} text={`Page ${m.index + 1}`} points={m.points} max={item.maxPoints} onUndo={() => void onDecide(m, null)} />
+        : <StructureCard key={m.pageId} m={m} item={item} onDecide={decide} />)}
       {open.length === 0 && <p className="text-sm text-good">Every drawing in this box is decided.</p>}
       {done.length > 0 && <button className="text-sm text-signal hover:underline" onClick={() => setShowDone((v) => !v)}>{showDone ? 'Hide' : 'Show'} {done.length} decided</button>}
-      {showDone && done.map((m) => <StructureCard key={m.pageId} m={m} item={item} onDecide={onDecide} />)}
+      {showDone && done.map((m) => <StructureCard key={m.pageId} m={m} item={item} onDecide={decide} />)}
     </div>
   )
 }
