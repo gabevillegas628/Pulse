@@ -9,6 +9,7 @@ import {
   type CofactorResult,
   type TextMatch,
   matchText,
+  normalize,
   reviewReasons,
   roundPoints,
   scoreCofactors,
@@ -30,12 +31,43 @@ export interface SlotResult {
   cofactorResult?: CofactorResult
   description?: string
   features?: { feature: string; present: boolean; confidence: number }[]
+  /** A stronger model's blind second reading, when the first was unsure or a near miss. */
+  secondLook?: { transcription: string; status: TextRead['status']; confidence: number; agrees: boolean }
   confidence: number
   pointsAuto: number
   maxPoints: number
   needsReview: boolean
   reviewReasons: string[]
 }
+
+/**
+ * How far a reading can be from an accepted answer and still earn a second look: about a
+ * third of the letters, past the fuzzy band (0.2). "Endase" for "enolase" (0.29) gets one;
+ * "aldolase" (0.38) and "hexokinase" (0.5) do not, and score 0 without a look. A real
+ * mistake that does get one costs a cent and no flag: both readers agree on it.
+ */
+export const SECOND_LOOK_DISTANCE = 0.34
+
+const acceptFor = (g: GradedSlot): string[] =>
+  g.ref.kind === 'enzyme' ? g.ref.step.enzyme.accept : g.ref.kind === 'name' ? acceptedNames(g.ref.intermediate) : []
+
+/**
+ * Whether an enzyme or name reading deserves a second, blind look by a stronger model:
+ * illegible, unsure, or a near miss of an accepted answer. A near miss counts whatever
+ * the model's confidence, because a reader is often sure of its own misreads.
+ */
+export function wantsSecondLook(g: GradedSlot, read: TextRead | undefined, opts: GradeOptions = {}): boolean {
+  if (!read || (g.ref.kind !== 'enzyme' && g.ref.kind !== 'name')) return false
+  if (read.status === 'illegible') return true
+  if (read.status !== 'read') return false
+  if (read.confidence < (opts.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD)) return true
+  const m = matchText(read.transcription, acceptFor(g), opts.fuzzyThreshold ?? DEFAULT_FUZZY_THRESHOLD)
+  return m.verdict !== 'exact' && m.distance <= SECOND_LOOK_DISTANCE
+}
+
+/** The second look's reading, as a review reason (the review page explains it). */
+const secondLookReason = (second: TextRead) =>
+  second.status === 'read' ? `second look: "${second.transcription}"` : `second look: ${second.status}`
 
 /** An intermediate's accepted names: its display name, then the key's aliases. */
 export function acceptedNames(it: { name: string; accept?: string[] }): string[] {
@@ -56,6 +88,8 @@ export function gradePage(
   textReads: Map<string, TextRead>,
   structureReads: Map<string, StructureRead>,
   opts: GradeOptions = {},
+  /** Second, blind readings of near misses and unsure answers, by slot id. */
+  secondReads: Map<string, TextRead> = new Map(),
 ): SlotResult[] {
   const fuzzy = opts.fuzzyThreshold ?? DEFAULT_FUZZY_THRESHOLD
   const confT = opts.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD
@@ -103,9 +137,11 @@ export function gradePage(
       // cofactor ends): still worth a glance, since a miss silently scores 0.
       // Not for intermediate names: they sit beside the drawings, so a name box nearly
       // always has ink, and an unnamed intermediate would be flagged on every paper.
+      const second = secondReads.get(g.slot.id)
       const reasons = read.status === 'illegible'
         ? reviewReasons(g.review, { confidence: 0, illegible: true }, confT)
         : g.ref.kind === 'name' ? [] : reviewReasons(g.review, { confidence: 1, missedInk: true }, confT)
+      if (second?.status === 'read' && g.review !== 'never') reasons.push(secondLookReason(second))
       return finish({
         status: read.status,
         ...(read.status === 'blank' ? { blankBy: 'model' as const } : {}),
@@ -116,8 +152,20 @@ export function gradePage(
     }
 
     if (g.ref.kind === 'enzyme' || g.ref.kind === 'name') {
-      const accept = g.ref.kind === 'enzyme' ? g.ref.step.enzyme.accept : acceptedNames(g.ref.intermediate)
-      const match = matchText(read.transcription, accept, fuzzy)
+      const match = matchText(read.transcription, acceptFor(g), fuzzy)
+      // A second look either confirms the first reading (the same words, so the answer
+      // stands: a real misspelling or a wrong answer, no flag for being close), or
+      // disagrees (then a person decides, seeing both readings).
+      const second = secondReads.get(g.slot.id)
+      const agree = second?.status === 'read' && normalize(second.transcription) === normalize(read.transcription)
+      const reasons = reviewReasons(g.review, {
+        confidence: agree ? Math.max(read.confidence, second!.confidence) : read.confidence,
+        nearThreshold: agree ? false : match.nearThreshold,
+        inexact: match.verdict === 'fuzzy' ? match.alias : undefined,
+      }, confT)
+      // Two different spellings that are both accepted answers score the same: nothing to decide.
+      const bothAccepted = second?.status === 'read' && match.verdict === 'exact' && matchText(second.transcription, acceptFor(g), fuzzy).verdict === 'exact'
+      if (second && !agree && !bothAccepted && g.review !== 'never') reasons.push(secondLookReason(second))
       return finish(
         {
           status: 'read',
@@ -125,12 +173,9 @@ export function gradePage(
           match,
           confidence: read.confidence,
           pointsAuto: match.verdict === 'wrong' ? 0 : g.maxPoints,
+          ...(second ? { secondLook: { transcription: second.transcription, status: second.status, confidence: second.confidence, agrees: agree } } : {}),
         },
-        reviewReasons(g.review, {
-          confidence: read.confidence,
-          nearThreshold: match.nearThreshold,
-          inexact: match.verdict === 'fuzzy' ? match.alias : undefined,
-        }, confT),
+        reasons,
       )
     }
 

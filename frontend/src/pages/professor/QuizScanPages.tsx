@@ -320,6 +320,12 @@ export function QuizPageDebug() {
                           ) : s.blank ? <span className="text-muted">empty</span> : <span className="text-muted">{['name', 'netid'].includes(s.id) ? 'not sent' : ''}</span>}
                         </div>
                         {r && <p className="text-ink-2 break-words">{describeRead(r)}</p>}
+                        {r?.detail.secondLook && (
+                          <p className={cn('break-words', r.detail.secondLook.agrees ? 'text-muted' : 'text-warn')}>
+                            second look: {r.detail.secondLook.status === 'read' ? `“${r.detail.secondLook.transcription}”` : r.detail.secondLook.status}
+                            {r.detail.secondLook.agrees ? ' (agrees)' : ''}
+                          </p>
+                        )}
                         {r?.detail.match && r.detail.match.verdict !== 'exact' && (
                           <p className="text-muted">closest: {r.detail.match.alias}</p>
                         )}

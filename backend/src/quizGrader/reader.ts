@@ -23,6 +23,8 @@ export const PROMPT_VERSION = 'qg-read-v1'
 
 export const DEFAULT_MODEL_TEXT = 'claude-haiku-5-5'
 export const DEFAULT_MODEL_STRUCTURE = 'claude-sonnet-5-5'
+/** The stronger reader for a second look at near misses and unsure readings. */
+export const DEFAULT_MODEL_SECOND_LOOK = 'claude-sonnet-5-5'
 
 export interface Region {
   id: string
@@ -120,6 +122,29 @@ Rules:
 - status "blank" if nothing is drawn, "illegible" if something is drawn but cannot be interpreted, otherwise "read".
 - Return exactly one entry per slot id listed, with one feature answer per numbered feature, using the feature's index.`
 
+/**
+ * The second look is blind: no expected answer, no first reading. A reader told what the
+ * answer might be tends to see it, which would defeat a second opinion. Code compares
+ * the two readings afterwards.
+ */
+const SECOND_LOOK_RULES = `You are transcribing a student's handwritten answer on a printed biochemistry quiz, letter by letter. You do not grade anything, and you are not told the correct answer.
+
+Rules:
+- Read each letter carefully, as written. Letters in handwriting often touch or crowd together (an "o" and an "l" can look like a "d"; "rn" can look like "m"); look closely at the strokes before deciding.
+- Transcribe exactly what is written, including misspellings, abbreviations and odd capitalisation. Do not correct anything.
+- Ignore the printed form (lines, arrows, stars, labels), anything crossed out, and anything that is not the slot described (the crop may include neighbouring answers or cofactors at an arrow).
+- status "blank" if nothing is written for the slot, "illegible" if something is written but you cannot read it, otherwise "read".
+- Leave the cofactors list empty for every slot.
+- confidence is your probability (0 to 1) that the transcription is exactly right, letter for letter.
+- Return exactly one entry per slot id listed.`
+
+function describeSecondLookSlot(key: PathwayKey, g: GradedSlot): string {
+  const { ref, slot } = g
+  if (ref.kind === 'enzyme') return `${slot.id}: an enzyme name for step ${ref.stepNo} (${nameOf(key, ref.step.from)} → ${nameOf(key, ref.step.to)}), handwritten on the horizontal line`
+  if (ref.kind === 'name') return `${slot.id}: the name of a molecule, written as words or an abbreviation (not a drawn structure)`
+  return `${slot.id}: (not a slot for a second look)`
+}
+
 // ── Calls ──────────────────────────────────────────────────────────────────────
 
 function cacheKey(model: string, prompt: string, regions: Region[]): string {
@@ -186,6 +211,25 @@ export async function readTextRegions(
   }
   const prompt = `${TEXT_RULES}\n\nSlots:\n${slots.map((s) => `- ${describeTextSlot(key, s)}`).join('\n')}`
   const { parsed, usage } = await cachedParse(client, opts.cache, model, 'low', prompt, regions, textReadSchema)
+  return { reads: new Map(parsed.slots.map((s) => [s.slot_id, s])), usage }
+}
+
+/**
+ * A second, blind reading of enzyme and name slots by a stronger model: for readings that
+ * were unsure or a near miss of an accepted answer. Same output as readTextRegions.
+ */
+export async function readSecondLook(
+  client: Anthropic,
+  key: PathwayKey,
+  regions: Region[],
+  opts: { model?: string; cache?: ReadCache } = {},
+): Promise<{ reads: Map<string, TextRead>; usage: Usage }> {
+  const model = opts.model ?? DEFAULT_MODEL_SECOND_LOOK
+  const slots = regions.flatMap((r) => r.slots)
+  const wrong = slots.filter((s) => s.ref.kind !== 'enzyme' && s.ref.kind !== 'name').map((s) => s.slot.id)
+  if (wrong.length) throw new Error(`A second look is for enzyme and name slots only, not ${wrong.join(', ')}`)
+  const prompt = `${SECOND_LOOK_RULES}\n\nSlots:\n${slots.map((s) => `- ${describeSecondLookSlot(key, s)}`).join('\n')}`
+  const { parsed, usage } = await cachedParse(client, opts.cache, model, 'medium', prompt, regions, textReadSchema)
   return { reads: new Map(parsed.slots.map((s) => [s.slot_id, s])), usage }
 }
 

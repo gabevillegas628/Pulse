@@ -21,11 +21,16 @@ http.createServer((req, res) => {
     const ids = [...text.matchAll(/^- (\w+):/gm)].map((m) => m[1]).filter((id) => id !== 'description')
     fs.appendFileSync(LOG, ids.join(' ') + '\n')
     const isStruct = JSON.stringify(j.output_config).includes('features')
+    // A second look (its prompt reads "letter by letter") reads step 2 properly, as a
+    // stronger reader might; everything else it reads the same as the first pass.
+    const secondLook = text.includes('letter by letter')
+    if (secondLook) fs.appendFileSync(LOG, 'second-look\n')
     const slots = ids.map((id) => {
       const step = id.split('_')[0]
       if (isStruct) return { slot_id: id, status: 'read', description: 'a drawing', confidence: 0.9, features: [0, 1, 2, 3, 4].map((index) => ({ index, present: true, confidence: 0.9 })) }
       if (id.endsWith('_cofactors')) return { slot_id: id, status: 'read', transcription: '', confidence: 0.95, cofactors: (cof[step] ?? []).map(([text, side]) => ({ text, side })) }
       if (id.endsWith('_name')) return { slot_id: id, status: 'read', transcription: names[id.replace(/_name$/, '')] ?? '?', cofactors: [], confidence: 0.95 }
+      if (secondLook && step === 's2') return { slot_id: id, status: 'read', transcription: 'phosphoglucose isomerase', cofactors: [], confidence: 0.9 }
       return { slot_id: id, status: 'read', transcription: enz[step] ?? '?', cofactors: [], confidence: 0.95 }
     })
     res.writeHead(200, { 'content-type': 'application/json' })

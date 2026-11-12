@@ -139,6 +139,8 @@ export interface SlotResult {
   transcription: string | null
   groupKey: string | null
   detail: {
+    /** A stronger model's blind second reading, for unsure and near-miss answers. */
+    secondLook?: { transcription: string; status: string; confidence: number; agrees: boolean } | null
     match: { verdict: string; alias: string; distance: number } | null
     cofactors: { text: string; side: string }[] | null
     features: { feature: string; present: boolean; confidence: number }[] | null
@@ -318,7 +320,7 @@ export function idFromName(name: string, taken: Iterable<string>): string {
 
 // ── Why a box is in review, in words ─────────────────────────────────────────
 
-export type ReasonKind = 'spelling' | 'near' | 'unsure' | 'missed' | 'illegible' | 'side' | 'extra' | 'always' | 'error'
+export type ReasonKind = 'spelling' | 'near' | 'unsure' | 'missed' | 'illegible' | 'side' | 'extra' | 'always' | 'second' | 'error'
 
 /** The tally's words, plural: "5 near-spellings". */
 export const REASON_TALLY: Record<ReasonKind, string> = {
@@ -330,6 +332,7 @@ export const REASON_TALLY: Record<ReasonKind, string> = {
   side: 'unclear arrow sides',
   extra: 'unlisted cofactors',
   always: 'always reviewed',
+  second: 'second looks disagree',
   error: 'not read',
 }
 
@@ -343,11 +346,12 @@ export function reasonKind(r: string): ReasonKind {
   if (r.startsWith('cofactor side') || r.startsWith('on both sides')) return 'side'
   if (r.startsWith('unexpected')) return 'extra'
   if (r.startsWith('policy')) return 'always'
+  if (r.startsWith('second look')) return 'second'
   return 'error'
 }
 
 /** One reason as a sentence: what the grader noticed, so the person knows what to look at. */
-export function explainReason(r: string, closest?: string): string {
+export function explainReason(r: string, closest?: string, accepted?: string[] | null): string {
   const after = (prefix: string) => r.slice(prefix.length).trim()
   switch (reasonKind(r)) {
     case 'spelling': return `Not spelled like any accepted answer. Closest: “${closest ?? after('inexact match to').replace(/^"|"$/g, '')}”. A typo, or a different word?`
@@ -360,6 +364,12 @@ export function explainReason(r: string, closest?: string): string {
       : 'Could not tell which end of the arrow a cofactor was written at.'
     case 'extra': return `Also wrote ${after('unexpected:')}, which the key does not list, and the answer is missing a cofactor. A misread?`
     case 'always': return 'This quiz reviews every answer of this kind (Scoring tab).'
+    case 'second': {
+      const m = /^second look: "(.*)"$/.exec(r)
+      if (!m) return 'A closer second look could not read it either.'
+      const ok = (accepted ?? []).some((a) => a.trim().toLowerCase() === m[1]!.trim().toLowerCase())
+      return `A closer second look read it as “${m[1]}”${ok ? ', which is an accepted answer' : ''}. Look at the crop: which is it?`
+    }
     default: return 'The model did not return a reading for this box.'
   }
 }
