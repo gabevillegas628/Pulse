@@ -135,7 +135,7 @@ export default function QuizReviewPage() {
       </div>
       {error && <p className="text-sm text-warn mb-3">{error}</p>}
 
-      <div className="grid lg:grid-cols-[240px_minmax(0,1fr)] gap-5 items-start">
+      <div className="grid lg:grid-cols-[200px_minmax(0,1fr)] gap-5 items-start">
         <Card className="p-2 lg:sticky lg:top-4">
           {summary && slots.length === 0 && <p className="text-sm text-muted p-2">All reviewed.</p>}
           {slots.map((s) => (
@@ -265,13 +265,13 @@ function GroupCard({ g, item, onGroup, onPaper }: {
       )}
 
       {flagged.length > 0 && others.length > 0 && <p className="text-xs font-semibold text-warn mb-1.5">Flagged</p>}
-      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2 mb-3">
+      <div className={cn('grid gap-3 mb-3', others.length === 0 && flagged.length > 2 ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2')}>
         {flagged.map((m) => <PaperThumb key={m.pageId} m={m} slotId={item.slotId} max={item.maxPoints} onPaper={onPaper} flagged={others.length > 0} />)}
       </div>
       {others.length > 0 && (
         <>
           {flagged.length > 0 && <p className="text-xs text-muted mb-1.5">Read the same way, not flagged{shownOthers.length < others.length ? ` (${shownOthers.length} of ${others.length} shown)` : ''}</p>}
-          <div className={cn('grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2 mb-3', flagged.length > 0 && 'opacity-70')}>
+          <div className={cn('grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3', flagged.length > 0 && 'opacity-80')}>
             {shownOthers.map((m) => <PaperThumb key={m.pageId} m={m} slotId={item.slotId} max={item.maxPoints} onPaper={onPaper} />)}
           </div>
           {shownOthers.length < others.length || more ? (
@@ -307,25 +307,53 @@ function GroupCard({ g, item, onGroup, onPaper }: {
 /** One paper's crop; click to decide this paper alone. */
 function PaperThumb({ m, slotId, max, onPaper, flagged }: { m: Member; slotId: string; max: number; onPaper: (m: Member, points: number | null) => Promise<void>; flagged?: boolean }) {
   const [open, setOpen] = useState(false)
+  const src = `/quiz-grader/pages/${m.pageId}/crops/${slotId}`
   return (
     <div className="relative">
-      <button onClick={() => setOpen((v) => !v)} className={cn('block w-full rounded-sm overflow-hidden', m.source === 'paper' ? 'border border-signal' : flagged ? 'ring-2 ring-warn' : 'border border-hairline')}
-        title={`Page ${m.index + 1}: ${m.points}/${max}${m.source === 'paper' ? ' (decided for this paper)' : ''}${m.open && m.reviewReasons[0] ? ` · flagged: ${explainReason(m.reviewReasons[0])}` : ''}`}>
-        <AuthImage src={`/quiz-grader/pages/${m.pageId}/crops/${slotId}`} alt={`Page ${m.index + 1}`} />
-        <span className="absolute bottom-0 right-0 text-[10px] bg-surface/90 px-1">{m.points}</span>
+      <button onClick={() => setOpen(true)} className={cn('block w-full rounded-sm overflow-hidden bg-white cursor-zoom-in', m.source === 'paper' ? 'border border-signal' : flagged ? 'ring-2 ring-warn' : 'border border-hairline')}
+        title={`Page ${m.index + 1}: ${m.points}/${max}${m.source === 'paper' ? ' (decided for this paper)' : ''}${m.open && m.reviewReasons[0] ? ` · flagged: ${explainReason(m.reviewReasons[0])}` : ''} · click to enlarge`}>
+        <AuthImage src={src} alt={`Page ${m.index + 1}`} />
+        <span className="absolute bottom-0 left-0 text-[10px] bg-surface/90 px-1 text-muted">p{m.index + 1}</span>
+        <span className="absolute bottom-0 right-0 text-[11px] font-semibold bg-surface/90 px-1">{m.points}</span>
       </button>
       {open && (
-        <Card className="absolute z-20 mt-1 p-2 w-48 text-xs space-y-1.5">
-          <Link to={`/professor/quiz-grader/pages/${m.pageId}`} className="text-signal hover:underline block">Open page {m.index + 1}</Link>
-          <p className="text-muted">This paper only:</p>
-          <div className="flex flex-wrap gap-1">
-            {[...new Set([0, max])].map((v) => (
-              <Button key={v} size="sm" onClick={() => { setOpen(false); void onPaper(m, v) }}>{v}</Button>
-            ))}
-            {m.source === 'paper' && <Button size="sm" onClick={() => { setOpen(false); void onPaper(m, null) }}>Undo</Button>}
+        <Lightbox src={src} alt={`Page ${m.index + 1}`} onClose={() => setOpen(false)}>
+          <div className="space-y-2 text-sm">
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span className="text-ink">Page {m.index + 1} · <span className="font-semibold">{m.points}/{max}</span>{m.source === 'paper' ? ' (decided for this paper)' : ''}</span>
+              <Link to={`/professor/quiz-grader/pages/${m.pageId}`} className="text-signal hover:underline text-xs">Open the whole page</Link>
+            </div>
+            {m.open && m.reviewReasons[0] && <p className="text-warn text-xs">{explainReason(m.reviewReasons[0])}</p>}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted">Decide this paper alone:</span>
+              {[...new Set([max, 0])].map((v) => (
+                <Button key={v} size="sm" onClick={() => { setOpen(false); void onPaper(m, v) }}>{v === max ? `Correct (${max})` : 'Wrong (0)'}</Button>
+              ))}
+              {m.source === 'paper' && <Button size="sm" onClick={() => { setOpen(false); void onPaper(m, null) }}>Undo</Button>}
+            </div>
           </div>
-        </Card>
+        </Lightbox>
       )}
+    </div>
+  )
+}
+
+/** A crop at full width over the page. Escape or a click outside closes it. */
+function Lightbox({ src, alt, onClose, children }: { src: string; alt: string; onClose: () => void; children?: React.ReactNode }) {
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onClose])
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
+      <Card className="w-full max-w-4xl p-3 space-y-3" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-end">
+          <button onClick={onClose} className="text-muted hover:text-ink" aria-label="Close"><X size={18} /></button>
+        </div>
+        <AuthImage src={src} alt={alt} eager className="rounded-sm border border-hairline overflow-hidden bg-white" />
+        {children}
+      </Card>
     </div>
   )
 }
@@ -351,12 +379,16 @@ function StructureCard({ m, item, onDecide }: { m: Member; item: Item; onDecide:
   const initial = m.override?.features ?? features.map((_, i) => !!m.detail.features?.[i]?.present)
   const [checks, setChecks] = useState<boolean[]>(initial)
   const [busy, setBusy] = useState(false)
+  const [big, setBig] = useState(false)
   useEffect(() => setChecks(m.override?.features ?? features.map((_, i) => !!m.detail.features?.[i]?.present)), [m.override, m.detail.features, features])
   const save = async (points: number | null, f?: boolean[]) => { setBusy(true); try { await onDecide(m, points, f) } finally { setBusy(false) } }
   return (
-    <Card className={cn('p-4 grid sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4', m.open && 'ring-1 ring-warn/40')}>
+    <Card className={cn('p-4 grid sm:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-4', m.open && 'ring-1 ring-warn/40')}>
       <div>
-        <AuthImage src={`/quiz-grader/pages/${m.pageId}/crops/${item.slotId}`} alt={`Page ${m.index + 1}`} className="rounded-sm overflow-hidden border border-hairline" />
+        <button className="block w-full cursor-zoom-in" onClick={() => setBig(true)} title="Click to enlarge">
+          <AuthImage src={`/quiz-grader/pages/${m.pageId}/crops/${item.slotId}`} alt={`Page ${m.index + 1}`} className="rounded-sm overflow-hidden border border-hairline bg-white" />
+        </button>
+        {big && <Lightbox src={`/quiz-grader/pages/${m.pageId}/crops/${item.slotId}`} alt={`Page ${m.index + 1}`} onClose={() => setBig(false)} />}
         <p className="text-xs text-muted mt-1">
           <Link to={`/professor/quiz-grader/pages/${m.pageId}`} className="text-signal hover:underline">Page {m.index + 1}</Link>
           {m.detail.description ? ` · model: ${m.detail.description}` : ''}
