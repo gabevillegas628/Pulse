@@ -213,6 +213,10 @@ function GroupList({ item, onGroup, onPaper }: {
       {here.map((g) => g.open === 0 && g.decision
         ? <DecidedRow key={g.key} text={readingOf(g, item.kind)} count={g.count} points={g.decision.points} max={item.maxPoints}
             onUndo={() => void onGroup(g, null)} />
+        : g.open === 0 && g.members.every((m) => m.source === 'paper')
+        ? <PaperByPaper key={g.key} g={g} item={item}>
+            <GroupCard g={g} item={item} onGroup={onGroup} onPaper={onPaper} />
+          </PaperByPaper>
         : <GroupCard key={g.key} g={g} item={item} onGroup={onGroup} onDecided={() => setRecent((r) => new Set(r).add(g.key))}
             // A paper decided alone keeps its group in view too, so the decision stays visible.
             onPaper={async (m, points) => { await onPaper(m, points); setRecent((r) => new Set(r).add(g.key)) }} />)}
@@ -233,6 +237,23 @@ const WRONG = '!border-signal !text-signal hover:!bg-signal-soft'
 /** The tag on the button that matches the automatic score. */
 function AsScored() {
   return <span className="ml-1 text-[10px] font-normal uppercase tracking-wide opacity-70">as scored</span>
+}
+
+/** A group whose every paper was decided on its own: one line, crops a click away. */
+function PaperByPaper({ g, item, children }: { g: Group; item: Item; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const right = g.members.filter((m) => m.points === item.maxPoints).length
+  if (open) return <div className="space-y-1">{children}<button className="text-xs text-signal hover:underline" onClick={() => setOpen(false)}>Collapse</button></div>
+  return (
+    <Card flat className="px-4 py-2.5 flex flex-wrap items-center gap-3 text-sm">
+      <Check size={15} className="text-good shrink-0" />
+      <span className="flex-1 min-w-0 text-ink-2 truncate">
+        <span className="font-semibold text-ink">{g.count === 1 ? `Decided: ${right ? 'Correct' : 'not correct'}` : `All ${g.count} decided paper by paper`}</span>
+        {g.count > 1 ? ` (${right} correct, ${g.count - right} not)` : ''} · {readingOf(g, item.kind)}
+      </span>
+      <Button size="sm" onClick={() => setOpen(true)}>Show</Button>
+    </Card>
+  )
 }
 
 /** A group or drawing decided while this box is open: kept in place, one line, undoable. */
@@ -318,6 +339,9 @@ function GroupCard({ g, item, onGroup, onPaper, onDecided }: {
           ) : null}
         </>
       )}
+      {g.members.every((m) => m.source === 'paper') && !g.decision ? (
+        <p className="text-xs text-muted">Every paper here has its own call. Click a crop to change or undo it.</p>
+      ) : (<>
       <p className="text-xs text-muted mb-2">
         {g.count > 1 ? `A decision here applies to all ${g.count} papers that read this way, and to any uploaded later. ` : ''}
         Click a crop to decide that paper alone.
@@ -345,6 +369,7 @@ function GroupCard({ g, item, onGroup, onPaper, onDecided }: {
           </label>
         )}
       </div>
+      </>)}
     </Card>
   )
 }
