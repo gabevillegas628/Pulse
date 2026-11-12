@@ -17,6 +17,7 @@ import { readTextRegions, type StructureRead, type TextRead } from '../src/quizG
 import type Anthropic from '@anthropic-ai/sdk'
 import { matchText, normalize, scoreCofactors, scoreStructure } from '../src/quizGrader/scoring.js'
 import { patchYaml } from '../src/quizGrader/yamlPatch.js'
+import { wantsSecondLook } from '../src/quizGrader/grade.js'
 import { storageProblem } from '../src/quizGrader/servers.js'
 import { parse as parseYaml } from 'yaml'
 
@@ -311,6 +312,38 @@ console.log('\nScan storage outlasts a deploy')
   check('uploads in the volume, fine', storageProblem('/data', { ...rw, RAILWAY_VOLUME_MOUNT_PATH: '/data' }) === null)
   check('uploads in a folder of the volume, fine', storageProblem('/data/uploads', { ...rw, RAILWAY_VOLUME_MOUNT_PATH: '/data/' }) === null)
   check('a look-alike folder is not the volume', storageProblem('/data2', { ...rw, RAILWAY_VOLUME_MOUNT_PATH: '/data' }) !== null)
+}
+
+console.log('\nSecond looks')
+{
+  const slots = slotsForVersion(glyQuiz, glyLayout, gly, 'A')
+  const g = (id: string) => slots.find((x) => x.slot.id === id)!
+  const r = (transcription: string, confidence = 0.95, status: 'read' | 'illegible' | 'blank' = 'read'): TextRead =>
+    ({ slot_id: 'x', status, transcription, cofactors: [], confidence })
+  check('"Endase" for enolase gets a second look', wantsSecondLook(g('s9_enzyme'), r('Endase')))
+  check('"aldolase" for enolase does not (a plain wrong answer)', !wantsSecondLook(g('s9_enzyme'), r('aldolase')))
+  check('an exact, sure reading does not', !wantsSecondLook(g('s9_enzyme'), r('enolase')))
+  check('an exact but unsure reading does', wantsSecondLook(g('s9_enzyme'), r('enolase', 0.5)))
+  check('an illegible one does', wantsSecondLook(g('s9_enzyme'), r('', 0.2, 'illegible')))
+  check('cofactors never do', !wantsSecondLook(g('s9_cofactors'), r('', 0.3)))
+
+  const grade = (first: TextRead, second?: TextRead) => gradePage(slots, new Set(), new Map([['s9_enzyme', first]]), new Map(), {},
+    second ? new Map([['s9_enzyme', second]]) : new Map()).find((x) => x.slotId === 's9_enzyme')!
+  const before = grade(r('Endase'))
+  check('without a second look, "Endase" scores 0 (and, as before, without a flag)', before.pointsAuto === 0 && !before.needsReview)
+  const disagree = grade(r('Endase'), r('Enolase', 0.9))
+  check('a second look that disagrees sends it to review with the second reading',
+    disagree.pointsAuto === 0 && disagree.reviewReasons.includes('second look: "Enolase"') && disagree.secondLook?.agrees === false)
+  const agree = grade(r('phosphoglycerate kinase'), r('Phosphoglycerate kinase', 0.9))
+  check('a second look that agrees lets a plain wrong answer stand, with no flag', agree.pointsAuto === 0 && !agree.needsReview && agree.secondLook?.agrees === true)
+  const sureNow = grade(r('enolase', 0.5), r('enolase', 0.92))
+  check('agreement settles an unsure reading of the right answer', sureNow.pointsAuto === 1 && !sureNow.needsReview)
+  const fuzzyAgree = grade(r('Enolate'), r('enolate'))
+  check('agreeing on a near spelling still asks the key question', fuzzyAgree.reviewReasons.some((x) => x.startsWith('inexact')))
+  const twoAccepted = grade(r('Enolase'), r('enolase'))
+  check('two readings that are both accepted answers need no decision', twoAccepted.pointsAuto === 1 && !twoAccepted.needsReview)
+  const unreadable = grade(r('', 0.2, 'illegible'), r('Enolase', 0.85))
+  check('an illegible first reading shows what the second look read', unreadable.reviewReasons.includes('second look: "Enolase"'))
 }
 
 console.log(`\n  ${passed} passed, ${failed} failed`)

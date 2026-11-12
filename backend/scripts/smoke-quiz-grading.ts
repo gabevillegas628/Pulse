@@ -114,7 +114,11 @@ async function main() {
     // Page 1 left step 4 empty, page 2 step 9: each is in one text request, not both.
     check('empty boxes are never sent (step 4 only from page 2, step 9 only from page 1)',
       carrying('s1_enzyme') === 2 && carrying('s4_enzyme') === 1 && carrying('s9_enzyme') === 1, requests)
-    check('two model calls per page (text, structures)', (await modelCalls()) - before === 4, (await modelCalls()) - before)
+    check('two model calls per page (text, structures), plus a second look on each page with a near miss', (await modelCalls()) - before === 6, (await modelCalls()) - before)
+    const looks = fs.readFileSync(MOCK_LOG, 'utf8').trim().split('\n')
+    const lookIds = looks.flatMap((l, i) => (l === 'second-look' ? (looks[i - 1] ?? '').split(' ') : []))
+    check('second looks carry only near-miss enzyme and name answers (here, the step 2 misspelling)',
+      lookIds.length > 0 && lookIds.every((id) => /_(enzyme|name)$/.test(id)) && lookIds.includes('s2_enzyme'), lookIds)
 
     // Editing the key re-scores without asking the model again.
     const calls = await modelCalls()

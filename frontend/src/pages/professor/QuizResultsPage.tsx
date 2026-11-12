@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Crop, Download, ExternalLink, ListChecks, RotateCw, Sparkles, Users } from 'lucide-react'
+import { ArrowLeft, Crop, Download, ExternalLink, Eye, ListChecks, RotateCw, Sparkles, Users } from 'lucide-react'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import Button from '@/components/ui/Button'
@@ -13,7 +13,7 @@ import { STATUS_LABEL, saveBlob, type QuizPage } from '@/lib/quizGrader'
 
 interface ResultsData {
   pages: (Pick<QuizPage, 'id' | 'batchId' | 'index' | 'status' | 'version' | 'gradeStatus' | 'gradeError' | 'pointsAuto' | 'pointsFinal' | 'maxPoints' | 'toReview'> & { fileName: string; studentNetId: string | null })[]
-  summary: { pages: number; graded: number; grading: number; failed: number; toReview: number; cost: { dollars: number; unpriced: string[] } }
+  summary: { secondLooksRunning?: boolean; pages: number; graded: number; grading: number; failed: number; toReview: number; cost: { dollars: number; unpriced: string[] } }
 }
 
 /** Every scanned paper of an assessment with its score after review. Not connected to the gradebook. */
@@ -28,7 +28,7 @@ export default function QuizResultsPage() {
     queryFn: () => api.get(`/quiz-grader/content/${id}/results`).then((r) => r.data.data),
     staleTime: 0,
     // Keep updating while pages are being lined up or graded.
-    refetchInterval: (q) => (q.state.data && (q.state.data.summary.grading
+    refetchInterval: (q) => (q.state.data && (q.state.data.summary.grading || q.state.data.summary.secondLooksRunning
       || q.state.data.pages.some((pg) => pg.status === 'PENDING' || pg.status === 'PROCESSING')) ? 2000 : false),
   })
 
@@ -74,6 +74,19 @@ export default function QuizResultsPage() {
       void qc.invalidateQueries({ queryKey: ['quiz-grader'] })
     } catch (e) {
       setNote(apiError(e, 'Could not start grading'))
+    }
+  }
+
+  async function secondLooks() {
+    setNote('')
+    try {
+      const r = await api.post(`/quiz-grader/content/${id}/second-looks`)
+      const { pages, running } = r.data.data as { pages: number; running: boolean }
+      setNote(pages ? `Taking a second look at near misses on ${pages} paper${pages === 1 ? '' : 's'}. Review updates as they finish.`
+        : running ? 'Second looks are already running.' : 'Nothing needs a second look: every unsure or near-miss answer has had one.')
+      void qc.invalidateQueries({ queryKey: ['quiz-grader'] })
+    } catch (e) {
+      setNote(apiError(e, 'Could not start second looks'))
     }
   }
 
@@ -126,6 +139,10 @@ export default function QuizResultsPage() {
               <Link to={`/professor/quiz-grader/${id}/review`}>
                 <Button size="sm" variant={s.toReview ? 'primary' : 'ghost'}><ListChecks size={13} />Review{s.toReview ? ` (${s.toReview} left)` : ''}</Button>
               </Link>
+              <Button size="sm" disabled={s.secondLooksRunning} onClick={() => void secondLooks()}
+                title="Papers graded before second looks: a stronger model re-reads unsure and near-miss enzyme and name answers. A few cents.">
+                <Eye size={13} />{s.secondLooksRunning ? 'Second looks running…' : 'Second looks'}
+              </Button>
               <Button size="sm" onClick={() => void rescore()} title="Score every graded paper again with the key as it is now. No new model calls.">
                 <RotateCw size={13} />Re-score with current key
               </Button>

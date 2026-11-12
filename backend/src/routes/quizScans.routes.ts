@@ -18,7 +18,7 @@ import { parseSource } from '../quizGrader/store.js'
 import {
   createDocument, deleteDocument, originalFile, pageDir, removeBatchFiles, specFor, visionConfigured, visionHealthy, VisionError,
 } from '../quizGrader/scans.js'
-import { gradingConfigured, rescoreAssessment } from '../quizGrader/grading.js'
+import { gradingConfigured, rescoreAssessment, secondLooksRunning, startSecondLooks } from '../quizGrader/grading.js'
 import { costOf } from '../quizGrader/pricing.js'
 import { scanStorageWarnings } from '../quizGrader/servers.js'
 import { compare, type ResultRow } from '../quizGrader/compare.js'
@@ -245,6 +245,19 @@ router.post('/quiz-grader/pages/:pageId/regrade', requireProfessor, async (req: 
   }
 })
 
+// Second looks at graded pages' unsure and near-miss readings (pages graded before
+// second looks existed), in the background. Says how many pages are due.
+router.post('/quiz-grader/content/:id/second-looks', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const a = await prisma.quizContent.findFirst({ where: { id: p(req.params.id), ...ownedQuizContent(viewer(req)), kind: 'ASSESSMENT' }, select: { id: true } })
+    if (!a) throw new AppError('Not found', 404)
+    if (!gradingConfigured()) throw new AppError('Grading is not set up on this server (ANTHROPIC_API_KEY).', 503)
+    res.json({ success: true, data: await startSecondLooks(a.id) })
+  } catch (err) {
+    next(err)
+  }
+})
+
 // Every page of an assessment with its score: the results table.
 router.get('/quiz-grader/content/:id/results', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -269,6 +282,7 @@ router.get('/quiz-grader/content/:id/results', requireProfessor, async (req: Req
           return { ...pg, fileName: batch.fileName, pointsFinal: t?.points ?? null, toReview: t ? t.open : pg.toReview }
         }),
         summary: {
+          secondLooksRunning: secondLooksRunning(assessment.id),
           pages: pages.length,
           graded: graded.length,
           grading: pages.filter((pg) => pg.gradeStatus === 'PENDING' || pg.gradeStatus === 'GRADING').length,

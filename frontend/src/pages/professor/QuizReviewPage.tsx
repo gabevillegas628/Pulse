@@ -292,7 +292,8 @@ function GroupCard({ g, item, onGroup, onPaper, onDecided }: {
   const shownOthers = more ? others : others.slice(0, Math.max(0, 8 - flagged.length))
   const all = g.count > 1 ? ` for all ${g.count}` : ''
   // Every reason any open paper in the group was flagged for, once each.
-  const reasons = useMemo(() => [...new Map(g.members.filter((m) => m.open).flatMap((m) => m.reviewReasons).map((r) => [reasonKind(r), r])).values()], [g.members])
+  const reasons = useMemo(() => [...new Map(g.members.filter((m) => m.open).flatMap((m) => m.reviewReasons)
+    .map((r) => [reasonKind(r) === 'second' ? r : reasonKind(r), r])).values()], [g.members])
   const keep = !g.decision && autoPoints.length === 1 ? autoPoints[0]! : null
   const act = async (points: number | null, withAlias = false) => {
     setBusy(true)
@@ -319,7 +320,7 @@ function GroupCard({ g, item, onGroup, onPaper, onDecided }: {
       </div>
       {g.open > 0 && reasons.length > 0 && (
         <div className="text-sm text-ink-2 bg-warn-soft/60 rounded-sm px-3 py-2 mb-3 space-y-0.5">
-          {reasons.map((r) => <p key={r} className="flex gap-1.5"><CircleHelp size={15} className="shrink-0 mt-0.5 text-warn" />{explainReason(r, first.detail.match?.alias)}</p>)}
+          {reasons.map((r) => <p key={r} className="flex gap-1.5"><CircleHelp size={15} className="shrink-0 mt-0.5 text-warn" />{explainReason(r, first.detail.match?.alias, item.accept)}</p>)}
           <p className="text-xs text-muted pl-5">Scored {autoPoints.join(' or ')} of {item.maxPoints} until you decide.</p>
         </div>
       )}

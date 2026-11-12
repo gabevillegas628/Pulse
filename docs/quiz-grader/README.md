@@ -335,6 +335,27 @@ and its papers are matched against that class's roster. **Paper quizzes**
 - Moving a quiz or uploading its blank form keeps the files' `updatedAt`, which only guards
   edits to their text.
 
+## Second looks at near misses
+
+The fast text reader (Haiku) is sometimes sure of a misread: "Endase" for a cramped
+"Enolase" scored 0 with no flag. So an enzyme or name reading gets a second, blind look by a
+stronger model (`MODEL_SECOND_LOOK`, default Sonnet) when it is illegible, unsure (below
+the confidence threshold), or within about a third of the letters of an accepted answer
+(`SECOND_LOOK_DISTANCE`, 0.34; "aldolase" for enolase is 0.38 and gets none). Cofactors and
+structures never do; names and NetIDs never reach any model.
+
+- The second look is told neither the expected answer nor the first reading
+  (`readSecondLook` in `reader.ts`): a reader told what to expect tends to see it.
+- Code compares (`gradePage` in `grade.ts`). The same reading: it stands, with no flag for
+  being close (a real mistake), and an unsure right answer is settled. A different reading
+  that would score differently: review, showing both ("A closer second look read it as
+  'Enolase', which is an accepted answer"). Two spellings that are both accepted: nothing
+  to decide. The automatic score follows the first reading until you decide.
+- Second readings are stored with the page's reads (`reads.second`) and cached like the
+  first, so re-scoring never calls a model.
+- **Results → Second looks** runs them, in the background, for papers graded before this
+  existed.
+
 ## Changes from the handoff
 
 - **Seed YAML bug fixed.** Names containing a comma (`1,3-bisphosphoglycerate`,
