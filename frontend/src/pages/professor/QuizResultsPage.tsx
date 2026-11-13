@@ -7,6 +7,7 @@ import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
 import ConfirmDialog, { type DialogRequest } from '@/components/ui/ConfirmDialog'
+import ReleasePanel from '@/components/quizGrader/ReleasePanel'
 import { apiError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { STATUS_LABEL, saveBlob, type QuizPage } from '@/lib/quizGrader'
@@ -122,7 +123,7 @@ export default function QuizResultsPage() {
                 {' · model cost '}{dollars(s.cost.dollars)}
                 {s.cost.unpriced.length ? ` (+ unpriced: ${s.cost.unpriced.join(', ')})` : ''}
               </p>
-              <p className="text-xs text-muted mt-1">Scores after your review decisions. Not sent to the gradebook.</p>
+              <p className="text-xs text-muted mt-1">Scores after your review decisions.</p>
             </div>
             <div className="flex flex-wrap gap-2">
               {ungraded > 0 && (
@@ -152,6 +153,7 @@ export default function QuizResultsPage() {
             </div>
           </div>
           {note && <p className="text-sm text-muted mb-3">{note}</p>}
+          {id && <ReleasePanel quizId={id} />}
           <Card className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-xs text-muted text-left">

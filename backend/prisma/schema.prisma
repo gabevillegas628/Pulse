@@ -449,6 +449,11 @@ model QuizContent {
   // not in the YAML: it is this professor's data, not part of a quiz someone could import.
   classId     String?
   class       Class?          @relation(fields: [classId], references: [id], onDelete: SetNull)
+  // Quizzes only: when the scores were released to the class gradebook and to students.
+  // Null: not released. The gradebook stays live after release (review decisions and key
+  // edits flow through).
+  releasedAt  DateTime?
+  excusals    QuizExcusal[]
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
@@ -576,6 +581,17 @@ model QuizSlotResult {
 
 // Model reads by (model, prompt version, prompt, images), so re-running a page never
 // pays twice. Holds transcriptions of student answers (never names), like the reads above.
+// A student excused from a paper quiz: no paper, and not counted as a 0. By NetID, like
+// QuizPage.studentNetId, so it outlives the student's enrolment.
+model QuizExcusal {
+  assessmentId String
+  assessment   QuizContent @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  netId        String
+  createdAt    DateTime    @default(now())
+
+  @@id([assessmentId, netId])
+}
+
 model QuizReadCache {
   key       String   @id
   value     Json

@@ -62,7 +62,7 @@ export default function StudentSessionModal({ classId, studentId, netId, session
               {q.response ? (
                 <div className="ml-7 flex items-start justify-between gap-3">
                   <p className="text-sm text-ink leading-relaxed flex-1">{readableAnswer(q.type, q.response.responseText)}</p>
-                  {q.counted && <QuestionScore classId={classId} studentId={studentId} item={session} question={q} />}
+                  {q.counted && <QuestionScore classId={classId} studentId={studentId} item={session as { id: string; type: 'IN_CLASS' | 'HOMEWORK' }} question={q} />}
                 </div>
               ) : (
                 <p className="ml-7 text-sm text-hairline-strong italic">No response</p>

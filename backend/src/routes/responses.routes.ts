@@ -12,6 +12,7 @@ import { runAnswerCounts } from '../utils/answerCounts.js'
 import { upsertEnrollment } from '../utils/enrollment.js'
 import { openRunFor } from '../utils/runAccess.js'
 import { p } from '../utils/params.js'
+import { classQuizGrades } from '../quizGrader/gradebook.js'
 import { toInchi } from '../utils/indigo.js'
 import { BLANK_ANSWER_MAX } from 'shared'
 import { autoCloseEnabled, isOpen, touch, clockState } from '../services/clock.service.js'
@@ -599,7 +600,16 @@ router.get('/student/classes/:classId/grades', requireStudent, async (req: Reque
       }
     })
 
-    const result = [...sessionResults, ...assignmentResults]
+    // Released paper quizzes: the score only (no breakdown, no scans), as the gradebook has
+    // it. Excused or not yet settled: left out, rather than shown as a 0.
+    const netId = (await prisma.student.findUnique({ where: { id: student.id }, select: { netId: true } }))?.netId ?? ''
+    const paper = await classQuizGrades(classId)
+    const quizResults = paper.quizzes
+      .map((q) => ({ q, c: paper.cell(netId, q.id)! }))
+      .filter(({ c }) => !c.excused && !c.pending)
+      .map(({ q, c }) => ({ id: q.id, title: q.title, type: 'PAPER_QUIZ' as const, date: q.date, earned: c.earned, max: c.max }))
+
+    const result = [...sessionResults, ...assignmentResults, ...quizResults]
     const totalEarned = Math.round(result.reduce((a, b) => a + b.earned, 0) * 10) / 10
     const totalMax = result.reduce((a, b) => a + b.max, 0)
 

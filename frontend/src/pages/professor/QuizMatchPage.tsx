@@ -19,7 +19,15 @@ import { saveBlob } from '@/lib/quizGrader'
 
 interface Student { netId: string; email: string }
 interface MatchPage { id: string; batchId: string; index: number; status: string; fileName: string; netId: string | null; nameBox: string | null; netidBox: string | null }
-interface MatchData { classId: string | null; classes: { id: string; name: string }[]; roster: Student[]; pages: MatchPage[] }
+interface MatchData {
+  classId: string | null
+  classes: { id: string; name: string }[]
+  roster: Student[]
+  pages: MatchPage[]
+  /** Roster students with no paper: 0 in the gradebook unless excused. */
+  noPaper: string[]
+  excused: string[]
+}
 
 export default function QuizMatchPage() {
   const { id } = useParams<{ id: string }>()
@@ -56,6 +64,20 @@ export default function QuizMatchPage() {
         if (next) setTimeout(() => inputs.current.get(next.id)?.focus(), 0)
       }
     } catch (e) { setError(apiError(e, 'Could not save')) }
+  }
+
+  async function excuse(netId: string, excused: boolean) {
+    setError('')
+    // Ticks at once; put back if the save fails.
+    const set = (on: boolean) => setData((d) => ({ ...d, excused: on ? [...d.excused.filter((n) => n !== netId), netId] : d.excused.filter((n) => n !== netId) }))
+    set(excused)
+    try {
+      await api.put(`/quiz-grader/content/${id}/excused`, { netId, excused })
+      void qc.invalidateQueries({ queryKey: ['quiz-grader', 'release', id] })
+    } catch (e) {
+      set(!excused)
+      setError(apiError(e, 'Could not save'))
+    }
   }
 
   async function download() {
@@ -128,6 +150,25 @@ export default function QuizMatchPage() {
         ))}
         {shown.length === 0 && <p className="p-4 text-sm text-good">Every paper is matched.</p>}
       </Card>
+
+      {data.classId && data.noPaper.length > 0 && (
+        <section className="mt-8">
+          <h2 className="text-base font-semibold text-ink">No paper ({data.noPaper.length})</h2>
+          <p className="text-xs text-muted mb-2">Students on the roster with no matched paper. In the gradebook each counts as 0, unless excused (a makeup, an excused absence): then it does not count at all.</p>
+          <Card className="divide-y divide-hairline">
+            {data.noPaper.map((n) => {
+              const ex = data.excused.includes(n)
+              return (
+                <label key={n} className="px-4 py-2 flex items-center gap-3 text-sm cursor-pointer hover:bg-surface-2">
+                  <span className="font-mono text-ink flex-1">{n}</span>
+                  <span className={ex ? 'text-muted' : 'text-ink-2'}>{ex ? 'excused' : 'counts as 0'}</span>
+                  <input type="checkbox" checked={ex} onChange={(e) => void excuse(n, e.target.checked)} aria-label={`Excuse ${n}`} />
+                </label>
+              )
+            })}
+          </Card>
+        </section>
+      )}
     </ProfessorLayout>
   )
 }

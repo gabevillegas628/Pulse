@@ -315,7 +315,7 @@ dropped: too slow on CPU, and the readings were not usable.)
 per box): one row per paper with NetID, email, score after review decisions, out of, boxes
 still to review, version, upload, page and a note (not matched, not on the roster, two papers,
 not graded, review not finished), then each roster student with no paper. Cells are guarded
-against spreadsheet formulas. Not connected to the Pulse gradebook yet.
+against spreadsheet formulas.
 
 ## Quizzes belong to classes
 
@@ -355,6 +355,26 @@ structures never do; names and NetIDs never reach any model.
   first, so re-scoring never calls a model.
 - **Results → Second looks** runs them, in the background, for papers graded before this
   existed.
+
+## In the class gradebook
+
+A quiz's scores reach its class gradebook, and its students, only once released
+(**Results → Gradebook → Release**; `QuizContent.releasedAt`). The panel first lists what is
+not settled: boxes still to review (their automatic scores count until decided), papers not
+graded, papers not matched, NetIDs not on the roster, NetIDs on two papers. After release it
+stays live: review decisions and key edits flow through. **Take back** removes it again.
+
+- One place works it out, `quizGrader/gradebook.ts`, for the release check, the gradebook,
+  the class CSV and the student view, so they agree.
+- Each released quiz is a **Quiz** column (after sessions and homework) with a **Quiz
+  Total**; a cell opens that student's paper. A matched paper scores its points after review;
+  a roster student with no paper scores 0 unless **excused** (Match students → No paper;
+  `QuizExcusal`), and then counts for nothing ("exc"). A NetID on two papers, or a matched
+  paper not graded yet, shows "…" and counts for nothing until settled.
+- The class CSV export gains a column per quiz, a Quiz Total and a Quiz Max ("excused" and
+  "pending" written out).
+- Students see each released quiz as a score only, in a Quizzes group: no breakdown and no
+  scans. An excused or unsettled quiz is left out for them rather than shown as 0.
 
 ## Changes from the handoff
 
