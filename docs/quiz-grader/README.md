@@ -270,6 +270,14 @@ What counts, in general: enzyme and cofactor boxes for the steps `grade: enzymes
 selects (default all), name boxes for the intermediates `grade: names` selects, and
 structures only for the intermediates a version lists. Only boxes the layout has count.
 
+**Boxes at the page edge reach the paper's edge.** Pulse prints the form at 90% to make room
+for the corner markers, so the paper runs about half an inch past the printed form on every
+side, and long answers run into it. On a page found by its markers, a box drawn within 1% of
+the form's edge in the Boxes tab is cut out to within 0.06 in of the paper's edge on that
+side (the corner markers are never counted as writing). Boxes clear of the edge are cut
+exactly as before. Pages printed without markers are the form at full size, so their boxes
+stop at the form's edge. Existing pages pick this up on **Re-process all pages**.
+
 **Re-process all pages** (Results) cuts every page up again after a layout change, then
 grades it again; review decisions are kept. Model reads are cached per page and kind
 (written answers, structures), so what did not change costs nothing, and a page that
