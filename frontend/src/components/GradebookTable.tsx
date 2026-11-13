@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Search, X } from 'lucide-react'
 import type { GradebookSession, GradebookStudentRow } from 'shared'
 import GradeDistribution, { adjustedParticipation } from '@/components/GradeDistribution'
@@ -54,6 +55,7 @@ function readReduction(classId: string): number {
 }
 
 export default function GradebookTable({ classId, sessions, students, onCellClick, onStudentClick }: Props) {
+  const navigate = useNavigate()
   const [selectedSection, setSelectedSection] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [atRiskOnly, setAtRiskOnly] = useState(false)
@@ -103,6 +105,7 @@ export default function GradebookTable({ classId, sessions, students, onCellClic
     if (sort.key === 'section') return s.section
     if (sort.key === 'p') return fraction(s.participationTotal, s.participationMax)
     if (sort.key === 'hw') return fraction(s.hwTotal, s.hwMax)
+    if (sort.key === 'quiz') return fraction(s.quizTotal ?? 0, s.quizMax ?? 0)
     const sc = s.scores.find((r) => r.sessionId === sort.key.slice(2))
     return sc ? fraction(sc.earned, sc.max) : null
   }
@@ -140,6 +143,11 @@ export default function GradebookTable({ classId, sessions, students, onCellClic
   const avgParticipation = participatingStudents.length > 0
     ? participatingStudents.reduce((sum, s) => sum + (adjustedParticipation(s, reduction) ?? 0), 0) / participatingStudents.length
     : null
+  const quizCount = sessions.filter((s) => s.type === 'PAPER_QUIZ').length
+  const quizStudents = students.filter((s) => (s.quizMax ?? 0) > 0)
+  const avgQuiz = quizStudents.length > 0
+    ? quizStudents.reduce((sum, s) => sum + s.quizTotal / s.quizMax, 0) / quizStudents.length
+    : null
   const hwStudents = students.filter((s) => s.hwMax > 0)
   const avgHomework = hwStudents.length > 0
     ? hwStudents.reduce((sum, s) => sum + s.hwTotal / s.hwMax, 0) / hwStudents.length
@@ -158,6 +166,9 @@ export default function GradebookTable({ classId, sessions, students, onCellClic
         )}
         {avgHomework != null && (
           <StatChip label="avg homework" value={`${Math.round(avgHomework * 100)}%`} />
+        )}
+        {avgQuiz != null && (
+          <StatChip label="avg paper quiz" value={`${Math.round(avgQuiz * 100)}%`} />
         )}
         {inClassCount > 0 && (
           <StatChip label="openers" value={String(inClassCount)} />
@@ -257,9 +268,9 @@ export default function GradebookTable({ classId, sessions, students, onCellClic
                   </button>
                   <br />
                   <span className={`mt-0.5 inline-block text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
-                    s.type === 'IN_CLASS' ? 'bg-good-soft text-good' : 'bg-surface-2 text-ink-2'
+                    s.type === 'IN_CLASS' ? 'bg-good-soft text-good' : s.type === 'PAPER_QUIZ' ? 'bg-signal-soft text-signal' : 'bg-surface-2 text-ink-2'
                   }`}>
-                    {s.type === 'IN_CLASS' ? 'Live' : 'HW'}
+                    {s.type === 'IN_CLASS' ? 'Live' : s.type === 'PAPER_QUIZ' ? 'Quiz' : 'HW'}
                   </span>
                 </th>
               ))}
@@ -269,12 +280,17 @@ export default function GradebookTable({ classId, sessions, students, onCellClic
               <th className="z-20 px-4 py-3 text-center text-xs font-medium text-muted uppercase tracking-wide whitespace-nowrap">
                 {sortButton('hw', 'HW Total')}
               </th>
+              {quizCount > 0 && (
+                <th className="z-20 px-4 py-3 text-center text-xs font-medium text-muted uppercase tracking-wide whitespace-nowrap">
+                  {sortButton('quiz', 'Quiz Total')}
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
             {sorted.length === 0 && (
               <tr>
-                <td colSpan={sessions.length + (hasSections ? 4 : 3)} className="px-4 py-8 text-center text-sm text-muted">
+                <td colSpan={sessions.length + (hasSections ? 4 : 3) + (quizCount > 0 ? 1 : 0)} className="px-4 py-8 text-center text-sm text-muted">
                   No {showAtRiskOnly ? 'at-risk ' : ''}NetID matches “{query.trim()}”{selectedSection ? ` in section ${selectedSection}` : ''}.
                 </td>
               </tr>
@@ -302,6 +318,22 @@ export default function GradebookTable({ classId, sessions, students, onCellClic
                   )}
                   {sessions.map((s) => {
                     const sc = student.scores.find((r) => r.sessionId === s.id)
+                    if (s.type === 'PAPER_QUIZ') {
+                      // Excused and unsettled papers say so; a scored paper opens its scan.
+                      const { label, className } = sc?.excused ? { label: 'exc', className: 'text-muted' }
+                        : sc?.pending ? { label: '…', className: 'text-warn' }
+                        : scoreCell(sc?.earned ?? 0, sc?.max ?? 0)
+                      return (
+                        <td
+                          key={s.id}
+                          title={sc?.excused ? 'Excused' : sc?.pending ? 'Not settled: two papers with this NetID, or the paper is not graded yet' : sc?.pageId ? 'Open this paper' : 'No paper'}
+                          className={`px-3 py-2.5 text-center text-xs font-mono font-medium ${className} ${sc?.pageId ? 'cursor-pointer hover:opacity-70' : ''}`}
+                          onClick={sc?.pageId ? () => navigate(`/professor/quiz-grader/pages/${sc.pageId}`) : undefined}
+                        >
+                          {label}
+                        </td>
+                      )
+                    }
                     const { label, className } = scoreCell(sc?.earned ?? 0, sc?.max ?? 0)
                     const clickable = onCellClick && (sc?.max ?? 0) > 0
                     return (
@@ -324,6 +356,14 @@ export default function GradebookTable({ classId, sessions, students, onCellClic
                   })()}
                   {(() => {
                     const { label, className } = scoreCell(student.hwTotal, student.hwMax)
+                    return (
+                      <td className={`px-4 py-2.5 text-center text-xs font-mono font-semibold ${className}`}>
+                        {label}
+                      </td>
+                    )
+                  })()}
+                  {quizCount > 0 && (() => {
+                    const { label, className } = scoreCell(student.quizTotal ?? 0, student.quizMax ?? 0)
                     return (
                       <td className={`px-4 py-2.5 text-center text-xs font-mono font-semibold ${className}`}>
                         {label}

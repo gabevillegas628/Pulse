@@ -13,6 +13,7 @@ import { runAnswerCounts } from '../utils/answerCounts.js'
 import { generateUniqueCode } from '../utils/codes.js'
 import { p } from '../utils/params.js'
 import { copyQuizInto, quizSources } from '../quizGrader/copy.js'
+import { classQuizGrades } from '../quizGrader/gradebook.js'
 
 const nanoid = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 6)
 const nanoidDigits = customAlphabet('0123456789', 4)
@@ -965,13 +966,18 @@ router.get('/:id/grades/json', async (req: Request, res: Response, next: NextFun
       return (s.deadline ?? s.createdAt).toISOString()
     }
 
-    const gradebookSessions = allSessions.map((s) => ({
-      id: s.id,
-      title: s.title,
-      type: s.type,
-      questionCount: s.questions.length,
-      date: itemDate(s),
-    }))
+    const paperQuizzes = await classQuizGrades(cls.id)
+    const gradebookSessions = [
+      ...allSessions.map((s) => ({
+        id: s.id,
+        title: s.title,
+        type: s.type,
+        questionCount: s.questions.length,
+        date: itemDate(s),
+      })),
+      // Released paper quizzes, after the sessions and assignments.
+      ...paperQuizzes.quizzes.map((q) => ({ id: q.id, title: q.title, type: 'PAPER_QUIZ' as const, questionCount: 0, date: q.date ?? undefined })),
+    ]
 
     const students = enrollments.map((enrollment) => {
       const student = enrollment.student
@@ -1027,15 +1033,23 @@ router.get('/:id/grades/json', async (req: Request, res: Response, next: NextFun
         return sum + (score?.earned ?? 0)
       }, 0)
 
+      // Paper quizzes: excused and pending cells count for nothing (their max is 0).
+      const quizCells = paperQuizzes.quizzes.map((q) => paperQuizzes.cell(student.netId, q.id)!)
+      const quizScores = quizCells.map((c) => ({
+        sessionId: c.quizId, earned: c.earned, max: c.max, excused: c.excused, pending: c.pending, pageId: c.pageId,
+      }))
+
       return {
         studentId: student.id,
         netId: student.netId,
         section: enrollment.section?.name ?? null,
-        scores,
+        scores: [...scores, ...quizScores],
         participationTotal: Math.round(participationTotal * 10) / 10,
         participationMax,
         hwTotal: Math.round(hwTotal * 10) / 10,
         hwMax,
+        quizTotal: Math.round(quizCells.reduce((a, c) => a + c.earned, 0) * 100) / 100,
+        quizMax: quizCells.reduce((a, c) => a + c.max, 0),
       }
     })
 
@@ -1109,12 +1123,16 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
     const participationHeaders = sessions.map((s) => s.title.replace(/,/g, ' '))
     const homeworkHeaders = assignments.map((a) => `HW: ${a.title.replace(/,/g, ' ')}`)
 
+    const paperQuizzes = await classQuizGrades(classId)
+    const quizHeaders = paperQuizzes.quizzes.map((q) => `Quiz: ${q.title.replace(/,/g, ' ')} (/${q.max})`)
+
     const header = [
       'NetID', 'Section',
       ...participationHeaders,
       'Participation Total', 'Participation Max',
       ...homeworkHeaders,
       'HW Total', `HW Max (${homeworkMax})`,
+      ...(paperQuizzes.quizzes.length ? [...quizHeaders, 'Quiz Total', 'Quiz Max'] : []),
     ].join(',')
 
     const csvRows = enrollments.map((enrollment) => {
@@ -1160,6 +1178,15 @@ router.get('/:id/grades', async (req: Request, res: Response, next: NextFunction
         ...hwTotals.map((t) => t.toFixed(1)),
         hwTotal.toFixed(1),
         homeworkMax.toFixed(1),
+        // Paper quizzes: excused and not-yet-settled papers are written out, not as 0.
+        ...(paperQuizzes.quizzes.length ? (() => {
+          const cells = paperQuizzes.quizzes.map((q) => paperQuizzes.cell(student.netId, q.id)!)
+          return [
+            ...cells.map((c) => (c.excused ? 'excused' : c.pending ? 'pending' : String(c.earned))),
+            String(Math.round(cells.reduce((a, c) => a + c.earned, 0) * 100) / 100),
+            String(cells.reduce((a, c) => a + c.max, 0)),
+          ]
+        })() : []),
       ].join(',')
     })
 

@@ -15,6 +15,7 @@ import { p } from '../utils/params.js'
 import { assessmentSchema, layoutSchema } from '../quizGrader/content.js'
 import { parseSource } from '../quizGrader/store.js'
 import { effectiveResults, pageTotals } from '../quizGrader/review.js'
+import { quizStanding } from '../quizGrader/gradebook.js'
 
 const router = Router()
 const viewer = (req: Request) => (req as ProfessorRequest).professor
@@ -71,12 +72,16 @@ router.get('/quiz-grader/content/:id/match', requireProfessor, async (req: Reque
         orderBy: [{ batch: { createdAt: 'asc' } }, { index: 'asc' }],
       }),
     ])
+    const standing = await quizStanding(quiz.id)
     res.json({
       success: true,
       data: {
         classId: quiz.classId,
         classes,
         roster: students,
+        // Roster students with no paper: each scores 0 unless excused.
+        noPaper: standing ? [...standing.missing, ...standing.excused].filter((n, i, a) => a.indexOf(n) === i).sort() : [],
+        excused: standing ? [...standing.excused] : [],
         pages: pages.map((pg) => {
           // Crops exist only for boxes the page was cut with.
           const cut = new Set(((pg.slots ?? []) as { id: string }[]).map((s) => s.id))
@@ -124,6 +129,64 @@ router.put('/quiz-grader/pages/:pageId/student', requireProfessor, async (req: R
     if (value !== null && !/^[\w.@-]+$/.test(value)) throw new AppError('A NetID is letters, digits and . _ - only.', 400)
     await prisma.quizPage.update({ where: { id: page.id }, data: { studentNetId: value, matchedAt: value ? new Date() : null } })
     res.json({ success: true, data: { netId: value } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Excuse a student from the quiz (no paper, not counted as a 0), or take it back.
+router.put('/quiz-grader/content/:id/excused', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const quiz = await ownedQuiz(req)
+    const { netId, excused } = z.object({ netId: z.string().trim().min(1).max(64), excused: z.boolean() }).parse(req.body)
+    const n = normNetId(netId)
+    if (excused) {
+      await prisma.quizExcusal.upsert({ where: { assessmentId_netId: { assessmentId: quiz.id, netId: n } }, create: { assessmentId: quiz.id, netId: n }, update: {} })
+    } else {
+      await prisma.quizExcusal.deleteMany({ where: { assessmentId: quiz.id, netId: n } })
+    }
+    res.json({ success: true, data: { netId: n, excused } })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/** What releasing would send to the gradebook, and what is not settled yet. */
+async function releaseSummary(quizId: string) {
+  const s = (await quizStanding(quizId))!
+  return {
+    releasedAt: s.releasedAt,
+    classId: s.classId,
+    max: s.max,
+    roster: s.roster.length,
+    // Roster students with a score: an off-roster NetID's paper counts for no one.
+    scored: s.roster.filter((r) => s.scores.has(r.netId.trim().toLowerCase())).length,
+    noPaper: s.missing.length,
+    excused: s.excused.size,
+    pending: s.pending.size,
+    ...s.problems,
+  }
+}
+
+// Where the quiz stands, for the release dialog.
+router.get('/quiz-grader/content/:id/release', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const quiz = await ownedQuiz(req)
+    res.json({ success: true, data: await releaseSummary(quiz.id) })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Release the quiz's scores to the class gradebook and to students, or take them back.
+router.put('/quiz-grader/content/:id/release', requireProfessor, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const quiz = await ownedQuiz(req)
+    const { released } = z.object({ released: z.boolean() }).parse(req.body)
+    if (released && !quiz.classId) throw new AppError('Put the quiz in a class first: its scores go to that class’s gradebook.', 400)
+    // Not an edit to the quiz's files, so their updatedAt (the edit guard) is left alone.
+    await prisma.quizContent.update({ where: { id: quiz.id }, data: { releasedAt: released ? new Date() : null, updatedAt: quiz.updatedAt } })
+    res.json({ success: true, data: await releaseSummary(quiz.id) })
   } catch (err) {
     next(err)
   }

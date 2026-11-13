@@ -432,7 +432,8 @@ export interface AssignmentRow {
 export interface GradeSession {
   id: string
   title: string
-  type: 'IN_CLASS' | 'HOMEWORK'
+  /** PAPER_QUIZ: a released paper quiz; score only, no question breakdown. */
+  type: 'IN_CLASS' | 'HOMEWORK' | 'PAPER_QUIZ'
   date: string | null
   earned: number
   max: number
@@ -466,7 +467,8 @@ export interface GradeSessionDetail {
 export interface GradebookSession {
   id: string
   title: string
-  type: 'IN_CLASS' | 'HOMEWORK'
+  /** PAPER_QUIZ: a released scanned paper quiz; its cells open the student's paper. */
+  type: 'IN_CLASS' | 'HOMEWORK' | 'PAPER_QUIZ'
   questionCount: number
   /** ISO. A session's last close, an assignment's deadline; creation if neither. */
   date?: string
@@ -478,9 +480,16 @@ export interface GradebookStudentRow {
   netId: string
   section: string | null
   /** `answered` counts questions with any response, so absent and scored-zero differ. */
-  scores: Array<{ sessionId: string; earned: number; max: number; answered?: number }>
+  scores: Array<{
+    sessionId: string; earned: number; max: number; answered?: number
+    /** Paper quizzes: excused (no score), pending (not settled), and the scanned paper. */
+    excused?: boolean; pending?: boolean; pageId?: string | null
+  }>
   participationTotal: number
   participationMax: number
   hwTotal: number
   hwMax: number
+  /** Released paper quizzes. */
+  quizTotal: number
+  quizMax: number
 }

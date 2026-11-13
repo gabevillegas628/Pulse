@@ -10,7 +10,7 @@ import Tabs from '@/components/ui/Tabs'
 import LiveDot from '@/components/ui/LiveDot'
 import Empty from '@/components/ui/Empty'
 import Popover from '@/components/ui/Popover'
-import { BookOpen, ChevronLeft, Clock, KeyRound, LogOut, Menu } from 'lucide-react'
+import { BookOpen, ChevronLeft, Clock, FileText, KeyRound, LogOut, Menu } from 'lucide-react'
 import type { AssignmentRow, GradeSession } from 'shared'
 import PasswordChangeModal from '@/components/PasswordChangeModal'
 import SessionGradeSheet from '@/components/SessionGradeSheet'
@@ -129,6 +129,8 @@ export default function StudentClassPage() {
   // Standing breakdown by type
   const inClassSessions = gradesData?.sessions.filter((s) => s.type === 'IN_CLASS') ?? []
   const hwSessions = gradesData?.sessions.filter((s) => s.type === 'HOMEWORK') ?? []
+  // Released paper quizzes: the score only. Ask the professor for the details.
+  const paperQuizzes = gradesData?.sessions.filter((s) => s.type === 'PAPER_QUIZ') ?? []
   const inClassEarned = inClassSessions.reduce((sum, s) => sum + s.earned, 0)
   const inClassMax = inClassSessions.reduce((sum, s) => sum + s.max, 0)
   const hwEarned = hwSessions.reduce((sum, s) => sum + s.earned, 0)
@@ -460,6 +462,21 @@ export default function StudentClassPage() {
                       <BookOpen size={12} /> Homework
                     </p>
                     {renderGroup(hwSessions)}
+                  </div>
+                )}
+                {paperQuizzes.length > 0 && (
+                  <div>
+                    <p className="flex items-center gap-1.5 text-xs font-medium text-muted uppercase tracking-wide mb-2">
+                      <FileText size={12} /> Quizzes
+                    </p>
+                    <div className="bg-surface border border-hairline rounded-[14px] overflow-hidden">
+                      {paperQuizzes.map((s, i) => (
+                        <div key={s.id} className={`flex items-center justify-between px-5 py-3.5 ${i < paperQuizzes.length - 1 ? 'border-b border-hairline' : ''}`}>
+                          <p className="text-sm text-ink-2">{s.title}</p>
+                          <p className="text-sm font-mono font-medium text-ink shrink-0">{s.earned}/{s.max}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>

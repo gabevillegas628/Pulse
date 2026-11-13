@@ -199,6 +199,43 @@ async function main() {
       check('unmatched papers are exported and noted', rows.filter((r) => r[0] === '' && r.join().includes('not matched')).length === 4)
       check('students with no paper are listed with no score', [kids[1]!, kids[2]!].every((k) => row(k.netId)?.[2] === '' && row(k.netId)?.join().includes('no paper')))
       check("another professor cannot export this quiz's grades", (await fetch(`${BASE}/api/quiz-grader/content/${quiz.id}/export.csv`, { headers: { Authorization: `Bearer ${T2}` } })).status === 404)
+
+      // The gradebook: nothing until released, then the score after review, live.
+      const gb = async () => (await api('GET', `/api/classes/${cls.id}/grades/json`, T)).body.data
+      check('an unreleased quiz is not in the gradebook', !(await gb()).sessions.some((x: { type: string }) => x.type === 'PAPER_QUIZ'))
+      const before = (await api('GET', `/api/quiz-grader/content/${quiz.id}/release`, T)).body.data
+      check('the release check lists what is not settled', before.releasedAt === null && before.unmatched === 2 && before.notGraded === 2
+        && before.offRoster.includes('notinclass9') && before.scored === 1 && before.noPaper === 2, before)
+      check("another professor cannot release this quiz", (await api('PUT', `/api/quiz-grader/content/${quiz.id}/release`, T2, { released: true })).status === 404)
+      await api('PUT', `/api/quiz-grader/content/${quiz.id}/excused`, T, { netId: kids[2]!.netId, excused: true })
+      const rel = await api('PUT', `/api/quiz-grader/content/${quiz.id}/release`, T, { released: true })
+      check('releasing records when', rel.status === 200 && !!rel.body.data.releasedAt && rel.body.data.excused === 1, rel.body)
+      const g1 = await gb()
+      const col = g1.sessions.find((x: { type: string }) => x.type === 'PAPER_QUIZ')
+      const rowOf = (netId: string) => g1.students.find((x: { netId: string }) => x.netId === netId)
+      const cellOf = (netId: string) => rowOf(netId)?.scores.find((x: { sessionId: string }) => x.sessionId === quiz.id)
+      const firstNow = (await results()).pages.find((pg: { id: string }) => pg.id === graded[0].id)
+      check('a released quiz is a gradebook column', !!col && col.id === quiz.id)
+      check("a matched student's cell is their score after review, and opens their paper",
+        cellOf(kids[0]!.netId)?.earned === firstNow.pointsFinal && cellOf(kids[0]!.netId)?.max === firstNow.maxPoints && cellOf(kids[0]!.netId)?.pageId === graded[0].id, cellOf(kids[0]!.netId))
+      check('a student with no paper scores 0 out of the quiz', cellOf(kids[1]!.netId)?.earned === 0 && cellOf(kids[1]!.netId)?.max === firstNow.maxPoints && !cellOf(kids[1]!.netId)?.excused)
+      check('an excused student counts for nothing', cellOf(kids[2]!.netId)?.excused === true && cellOf(kids[2]!.netId)?.max === 0)
+      check('the quiz total adds up', rowOf(kids[0]!.netId)?.quizTotal === firstNow.pointsFinal && rowOf(kids[2]!.netId)?.quizMax === 0)
+      const classCsv = await (await fetch(`${BASE}/api/classes/${cls.id}/grades`, { headers: { Authorization: `Bearer ${T}` } })).text()
+      const csvLines = classCsv.split('\n')
+      check('the class CSV has the quiz, with excused written out', csvLines[0]!.includes('Quiz: ') && csvLines[0]!.includes('Quiz Total')
+        && csvLines.some((l) => l.startsWith(kids[2]!.netId) && l.includes('excused')), csvLines[0])
+      const ST = (k: { id: string }) => jwt.sign({ sub: k.id, role: 'student' }, config.jwtSecret, { expiresIn: '1h' })
+      const mine = (await api('GET', `/api/student/classes/${cls.id}/grades`, ST(kids[0]!))).body.data
+      const myQuiz = mine.sessions.find((x: { type: string }) => x.type === 'PAPER_QUIZ')
+      check('a student sees their released quiz as a score only', myQuiz?.earned === firstNow.pointsFinal && myQuiz?.max === firstNow.maxPoints
+        && Object.keys(myQuiz).sort().join() === 'date,earned,id,max,title,type', myQuiz)
+      const theirs2 = (await api('GET', `/api/student/classes/${cls.id}/grades`, ST(kids[2]!))).body.data
+      check('an excused student sees no quiz line', !theirs2.sessions.some((x: { type: string }) => x.type === 'PAPER_QUIZ'))
+      await api('PUT', `/api/quiz-grader/content/${quiz.id}/release`, T, { released: false })
+      check('taking it back removes it from the gradebook and from students',
+        !(await gb()).sessions.some((x: { type: string }) => x.type === 'PAPER_QUIZ')
+        && !(await api('GET', `/api/student/classes/${cls.id}/grades`, ST(kids[0]!))).body.data.sessions.some((x: { type: string }) => x.type === 'PAPER_QUIZ'))
     } finally {
       await prisma.quizContent.updateMany({ where: { classId: cls.id }, data: { classId: null } })
       await prisma.enrollment.deleteMany({ where: { classId: cls.id } })
