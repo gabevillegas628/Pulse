@@ -415,6 +415,44 @@ After those changes the batch still had 573 "unsure" flags, so two more:
 For papers already graded: **Second looks**, then the flags update; **Re-score with current
 key** applies the rules. Neither re-grades a paper or touches a decision.
 
+## Suggested structure checks
+
+A drawing scores only if every check is yes, so one badly worded check marks every correct
+paper wrong, with confidence. "Carboxylates on carbons 2 and 4" on α-ketoglutarate did
+exactly that: true with one numbering, false with the usual one. The Key tab now helps
+write checks, and tests them before they are used.
+
+1. **Upload your filled-in key** (PDF or photo of the quiz with the answers drawn in). It
+   is lined up like a scan and each structure box is cut out (`keyDrawings.ts`). A box
+   catches ink from the answers beside it, so a page whose detected version draws that
+   intermediate is preferred. Stored in `QuizKeyDrawings`, apart from the YAML. If boxes
+   move, **Cut again**.
+2. **Suggest checks** (`suggest.ts`). One call (Opus, `MODEL_SUGGEST`) sees every key
+   drawing and writes checks for each graded structure. The rules: one yes/no fact; true for
+   any correct drawing however drawn; no carbon numbers or layout words; together false for
+   every other molecule in the pathway.
+3. **Tested by code.** The grading reader (`MODEL_STRUCTURE`) answers every list on every
+   key drawing, one call per drawing. Lists are labelled l1, l2… so it is never told which
+   molecule a list is for. Then code tallies:
+   - a molecule's own drawing must pass all its checks;
+   - every other drawing must fail at least one.
+
+   Lists with problems go back once with what went wrong; a revision is kept only if it does
+   better. A check the key's own drawing still fails is left out, and listed. The current
+   checks are tested the same way, so the Key tab shows both side by side.
+4. **Use these** puts the checks in the unsaved changes (dropping any weights); **Save** as
+   usual. A run costs well under a dollar.
+
+The model writes the key here; it never grades. The results live in memory until the
+server restarts.
+
+**Changing checks reads drawings again.** A drawing's answers are matched to its checks by
+position, so re-scoring old answers against new checks was wrong. Pages now record the
+checks each drawing was asked (`reads.checks`). After a key edit, a graded page whose
+drawings were asked other checks is queued to be graded again: its drawings are read with
+the new checks, and its written answers come from the cache. Pages read before this change
+are caught by the edit's changed intermediates, or by a different number of answers.
+
 ## Changes from the handoff
 
 - **Seed YAML bug fixed.** Names containing a comma (`1,3-bisphosphoglycerate`,

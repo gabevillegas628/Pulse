@@ -30,7 +30,7 @@ import { parseSource } from './store.js'
 export const gradingConfigured = () => Boolean(config.anthropicApiKey)
 
 const MODEL_TEXT = process.env.MODEL_TEXT || DEFAULT_MODEL_TEXT
-const MODEL_STRUCTURE = process.env.MODEL_STRUCTURE || DEFAULT_MODEL_STRUCTURE
+export const MODEL_STRUCTURE = process.env.MODEL_STRUCTURE || DEFAULT_MODEL_STRUCTURE
 const MODEL_SECOND_LOOK = process.env.MODEL_SECOND_LOOK || DEFAULT_MODEL_SECOND_LOOK
 const MODEL_STRUCTURE_SECOND_LOOK = process.env.MODEL_STRUCTURE_SECOND_LOOK || DEFAULT_MODEL_STRUCTURE_SECOND_LOOK
 
@@ -42,6 +42,11 @@ export interface PageReads {
   second?: Record<string, TextRead>
   /** Second, blind answers to drawings' doubtful checks, by an even stronger model. */
   secondStructure?: Record<string, StructureRead>
+  /**
+   * The checks each drawing was asked, by slot id. Answers are matched to checks by
+   * position, so once a drawing's checks change its answers mean nothing: it is read again.
+   */
+  checks?: Record<string, string[]>
 }
 
 interface Context {
@@ -63,7 +68,7 @@ export async function contextFor(assessmentId: string): Promise<Context> {
 }
 
 /** Model reads cached in the database, keyed by model, prompt and images. */
-const dbCache: ReadCache = {
+export const dbCache: ReadCache = {
   async get(key) {
     return (await prisma.quizReadCache.findUnique({ where: { key } }))?.value ?? undefined
   },
@@ -224,6 +229,7 @@ async function gradeOne(pageId: string): Promise<void> {
     structure: structureReads,
     second: Object.fromEntries(second?.reads ?? []),
     secondStructure: Object.fromEntries(secondStruct?.reads ?? []),
+    checks: Object.fromEntries(slots.filter((g) => g.ref.kind === 'structure').map((g) => [g.slot.id, (g.ref as { intermediate: { features: string[] } }).intermediate.features])),
   }
   const usage: Usage[] = [text?.usage, struct?.usage, second?.usage, secondStruct?.usage].filter((u): u is Usage => !!u)
   await prisma.quizPage.update({
@@ -300,18 +306,60 @@ export const secondLooksRunning = (assessmentId: string) => runningSecondLooks.h
  * Re-score every graded page of an assessment from its stored reads: after the key,
  * the points or the review rules change. No model calls.
  */
-export async function rescoreAssessment(assessmentId: string): Promise<number> {
+export async function rescoreAssessment(assessmentId: string, changed: Set<string> = new Set()): Promise<number> {
   const ctx = await contextFor(assessmentId)
   const pages = await prisma.quizPage.findMany({
     where: { gradeStatus: 'GRADED', batch: { assessmentId } },
-    select: { id: true },
+    select: { id: true, version: true, reads: true },
   })
-  for (const p of pages) await scorePage(p.id, ctx)
+  const reread: string[] = []
+  for (const p of pages) {
+    if (gradingConfigured() && drawingsAskedOtherChecks(ctx, p, changed)) { reread.push(p.id); continue }
+    await scorePage(p.id, ctx)
+  }
+  // Their drawings are read again with the new checks (written answers come from the cache).
+  if (reread.length) {
+    await prisma.quizPage.updateMany({ where: { id: { in: reread } }, data: { gradeStatus: 'PENDING', gradeAttempts: 0, gradeError: null } })
+    logger.info('quiz pages queued to read drawings again after their checks changed', { assessmentId, pages: reread.length })
+  }
   return pages.length
 }
 
+/**
+ * Whether a page's drawings were read against checks other than the key's current ones.
+ * Pages read before the checks were recorded are judged by `changed` (the intermediates
+ * whose checks the edit being saved changes) and by how many checks were answered.
+ */
+function drawingsAskedOtherChecks(ctx: Context, page: { version: string | null; reads: unknown }, changed: Set<string>): boolean {
+  if (!page.version || !page.reads) return false
+  const reads = page.reads as PageReads
+  let slots: GradedSlot[]
+  try { slots = slotsForVersion(ctx.assessment, ctx.layout, ctx.key, page.version) } catch { return false }
+  return slots.some((g) => {
+    if (g.ref.kind !== 'structure' || !reads.structure?.[g.slot.id]) return false
+    const asked = reads.checks?.[g.slot.id]
+    if (asked) return JSON.stringify(asked) !== JSON.stringify(g.ref.intermediate.features)
+    // Read before checks were recorded: a different number of answers gives it away.
+    const read = reads.structure[g.slot.id]!
+    return changed.has(g.ref.id) || (read.status === 'read' && read.features.length !== g.ref.intermediate.features.length)
+  })
+}
+
+/** Intermediates whose checks differ between a key's saved text and an edit of it. */
+export function changedChecks(before: string, after: unknown): Set<string> {
+  const out = new Set<string>()
+  try {
+    const a = pathwayKeySchema.parse(parseSource(before)).intermediates
+    const b = pathwayKeySchema.parse(after).intermediates
+    for (const id of new Set([...Object.keys(a), ...Object.keys(b)])) {
+      if (JSON.stringify(a[id]?.features ?? []) !== JSON.stringify(b[id]?.features ?? [])) out.add(id)
+    }
+  } catch { /* not a key */ }
+  return out
+}
+
 /** Re-score everything that depends on a key or assessment that was just edited. */
-export async function rescoreAfterEdit(professorId: string, kind: string, slug: string): Promise<void> {
+export async function rescoreAfterEdit(professorId: string, kind: string, slug: string, changed: Set<string> = new Set()): Promise<void> {
   const field = kind === 'KEY' ? 'key' : kind === 'LAYOUT' ? 'layout' : null
   const assessments = await prisma.quizContent.findMany({ where: { professorId, kind: 'ASSESSMENT' }, select: { id: true, slug: true, source: true } })
   for (const a of assessments) {
@@ -319,7 +367,7 @@ export async function rescoreAfterEdit(professorId: string, kind: string, slug: 
     if (field) { try { uses = parseSource(a.source)[field] === slug } catch { uses = false } }
     if (!uses) continue
     try {
-      const n = await rescoreAssessment(a.id)
+      const n = await rescoreAssessment(a.id, changed)
       if (n) logger.info('quiz pages re-scored after an edit', { assessment: a.slug, pages: n })
     } catch (e) {
       logger.warn('re-scoring after an edit failed', { assessment: a.slug, error: (e as Error).message })

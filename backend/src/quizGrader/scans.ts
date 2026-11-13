@@ -82,6 +82,25 @@ export async function createDocument(file: string, name: string): Promise<{ id: 
   return (await r.json()) as { id: string; pages: number }
 }
 
+/** One page of a document the vision service holds, as an image. */
+export async function documentPage(id: string, index: number): Promise<{ bytes: Buffer; name: string }> {
+  const r = await vision(`/documents/${id}/pages/${index}`)
+  return { bytes: Buffer.from(await r.arrayBuffer()), name: r.headers.get('content-type')?.includes('png') ? 'page.png' : 'page.jpg' }
+}
+
+/** Line one page image up with the blank form and cut out the given boxes. */
+export async function processImage(
+  image: { bytes: Buffer; name: string },
+  formPdf: Uint8Array,
+  spec: { versions: { name: string; page: number; boxes: { id: string; box: number[] }[] }[]; version: string | null },
+): Promise<ProcessResult> {
+  const form = new FormData()
+  form.append('page', new Blob([new Uint8Array(image.bytes)]), image.name)
+  form.append('form', new Blob([new Uint8Array(formPdf)], { type: 'application/pdf' }), 'form.pdf')
+  form.append('spec', JSON.stringify(spec))
+  return (await (await vision('/process', { method: 'POST', body: form })).json()) as ProcessResult
+}
+
 export async function deleteDocument(id: string): Promise<void> {
   await vision(`/documents/${id}`, { method: 'DELETE' }).catch(() => undefined)
 }
@@ -118,7 +137,7 @@ export async function specFor(assessmentId: string): Promise<Spec> {
   }
 }
 
-interface ProcessResult {
+export interface ProcessResult {
   method: string
   markers: number
   match: number

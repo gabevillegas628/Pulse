@@ -10,6 +10,7 @@ import Tabs from '@/components/ui/Tabs'
 import ConfirmDialog, { type DialogRequest } from '@/components/ui/ConfirmDialog'
 import BoxEditor, { useBlankForm, type BlankForm } from '@/components/quizGrader/BoxEditor'
 import KeyFields from '@/components/quizGrader/KeyFields'
+import KeyChecksPanel from '@/components/quizGrader/KeyChecksPanel'
 import ScansPanel from '@/components/quizGrader/ScansPanel'
 import { ScoringFields, VersionsGrid } from '@/components/quizGrader/QuizSettings'
 import { apiError } from '@/lib/errors'
@@ -162,6 +163,7 @@ function QuizEditor({ bundle, onSaved }: { bundle: QuizBundle; onSaved: (b: Quiz
       {draft && tab === 'key' && (
         <>
           <Shared names={bundle.sharedKey} what="answer key" />
+          <KeyChecksPanel quizId={bundle.quiz.id} draft={draft} edit={edit} keyUpdatedAt={bundle.key?.updatedAt} />
           <KeyFields draft={draft} edit={edit} />
         </>
       )}

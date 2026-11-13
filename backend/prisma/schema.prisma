@@ -8,20 +8,20 @@ datasource db {
 }
 
 model Professor {
-  id            String    @id @default(cuid())
-  email         String    @unique
+  id            String        @id @default(cuid())
+  email         String        @unique
   passwordHash  String
   name          String
   // Admin is a bit on a professor, not a second kind of account: requireProfessor
   // re-reads this row on every request, so the bit lives only in the database and
   // granting or revoking it takes effect on the next request, with no token to chase.
-  isAdmin       Boolean   @default(false)
+  isAdmin       Boolean       @default(false)
   // Deactivation, deliberately not deletion: Class cascades from Professor, so a
   // delete takes a semester of education records with it. A deactivated professor
   // keeps every row; login and every outstanding token stop working instead.
   deactivatedAt DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
   classes       Class[]
   quizContent   QuizContent[]
   quizBatches   QuizBatch[]
@@ -66,37 +66,37 @@ model PasswordResetToken {
 }
 
 model Class {
-  id                String         @id @default(cuid())
-  professorId       String
+  id                   String         @id @default(cuid())
+  professorId          String
   // Restrict, not Cascade: deleting a professor must never silently take a
   // semester of responses with it. There is deliberately no path in the app that
   // deletes a professor — admins deactivate instead — so this guards raw SQL,
   // Prisma Studio, and future scripts: transfer or delete the classes first.
-  professor         Professor      @relation(fields: [professorId], references: [id], onDelete: Restrict)
-  name              String
-  description       String?
-  joinCode          String         @unique
-  textbookRepo      String?
-  textbookPath      String?
-  textbookBranch    String?
+  professor            Professor      @relation(fields: [professorId], references: [id], onDelete: Restrict)
+  name                 String
+  description          String?
+  joinCode             String         @unique
+  textbookRepo         String?
+  textbookPath         String?
+  textbookBranch       String?
   // Default for live AI theming of FREE_TEXT answers. Per-question `liveThemes`
   // overrides it; off by default so no lecture starts calling an LLM unasked.
-  liveThemesDefault Boolean        @default(false)
+  liveThemesDefault    Boolean        @default(false)
   // Default for auto-closing questions once answers stop arriving. Per-question
   // `autoClose` overrides it; off by default so no lecture starts refusing answers unasked.
-  autoCloseDefault  Boolean        @default(false)
+  autoCloseDefault     Boolean        @default(false)
   // Default for grading free text on effort instead of understanding. Per-question
   // `effortGrading` overrides it. A course tends to take one stance or the other for
   // the whole term, which is why this lives on the class and not only on questions.
-  effortGradingDefault Boolean     @default(false)
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
-  sessions          Session[]
-  assignments       Assignment[]
-  enrollments       Enrollment[]
-  sections          Section[]
-  textbookViews     TextbookView[]
-  quizzes           QuizContent[]
+  effortGradingDefault Boolean        @default(false)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  sessions             Session[]
+  assignments          Assignment[]
+  enrollments          Enrollment[]
+  sections             Section[]
+  textbookViews        TextbookView[]
+  quizzes              QuizContent[]
 }
 
 model TextbookView {
@@ -111,12 +111,12 @@ model TextbookView {
 }
 
 model Section {
-  id          String       @id @default(cuid())
+  id          String         @id @default(cuid())
   classId     String
-  class       Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  class       Class          @relation(fields: [classId], references: [id], onDelete: Cascade)
   name        String
-  joinCode    String       @unique
-  createdAt   DateTime     @default(now())
+  joinCode    String         @unique
+  createdAt   DateTime       @default(now())
   enrollments Enrollment[]
   runs        SessionRun[]
   skips       QuestionSkip[]
@@ -418,8 +418,8 @@ model ResponseTheme {
 // ─── Quiz grader (docs/quiz-grader) ───────────────────────────────────────────
 
 enum QuizContentKind {
-  KEY        // a pathway's answers: enzymes, cofactors, intermediates and their features
-  LAYOUT     // where each blank sits on one printed form
+  KEY // a pathway's answers: enzymes, cofactors, intermediates and their features
+  LAYOUT // where each blank sits on one printed form
   ASSESSMENT // which blanks a quiz grades, for how many points, in which versions
 }
 
@@ -433,10 +433,10 @@ enum QuizContentKind {
 // serves every section that gives the quiz. Assessments name their key and layout by
 // slug, as the YAML does, resolved within the same professor's content.
 model QuizContent {
-  id          String          @id @default(cuid())
+  id          String              @id @default(cuid())
   professorId String
   // Restrict, like Class: no path in the app deletes a professor.
-  professor   Professor       @relation(fields: [professorId], references: [id], onDelete: Restrict)
+  professor   Professor           @relation(fields: [professorId], references: [id], onDelete: Restrict)
   kind        QuizContentKind
   // The YAML's own name for itself: `pathway:` for a key, `layout:`, `assessment:`.
   slug        String
@@ -448,18 +448,33 @@ model QuizContent {
   // Quizzes only: the Pulse class whose roster the papers are matched against. Kept here,
   // not in the YAML: it is this professor's data, not part of a quiz someone could import.
   classId     String?
-  class       Class?          @relation(fields: [classId], references: [id], onDelete: SetNull)
+  class       Class?              @relation(fields: [classId], references: [id], onDelete: SetNull)
   // Quizzes only: when the scores were released to the class gradebook and to students.
   // Null: not released. The gradebook stays live after release (review decisions and key
   // edits flow through).
   releasedAt  DateTime?
   excusals    QuizExcusal[]
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-
-  @@unique([professorId, kind, slug])
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
   batches     QuizBatch[]
   decisions   QuizGroupDecision[]
+  keyDrawings QuizKeyDrawings?
+
+  @@unique([professorId, kind, slug])
+}
+
+// Quizzes only: the professor's own filled-in answer key, and each intermediate's drawing
+// cut from it with the quiz's boxes. Used to suggest and test structure checks. Not student
+// work. Kept apart from QuizContent so its bytes never ride along with the YAML.
+model QuizKeyDrawings {
+  assessmentId String      @id
+  assessment   QuizContent @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  fileName     String
+  file         Bytes
+  // { cutAt, items: { [intermediateId]: { slotId, box, page, ink, png } }, notes: string[] }
+  drawings     Json?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 }
 
 // One upload of scanned quizzes for an assessment: a PDF from the copier, or a photo.
@@ -467,29 +482,29 @@ model QuizContent {
 // dot-directory of the upload volume that is never served statically, and only the
 // owning professor's authenticated requests read them.
 model QuizBatch {
-  id           String          @id @default(cuid())
+  id           String      @id @default(cuid())
   professorId  String
-  professor    Professor       @relation(fields: [professorId], references: [id], onDelete: Restrict)
+  professor    Professor   @relation(fields: [professorId], references: [id], onDelete: Restrict)
   // Restrict: an assessment with scans cannot be deleted until its scans are.
   assessmentId String
-  assessment   QuizContent     @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
+  assessment   QuizContent @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
   fileName     String
   // The upload as the vision service holds it, until every page has been fetched.
   visionDocId  String?
   pageCount    Int
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
   pages        QuizPage[]
 
   @@index([assessmentId])
 }
 
 enum QuizPageStatus {
-  PENDING       // waiting for the worker
-  PROCESSING    // claimed; claimedAt says since when
-  DONE          // aligned, version known, boxes cropped
+  PENDING // waiting for the worker
+  PROCESSING // claimed; claimedAt says since when
+  DONE // aligned, version known, boxes cropped
   NEEDS_VERSION // aligned, but the version could not be told; a person picks it
-  FAILED        // gave up after retries; `error` says why
+  FAILED // gave up after retries; `error` says why
 }
 
 model QuizPage {
@@ -518,9 +533,9 @@ model QuizPage {
   updatedAt     DateTime       @updatedAt
 
   // ── Grading (after the page is DONE) ──
-  gradeStatus    QuizGradeStatus @default(NONE)
+  gradeStatus    QuizGradeStatus  @default(NONE)
   gradeClaimedAt DateTime?
-  gradeAttempts  Int             @default(0)
+  gradeAttempts  Int              @default(0)
   gradeError     String?
   gradedAt       DateTime?
   // What the model said, kept so the page can be re-scored against an edited key
@@ -545,11 +560,11 @@ model QuizPage {
 }
 
 enum QuizGradeStatus {
-  NONE     // not graded (not DONE yet, or grading not set up)
-  PENDING  // waiting for the grader
-  GRADING  // claimed; gradeClaimedAt says since when
+  NONE // not graded (not DONE yet, or grading not set up)
+  PENDING // waiting for the grader
+  GRADING // claimed; gradeClaimedAt says since when
   GRADED
-  FAILED   // gave up after retries; gradeError says why
+  FAILED // gave up after retries; gradeError says why
 }
 
 // One answer box on one paper, scored. Recomputed from QuizPage.reads whenever the key
@@ -559,9 +574,9 @@ model QuizSlotResult {
   pageId        String
   page          QuizPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
   slotId        String
-  kind          String   // enzyme | cofactors | structure
-  status        String   // blank | read | illegible | error
-  blankBy       String?  // ink | model
+  kind          String // enzyme | cofactors | structure
+  status        String // blank | read | illegible | error
+  blankBy       String? // ink | model
   transcription String?
   // What identical answers share, for reviewing by item: the normalised name, or the
   // sorted cofactors with their sides. Null for structures.
