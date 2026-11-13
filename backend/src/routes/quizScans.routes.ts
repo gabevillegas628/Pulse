@@ -273,7 +273,13 @@ router.get('/quiz-grader/content/:id/results', requireProfessor, async (req: Req
     })
     const usage = pages.flatMap((pg) => (pg.usage ?? []) as { model: string; input_tokens: number; output_tokens: number }[])
     const graded = pages.filter((pg) => pg.gradeStatus === 'GRADED')
-    const totals = pageTotals(await effectiveResults({ assessmentId: assessment.id }))
+    const effective = await effectiveResults({ assessmentId: assessment.id })
+    const totals = pageTotals(effective)
+    // Model calls by model (a cached re-read counts as a call but was not paid again), and
+    // how second looks went: answers looked at, and how many still disagree.
+    const byModel = new Map<string, typeof usage>()
+    for (const u of usage) byModel.set(u.model, [...(byModel.get(u.model) ?? []), u])
+    const looked = effective.filter((r) => (r.detail as { secondLook?: unknown } | null)?.secondLook)
     res.json({
       success: true,
       data: {
@@ -289,6 +295,12 @@ router.get('/quiz-grader/content/:id/results', requireProfessor, async (req: Req
           failed: pages.filter((pg) => pg.gradeStatus === 'FAILED').length,
           toReview: graded.reduce((a, pg) => a + (totals.get(pg.id)?.open ?? 0), 0),
           cost: costOf(usage),
+          models: [...byModel.entries()].map(([model, us]) => ({ model, calls: us.length, dollars: costOf(us).dollars }))
+            .sort((a, b) => b.dollars - a.dollars),
+          secondLooks: {
+            answers: looked.length,
+            disagree: looked.filter((r) => Array.isArray(r.reviewReasons) && (r.reviewReasons as string[]).some((x) => x.startsWith('second look'))).length,
+          },
         },
       },
     })

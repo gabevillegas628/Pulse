@@ -17,7 +17,7 @@ import { readTextRegions, type StructureRead, type TextRead } from '../src/quizG
 import type Anthropic from '@anthropic-ai/sdk'
 import { matchText, normalize, scoreCofactors, scoreStructure } from '../src/quizGrader/scoring.js'
 import { patchYaml } from '../src/quizGrader/yamlPatch.js'
-import { wantsSecondLook } from '../src/quizGrader/grade.js'
+import { decidingConfidence, wantsSecondLook } from '../src/quizGrader/grade.js'
 import { storageProblem } from '../src/quizGrader/servers.js'
 import { parse as parseYaml } from 'yaml'
 
@@ -325,7 +325,7 @@ console.log('\nSecond looks')
   check('an exact, sure reading does not', !wantsSecondLook(g('s9_enzyme'), r('enolase')))
   check('an exact but unsure reading does', wantsSecondLook(g('s9_enzyme'), r('enolase', 0.5)))
   check('an illegible one does', wantsSecondLook(g('s9_enzyme'), r('', 0.2, 'illegible')))
-  check('cofactors never do', !wantsSecondLook(g('s9_cofactors'), r('', 0.3)))
+  check('name and NetID boxes never do', !wantsSecondLook(g('name'), r('x', 0.3)) && !wantsSecondLook(g('netid'), r('x', 0.3)))
 
   const grade = (first: TextRead, second?: TextRead) => gradePage(slots, new Set(), new Map([['s9_enzyme', first]]), new Map(), {},
     second ? new Map([['s9_enzyme', second]]) : new Map()).find((x) => x.slotId === 's9_enzyme')!
@@ -344,6 +344,57 @@ console.log('\nSecond looks')
   check('two readings that are both accepted answers need no decision', twoAccepted.pointsAuto === 1 && !twoAccepted.needsReview)
   const unreadable = grade(r('', 0.2, 'illegible'), r('Enolase', 0.85))
   check('an illegible first reading shows what the second look read', unreadable.reviewReasons.includes('second look: "Enolase"'))
+}
+
+console.log('\nFewer unsure flags')
+{
+  const slots = slotsForVersion(glyQuiz, glyLayout, gly, 'A')
+  const g = (id: string) => slots.find((x) => x.slot.id === id)!
+  const cof = (items: [string, 'in' | 'out' | 'unclear'][], confidence = 0.95, status: 'read' | 'blank' | 'illegible' = 'read'): TextRead =>
+    ({ slot_id: 'x', status, transcription: '', cofactors: items.map(([text, side]) => ({ text, side })), confidence })
+  const right: [string, 'in' | 'out'][] = [['ATP', 'in'], ['ADP', 'out']]
+  check('an unsure cofactor reading gets a second look', wantsSecondLook(g('s1_cofactors'), cof(right, 0.5)))
+  check('a sure, placed cofactor reading does not', !wantsSecondLook(g('s1_cofactors'), cof(right)))
+  check('a cofactor it could not place does', wantsSecondLook(g('s1_cofactors'), cof([['ATP', 'unclear'], ['ADP', 'out']])))
+  check('a cofactor arrow read as empty (with ink in the box) does', wantsSecondLook(g('s1_cofactors'), cof([], 0.9, 'blank')))
+  check('an enzyme read as empty (with ink) does; a name does not',
+    wantsSecondLook(g('s1_enzyme'), { slot_id: 'x', status: 'blank', transcription: '', cofactors: [], confidence: 0.9 })
+    && !wantsSecondLook(g('pyruvate_name'), { slot_id: 'x', status: 'blank', transcription: '', cofactors: [], confidence: 0.9 }))
+
+  const gradeCof = (first: TextRead, second?: TextRead) => gradePage(slots, new Set(), new Map([['s1_cofactors', first]]), new Map(), {},
+    second ? new Map([['s1_cofactors', second]]) : new Map()).find((x) => x.slotId === 's1_cofactors')!
+  check('an unsure cofactor reading is flagged without a second look', gradeCof(cof(right, 0.5)).needsReview)
+  check('a second look that reads the same cofactors settles it', !gradeCof(cof(right, 0.5), cof([['adp', 'out'], ['ATP', 'in']], 0.9)).needsReview)
+  const differs = gradeCof(cof(right, 0.5), cof([['ATP', 'in']], 0.9))
+  check('one that reads them differently, changing the score, sends it to review with both',
+    differs.needsReview && differs.reviewReasons.includes('second look: "ATP → in"') && differs.pointsAuto === 1)
+  check('one that differs but scores the same leaves nothing to decide',
+    !gradeCof(cof(right, 0.5), cof([['ATP', 'in'], ['ADP', 'out'], ['Mg2+', 'in']], 0.9)).needsReview)
+  check('an arrow read as empty twice is not flagged for its ink',
+    !gradeCof(cof([], 0.9, 'blank'), cof([], 0.9, 'blank')).needsReview)
+  check('an arrow read as empty once, then with cofactors, shows the second reading',
+    gradeCof(cof([], 0.9, 'blank'), cof([['ATP', 'in']], 0.8)).reviewReasons.includes('second look: "ATP → in"'))
+
+  const enz = (t: string, c = 0.95): TextRead => ({ slot_id: 'x', status: 'read', transcription: t, cofactors: [], confidence: c })
+  const gradeEnz = (first: TextRead, second: TextRead) => gradePage(slots, new Set(), new Map([['s9_enzyme', first]]), new Map(), {},
+    new Map([['s9_enzyme', second]])).find((x) => x.slotId === 's9_enzyme')!
+  check('two different wrong readings leave nothing to decide', !gradeEnz(enz('Endose'), enz('Enddse')).needsReview)
+
+  const f = (present: boolean, confidence: number) => ({ present, confidence })
+  check('all or nothing: a check surely missing settles a drawing at 0, doubts or not', decidingConfidence([f(false, 0.95), f(true, 0.4)], 0.8) === 1)
+  check('all or nothing: when the doubtful check decides it, its doubt counts', decidingConfidence([f(true, 0.95), f(true, 0.4)], 0.8) === 0.4)
+  check('all or nothing: every check sure, nothing to decide', decidingConfidence([f(true, 0.95), f(false, 0.9)], 0.8) === 1)
+  const unsureStructure = (partial: boolean) => {
+    const q = structuredClone(glyQuiz)
+    q.defaults.structure_review = 'low_confidence'
+    q.defaults.partial_credit.structure = partial
+    const sl = slotsForVersion(q, glyLayout, gly, 'A')
+    const read: StructureRead = { slot_id: 'int_pep', status: 'read', description: 'PEP', confidence: 0.9,
+      features: [0, 1, 2, 3].map((index) => ({ index, present: index !== 0, confidence: index === 0 ? 0.95 : index === 3 ? 0.4 : 0.9 })) }
+    return gradePage(sl, new Set(), new Map(), new Map([['int_pep', read]])).find((x) => x.slotId === 'int_pep')!
+  }
+  check('a drawing surely missing a check is not flagged for another doubtful one (all or nothing)', !unsureStructure(false).needsReview && unsureStructure(false).pointsAuto === 0)
+  check('with partial credit the doubtful check still counts', unsureStructure(true).needsReview)
 }
 
 console.log(`\n  ${passed} passed, ${failed} failed`)
