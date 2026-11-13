@@ -10,6 +10,7 @@ import {
   type TextMatch,
   matchText,
   normalize,
+  stripCoefficient,
   reviewReasons,
   roundPoints,
   scoreCofactors,
@@ -57,17 +58,45 @@ const acceptFor = (g: GradedSlot): string[] =>
  * the model's confidence, because a reader is often sure of its own misreads.
  */
 export function wantsSecondLook(g: GradedSlot, read: TextRead | undefined, opts: GradeOptions = {}): boolean {
-  if (!read || (g.ref.kind !== 'enzyme' && g.ref.kind !== 'name')) return false
+  if (!read) return false
+  const unsure = read.confidence < (opts.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD)
+  if (g.ref.kind === 'cofactors') {
+    // Unsure, illegible, a side it could not place, or read as empty though the ink check
+    // found writing (often only the enzyme name sharing the box).
+    return read.status !== 'read' || unsure || read.cofactors.some((c) => c.side === 'unclear')
+  }
+  if (g.ref.kind !== 'enzyme' && g.ref.kind !== 'name') return false
   if (read.status === 'illegible') return true
+  // An enzyme read as empty though the box has ink: flagged otherwise, so worth a look.
+  if (read.status === 'blank') return g.ref.kind === 'enzyme'
   if (read.status !== 'read') return false
-  if (read.confidence < (opts.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD)) return true
+  if (unsure) return true
   const m = matchText(read.transcription, acceptFor(g), opts.fuzzyThreshold ?? DEFAULT_FUZZY_THRESHOLD)
   return m.verdict !== 'exact' && m.distance <= SECOND_LOOK_DISTANCE
 }
 
 /** The second look's reading, as a review reason (the review page explains it). */
-const secondLookReason = (second: TextRead) =>
-  second.status === 'read' ? `second look: "${second.transcription}"` : `second look: ${second.status}`
+const cofactorList = (items: TextRead['cofactors']) =>
+  items.map((c) => `${c.text} ${c.side === 'in' ? '→ in' : c.side === 'out' ? '→ out' : '(side?)'}`).join(', ') || 'nothing'
+const secondLookReason = (second: TextRead, kind: GradedSlot['ref']['kind']) =>
+  second.status !== 'read' ? `second look: ${second.status}`
+    : `second look: "${kind === 'cofactors' ? cofactorList(second.cofactors) : second.transcription}"`
+/** A cofactor reading as a comparable set: side and normalised name of each item. */
+const cofactorSet = (items: TextRead['cofactors']) =>
+  items.map((c) => `${c.side}:${normalize(stripCoefficient(c.text))}`).filter((x) => !x.endsWith(':')).sort().join('|')
+
+/**
+ * All or nothing, only the checks that could change the score matter. A check the model is
+ * sure is missing scores the drawing 0 whatever the doubtful ones say: nothing to decide.
+ * Otherwise the doubtful checks decide it, so the least sure of them is what counts.
+ * (With partial credit every check moves the score, so every one counts.)
+ */
+export function decidingConfidence(answers: ({ present: boolean; confidence: number } | undefined)[], threshold: number): number {
+  const sure = (a: { confidence: number } | undefined) => (a?.confidence ?? 0) >= threshold
+  if (answers.some((a) => sure(a) && !a!.present)) return 1
+  const doubtful = answers.filter((a) => !sure(a))
+  return doubtful.length ? Math.min(...doubtful.map((a) => a?.confidence ?? 0)) : 1
+}
 
 /** An intermediate's accepted names: its display name, then the key's aliases. */
 export function acceptedNames(it: { name: string; accept?: string[] }): string[] {
@@ -124,7 +153,10 @@ export function gradePage(
           confidence: minFeatureConf,
           pointsAuto,
         },
-        reviewReasons(g.review, { confidence: minFeatureConf, illegible: read.status === 'illegible' }, confT),
+        reviewReasons(g.review, {
+          confidence: read.status === 'read' && !g.partialCredit ? decidingConfidence(answers, confT) : minFeatureConf,
+          illegible: read.status === 'illegible',
+        }, confT),
       )
     }
 
@@ -138,10 +170,13 @@ export function gradePage(
       // Not for intermediate names: they sit beside the drawings, so a name box nearly
       // always has ink, and an unnamed intermediate would be flagged on every paper.
       const second = secondReads.get(g.slot.id)
+      // A second look that also finds nothing settles "read as empty, but written in": the
+      // ink is someone else's (the enzyme name sharing a cofactor box, usually).
+      const bothBlank = read.status === 'blank' && second?.status === 'blank'
       const reasons = read.status === 'illegible'
         ? reviewReasons(g.review, { confidence: 0, illegible: true }, confT)
-        : g.ref.kind === 'name' ? [] : reviewReasons(g.review, { confidence: 1, missedInk: true }, confT)
-      if (second?.status === 'read' && g.review !== 'never') reasons.push(secondLookReason(second))
+        : g.ref.kind === 'name' || bothBlank ? [] : reviewReasons(g.review, { confidence: 1, missedInk: true }, confT)
+      if (second?.status === 'read' && g.review !== 'never') reasons.push(secondLookReason(second, g.ref.kind))
       return finish({
         status: read.status,
         ...(read.status === 'blank' ? { blankBy: 'model' as const } : {}),
@@ -158,14 +193,17 @@ export function gradePage(
       // disagrees (then a person decides, seeing both readings).
       const second = secondReads.get(g.slot.id)
       const agree = second?.status === 'read' && normalize(second.transcription) === normalize(read.transcription)
+      // Two readings that score the same leave nothing to decide (two accepted spellings,
+      // or two wrong answers): the score is right whichever reading is.
+      const points = (m: ReturnType<typeof matchText>) => (m.verdict === 'wrong' ? 0 : g.maxPoints)
+      const sameScore = second?.status === 'read' && points(matchText(second.transcription, acceptFor(g), fuzzy)) === points(match)
+      const settled = agree || sameScore
       const reasons = reviewReasons(g.review, {
-        confidence: agree ? Math.max(read.confidence, second!.confidence) : read.confidence,
-        nearThreshold: agree ? false : match.nearThreshold,
+        confidence: settled ? Math.max(read.confidence, second!.confidence) : read.confidence,
+        nearThreshold: settled ? false : match.nearThreshold,
         inexact: match.verdict === 'fuzzy' ? match.alias : undefined,
       }, confT)
-      // Two different spellings that are both accepted answers score the same: nothing to decide.
-      const bothAccepted = second?.status === 'read' && match.verdict === 'exact' && matchText(second.transcription, acceptFor(g), fuzzy).verdict === 'exact'
-      if (second && !agree && !bothAccepted && g.review !== 'never') reasons.push(secondLookReason(second))
+      if (second && !settled && g.review !== 'never') reasons.push(secondLookReason(second, g.ref.kind))
       return finish(
         {
           status: 'read',
@@ -181,6 +219,24 @@ export function gradePage(
 
     // cofactors
     const cofactorResult = scoreCofactors(read.cofactors, g.ref.spec, { ...opts, partialCredit: g.partialCredit })
+    // A second look that reads the same items on the same sides confirms the reading; one
+    // that differs but scores the same leaves nothing to decide either.
+    const second = secondReads.get(g.slot.id)
+    const agree = second?.status === 'read' && cofactorSet(second.cofactors) === cofactorSet(read.cofactors)
+    const sameScore = second?.status === 'read'
+      && scoreCofactors(second.cofactors, g.ref.spec, { ...opts, partialCredit: g.partialCredit }).fraction === cofactorResult.fraction
+    const settled = agree || sameScore
+    const reasons = reviewReasons(g.review, {
+      confidence: settled ? Math.max(read.confidence, second!.confidence) : read.confidence,
+      // Both readers unsure of a side: still worth a look. Settled by the score: not.
+      unclearSide: agree ? cofactorResult.unclearSide : settled ? false : cofactorResult.unclearSide,
+      // An extra costs nothing on a full-marks answer (unless extras are penalised). On a
+      // short one it may be the missing cofactor misread, worth a look, unless a second
+      // look already settled the score.
+      extras: !settled && (cofactorResult.fraction < 1 || opts.extraPenalty) ? cofactorResult.extras : [],
+      bothSides: cofactorResult.bothSides,
+    }, confT)
+    if (second && !settled && g.review !== 'never') reasons.push(secondLookReason(second, g.ref.kind))
     return finish(
       {
         status: 'read',
@@ -188,15 +244,9 @@ export function gradePage(
         cofactorResult,
         confidence: read.confidence,
         pointsAuto: g.maxPoints * cofactorResult.fraction,
+        ...(second ? { secondLook: { transcription: second.status === 'read' ? cofactorList(second.cofactors) : '', status: second.status, confidence: second.confidence, agrees: agree } } : {}),
       },
-      reviewReasons(g.review, {
-        confidence: read.confidence,
-        unclearSide: cofactorResult.unclearSide,
-        // An extra costs nothing on a full-marks answer (unless extras are penalised). On a
-        // short one it may be the missing cofactor misread, so then it is worth a look.
-        extras: cofactorResult.fraction < 1 || opts.extraPenalty ? cofactorResult.extras : [],
-        bothSides: cofactorResult.bothSides,
-      }, confT),
+      reasons,
     )
   })
 }

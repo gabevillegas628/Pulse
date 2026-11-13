@@ -376,6 +376,27 @@ stays live: review decisions and key edits flow through. **Take back** removes i
 - Students see each released quiz as a score only, in a Quizzes group: no breakdown and no
   scans. An excused or unsettled quiz is left out for them rather than shown as 0.
 
+## Fewer unsure flags
+
+A first real batch (115 CAC papers) put 950 boxes in review, 787 of them "unsure":
+cofactors (365) and structures (294) mostly. So:
+
+- **Cofactors get second looks too**, when unsure, when an item's side could not be
+  placed, or when the arrow was read as empty though the box has ink. The two readings are
+  compared item by item and side by side.
+- **A second look settles any answer whose two readings score the same**: the same words,
+  two accepted spellings, two wrong answers, or two cofactor lists worth the same. Only a
+  disagreement that changes the score goes to review. An arrow read as empty twice is not
+  flagged for its ink (the enzyme name sharing the box, usually).
+- **All-or-nothing structures** are flagged only when a doubtful check could change the
+  score (`decidingConfidence` in `grade.ts`): a check the model is sure is missing scores
+  the drawing 0 whatever the doubtful ones say. With partial credit, every check counts.
+- **Results** shows model calls and cost per model, and how many answers had a second look
+  and how many still disagree.
+
+For papers already graded: **Second looks**, then the flags update; **Re-score with current
+key** applies the structure rule. Neither re-grades a paper or touches a decision.
+
 ## Changes from the handoff
 
 - **Seed YAML bug fixed.** Names containing a comma (`1,3-bisphosphoglycerate`,

@@ -134,7 +134,7 @@ Rules:
 - Transcribe exactly what is written, including misspellings, abbreviations and odd capitalisation. Do not correct anything.
 - Ignore the printed form (lines, arrows, stars, labels), anything crossed out, and anything that is not the slot described (the crop may include neighbouring answers or cofactors at an arrow).
 - status "blank" if nothing is written for the slot, "illegible" if something is written but you cannot read it, otherwise "read".
-- Leave the cofactors list empty for every slot.
+- For a cofactor slot, list each item written at the ends of the curved arrow separately, with its side (in, out, or unclear if you cannot tell which end it belongs to), and leave the transcription empty. Write charges and subscripts as plain text: NAD+, FADH2, H2O. For any other slot, leave the cofactors list empty.
 - confidence is your probability (0 to 1) that the transcription is exactly right, letter for letter.
 - Return exactly one entry per slot id listed.`
 
@@ -142,6 +142,7 @@ function describeSecondLookSlot(key: PathwayKey, g: GradedSlot): string {
   const { ref, slot } = g
   if (ref.kind === 'enzyme') return `${slot.id}: an enzyme name for step ${ref.stepNo} (${nameOf(key, ref.step.from)} → ${nameOf(key, ref.step.to)}), handwritten on the horizontal line`
   if (ref.kind === 'name') return `${slot.id}: the name of a molecule, written as words or an abbreviation (not a drawn structure)`
+  if (ref.kind === 'cofactors') return `${slot.id}: the cofactors for step ${ref.stepNo}, small items written near the ends of the curved arrow. ${SIDE_TEXT[slot.in_end ?? 'top']} Do not include the enzyme name written on the line.`
   return `${slot.id}: (not a slot for a second look)`
 }
 
@@ -226,8 +227,8 @@ export async function readSecondLook(
 ): Promise<{ reads: Map<string, TextRead>; usage: Usage }> {
   const model = opts.model ?? DEFAULT_MODEL_SECOND_LOOK
   const slots = regions.flatMap((r) => r.slots)
-  const wrong = slots.filter((s) => s.ref.kind !== 'enzyme' && s.ref.kind !== 'name').map((s) => s.slot.id)
-  if (wrong.length) throw new Error(`A second look is for enzyme and name slots only, not ${wrong.join(', ')}`)
+  const wrong = slots.filter((s) => s.ref.kind !== 'enzyme' && s.ref.kind !== 'name' && s.ref.kind !== 'cofactors').map((s) => s.slot.id)
+  if (wrong.length) throw new Error(`A second look is for enzyme, name and cofactor slots only, not ${wrong.join(', ')}`)
   const prompt = `${SECOND_LOOK_RULES}\n\nSlots:\n${slots.map((s) => `- ${describeSecondLookSlot(key, s)}`).join('\n')}`
   const { parsed, usage } = await cachedParse(client, opts.cache, model, 'medium', prompt, regions, textReadSchema)
   return { reads: new Map(parsed.slots.map((s) => [s.slot_id, s])), usage }

@@ -14,7 +14,16 @@ import { STATUS_LABEL, saveBlob, type QuizPage } from '@/lib/quizGrader'
 
 interface ResultsData {
   pages: (Pick<QuizPage, 'id' | 'batchId' | 'index' | 'status' | 'version' | 'gradeStatus' | 'gradeError' | 'pointsAuto' | 'pointsFinal' | 'maxPoints' | 'toReview'> & { fileName: string; studentNetId: string | null })[]
-  summary: { secondLooksRunning?: boolean; pages: number; graded: number; grading: number; failed: number; toReview: number; cost: { dollars: number; unpriced: string[] } }
+  summary: {
+    models?: { model: string; calls: number; dollars: number }[]
+    secondLooks?: { answers: number; disagree: number }
+    secondLooksRunning?: boolean; pages: number; graded: number; grading: number; failed: number; toReview: number; cost: { dollars: number; unpriced: string[] } }
+}
+
+/** "claude-sonnet-5-5" → "Sonnet 5.5". */
+const modelName = (id: string) => {
+  const m = /^claude-([a-z]+)-(\d+)(?:-(\d+))?/.exec(id)
+  return m ? `${m[1]![0]!.toUpperCase()}${m[1]!.slice(1)} ${m[2]}${m[3] ? `.${m[3]}` : ''}` : id
 }
 
 /** Every scanned paper of an assessment with its score after review. Not connected to the gradebook. */
@@ -123,6 +132,12 @@ export default function QuizResultsPage() {
                 {' · model cost '}{dollars(s.cost.dollars)}
                 {s.cost.unpriced.length ? ` (+ unpriced: ${s.cost.unpriced.join(', ')})` : ''}
               </p>
+              {s.models && s.models.length > 0 && (
+                <p className="text-xs text-muted mt-1">
+                  {s.models.map((m) => `${modelName(m.model)}: ${m.calls} call${m.calls === 1 ? '' : 's'}, ${dollars(m.dollars)}`).join(' · ')}
+                  {s.secondLooks ? ` · second looks at ${s.secondLooks.answers} answer${s.secondLooks.answers === 1 ? '' : 's'}, ${s.secondLooks.disagree} still disagree` : ''}
+                </p>
+              )}
               <p className="text-xs text-muted mt-1">Scores after your review decisions.</p>
             </div>
             <div className="flex flex-wrap gap-2">
