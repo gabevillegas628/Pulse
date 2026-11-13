@@ -365,6 +365,9 @@ export function explainReason(r: string, closest?: string, accepted?: string[] |
     case 'extra': return `Also wrote ${after('unexpected:')}, which the key does not list, and the answer is missing a cofactor. A misread?`
     case 'always': return 'This quiz reviews every answer of this kind (Scoring tab).'
     case 'second': {
+      if (r.startsWith('second look disagrees on:')) {
+        return `A second, closer look by a stronger model disagreed about: ${after('second look disagrees on:')}. Check those in the drawing.`
+      }
       const m = /^second look: "(.*)"$/.exec(r)
       if (!m) return 'A closer second look could not read it either.'
       const ok = (accepted ?? []).some((a) => a.trim().toLowerCase() === m[1]!.trim().toLowerCase())

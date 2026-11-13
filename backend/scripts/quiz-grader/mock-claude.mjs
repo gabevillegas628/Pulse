@@ -27,7 +27,13 @@ http.createServer((req, res) => {
     if (secondLook) fs.appendFileSync(LOG, 'second-look\n')
     const slots = ids.map((id) => {
       const step = id.split('_')[0]
-      if (isStruct) return { slot_id: id, status: 'read', description: 'a drawing', confidence: 0.9, features: [0, 1, 2, 3, 4].map((index) => ({ index, present: true, confidence: 0.9 })) }
+      // MOCK_UNSURE_STRUCTURES=1: the first reading of every drawing is unsure about check 1;
+      // a second look ("careful second look") is sure of it.
+      if (isStruct) {
+        const unsure = process.env.MOCK_UNSURE_STRUCTURES === '1' && !text.includes('careful second look')
+        if (text.includes('careful second look')) fs.appendFileSync(LOG, 'structure-second-look\n')
+        return { slot_id: id, status: 'read', description: 'a drawing', confidence: 0.9, features: [0, 1, 2, 3, 4].map((index) => ({ index, present: true, confidence: unsure && index === 1 ? 0.5 : 0.9 })) }
+      }
       if (id.endsWith('_cofactors')) return { slot_id: id, status: 'read', transcription: '', confidence: 0.95, cofactors: (cof[step] ?? []).map(([text, side]) => ({ text, side })) }
       if (id.endsWith('_name')) return { slot_id: id, status: 'read', transcription: names[id.replace(/_name$/, '')] ?? '?', cofactors: [], confidence: 0.95 }
       if (secondLook && step === 's2') return { slot_id: id, status: 'read', transcription: 'phosphoglucose isomerase', cofactors: [], confidence: 0.9 }

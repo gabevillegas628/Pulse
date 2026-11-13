@@ -17,7 +17,7 @@ import { readTextRegions, type StructureRead, type TextRead } from '../src/quizG
 import type Anthropic from '@anthropic-ai/sdk'
 import { matchText, normalize, scoreCofactors, scoreStructure } from '../src/quizGrader/scoring.js'
 import { patchYaml } from '../src/quizGrader/yamlPatch.js'
-import { decidingConfidence, wantsSecondLook } from '../src/quizGrader/grade.js'
+import { decidingConfidence, doubtfulChecks, wantsSecondLook } from '../src/quizGrader/grade.js'
 import { storageProblem } from '../src/quizGrader/servers.js'
 import { parse as parseYaml } from 'yaml'
 
@@ -395,6 +395,37 @@ console.log('\nFewer unsure flags')
   }
   check('a drawing surely missing a check is not flagged for another doubtful one (all or nothing)', !unsureStructure(false).needsReview && unsureStructure(false).pointsAuto === 0)
   check('with partial credit the doubtful check still counts', unsureStructure(true).needsReview)
+}
+
+console.log('\nAgreement settles; structure second looks')
+{
+  const slots = slotsForVersion(glyQuiz, glyLayout, gly, 'A')
+  const enz = (t: string, c: number): TextRead => ({ slot_id: 'x', status: 'read', transcription: t, cofactors: [], confidence: c })
+  const e = gradePage(slots, new Set(), new Map([['s9_enzyme', enz('enolase', 0.5)]]), new Map(), {},
+    new Map([['s9_enzyme', enz('Enolase', 0.6)]])).find((x) => x.slotId === 's9_enzyme')!
+  check('two unsure readers agreeing settle it, whatever they rate themselves', !e.needsReview && e.pointsAuto === 1)
+  const cofs = (c: number): TextRead => ({ slot_id: 'x', status: 'read', transcription: '', cofactors: [{ text: 'ATP', side: 'in' }, { text: 'ADP', side: 'out' }], confidence: c })
+  const c = gradePage(slots, new Set(), new Map([['s1_cofactors', cofs(0.5)]]), new Map(), {},
+    new Map([['s1_cofactors', cofs(0.55)]])).find((x) => x.slotId === 's1_cofactors')!
+  check('the same for cofactors', !c.needsReview)
+
+  const q = structuredClone(glyQuiz)
+  q.defaults.structure_review = 'low_confidence'
+  const sl = slotsForVersion(q, glyLayout, gly, 'A')
+  const pep = sl.find((x) => x.slot.id === 'int_pep')!
+  const first: StructureRead = { slot_id: 'int_pep', status: 'read', description: 'PEP', confidence: 0.9,
+    features: [0, 1, 2, 3].map((index) => ({ index, present: true, confidence: index === 2 ? 0.5 : 0.95 })) }
+  check('a drawing that passes every sure check has its doubtful check looked at again', doubtfulChecks(pep, first).join() === '2')
+  const sureMissing: StructureRead = { ...first, features: first.features.map((f) => (f.index === 0 ? { ...f, present: false } : f)) }
+  check('one surely missing a check needs no second look (all or nothing)', doubtfulChecks(pep, sureMissing).length === 0)
+  const second = (present: boolean): StructureRead => ({ slot_id: 'int_pep', status: 'read', description: 'PEP', confidence: 0.9, features: [{ index: 2, present, confidence: 0.9 }] })
+  const graded = (s2?: StructureRead) => gradePage(sl, new Set(), new Map(), new Map([['int_pep', first]]), {}, new Map(),
+    s2 ? new Map([['int_pep', s2]]) : new Map()).find((x) => x.slotId === 'int_pep')!
+  check('without a second look the doubtful check is flagged', graded().needsReview)
+  check('a second look that agrees settles the drawing', !graded(second(true)).needsReview && graded(second(true)).pointsAuto === 1)
+  const dis = graded(second(false))
+  check('one that disagrees names the check, and the score waits for you',
+    dis.needsReview && dis.reviewReasons.some((r) => r.startsWith('second look disagrees on: ') && r.includes(gly.intermediates.pep!.features[2]!)) && dis.pointsAuto === 1)
 }
 
 console.log(`\n  ${passed} passed, ${failed} failed`)
