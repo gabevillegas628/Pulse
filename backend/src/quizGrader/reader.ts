@@ -25,6 +25,8 @@ export const DEFAULT_MODEL_TEXT = 'claude-haiku-5-5'
 export const DEFAULT_MODEL_STRUCTURE = 'claude-sonnet-5-5'
 /** The stronger reader for a second look at near misses and unsure readings. */
 export const DEFAULT_MODEL_SECOND_LOOK = 'claude-sonnet-5-5'
+/** Structures are first read by Sonnet, so their second look goes to the stronger Opus. */
+export const DEFAULT_MODEL_STRUCTURE_SECOND_LOOK = 'claude-opus-5-5'
 
 export interface Region {
   id: string
@@ -173,6 +175,7 @@ async function cachedParse<S extends z.ZodType>(
   prompt: string,
   regions: Region[],
   schema: S,
+  maxTokens = 8192,
 ): Promise<{ parsed: z.infer<S>; usage: Usage }> {
   type T = z.infer<S>
   const k = cacheKey(model, prompt, regions)
@@ -184,7 +187,7 @@ async function cachedParse<S extends z.ZodType>(
   for (let attempt = 1; ; attempt++) {
     const res = await client.messages.parse({
       model,
-      max_tokens: 8192,
+      max_tokens: maxTokens,
       output_config: { effort, format: zodOutputFormat(schema) },
       messages: [{ role: 'user', content: [...regionBlocks(regions), { type: 'text', text: prompt }] }],
     })
@@ -231,6 +234,32 @@ export async function readSecondLook(
   if (wrong.length) throw new Error(`A second look is for enzyme, name and cofactor slots only, not ${wrong.join(', ')}`)
   const prompt = `${SECOND_LOOK_RULES}\n\nSlots:\n${slots.map((s) => `- ${describeSecondLookSlot(key, s)}`).join('\n')}`
   const { parsed, usage } = await cachedParse(client, opts.cache, model, 'medium', prompt, regions, textReadSchema)
+  return { reads: new Map(parsed.slots.map((s) => [s.slot_id, s])), usage }
+}
+
+/**
+ * A second, blind look at the checks the first reading of a drawing was unsure of: only
+ * those checks, numbered as in the key, and without the first reading's answers. Code
+ * compares the two. Opus thinks before answering, so it gets a larger token allowance.
+ */
+export async function readStructureSecondLook(
+  client: Anthropic,
+  regions: Region[],
+  doubtful: Map<string, number[]>,
+  opts: { model?: string; cache?: ReadCache } = {},
+): Promise<{ reads: Map<string, StructureRead>; usage: Usage }> {
+  const model = opts.model ?? DEFAULT_MODEL_STRUCTURE_SECOND_LOOK
+  const lines: string[] = []
+  for (const r of regions) {
+    for (const g of r.slots) {
+      if (g.ref.kind !== 'structure') throw new Error(`A structure second look is for drawings only, not ${g.slot.id}`)
+      const checks = doubtful.get(g.slot.id) ?? []
+      lines.push(`- ${g.slot.id}: features to check:`)
+      for (const i of checks) lines.push(`    ${i}. ${g.ref.intermediate.features[i]}`)
+    }
+  }
+  const prompt = `${STRUCTURE_RULES}\n- This is a careful second look: examine the drawing closely before answering each feature. Answer only the features listed, using their numbers.\n\nSlots:\n${lines.join('\n')}`
+  const { parsed, usage } = await cachedParse(client, opts.cache, model, 'medium', prompt, regions, structureReadSchema, 16000)
   return { reads: new Map(parsed.slots.map((s) => [s.slot_id, s])), usage }
 }
 

@@ -86,6 +86,19 @@ const cofactorSet = (items: TextRead['cofactors']) =>
   items.map((c) => `${c.side}:${normalize(stripCoefficient(c.text))}`).filter((x) => !x.endsWith(':')).sort().join('|')
 
 /**
+ * The checks of a drawing worth a second look: the doubtful ones that could change its
+ * score. None for a drawing not read, or (all or nothing) one surely missing a check.
+ */
+export function doubtfulChecks(g: GradedSlot, read: StructureRead | undefined, opts: GradeOptions = {}): number[] {
+  if (!read || read.status !== 'read' || g.ref.kind !== 'structure') return []
+  const t = opts.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD
+  const answers = g.ref.intermediate.features.map((_, i) => read.features.find((f) => f.index === i))
+  const sure = (a: { confidence: number } | undefined) => (a?.confidence ?? 0) >= t
+  if (!g.partialCredit && answers.some((a) => sure(a) && !a!.present)) return []
+  return answers.map((a, i) => (sure(a) ? -1 : i)).filter((i) => i >= 0)
+}
+
+/**
  * All or nothing, only the checks that could change the score matter. A check the model is
  * sure is missing scores the drawing 0 whatever the doubtful ones say: nothing to decide.
  * Otherwise the doubtful checks decide it, so the least sure of them is what counts.
@@ -119,6 +132,8 @@ export function gradePage(
   opts: GradeOptions = {},
   /** Second, blind readings of near misses and unsure answers, by slot id. */
   secondReads: Map<string, TextRead> = new Map(),
+  /** Second, blind answers to a drawing's doubtful checks, by slot id. */
+  secondStructures: Map<string, StructureRead> = new Map(),
 ): SlotResult[] {
   const fuzzy = opts.fuzzyThreshold ?? DEFAULT_FUZZY_THRESHOLD
   const confT = opts.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD
@@ -145,6 +160,22 @@ export function gradePage(
         ? g.maxPoints * scoreStructure(g.ref.intermediate, answers.map((a) => !!a?.present), g.partialCredit)
         : 0
       const minFeatureConf = Math.min(read.confidence, ...answers.map((a) => a?.confidence ?? 0))
+      // A second look at the doubtful checks: the same answers settle the drawing; any
+      // different answer goes to review, naming the checks the two disagree on.
+      const second = secondStructures.get(g.slot.id)
+      const doubtful = doubtfulChecks(g, read, opts)
+      const disagree = second ? doubtful.filter((i) => {
+        const s2 = second.features.find((f) => f.index === i)
+        return !s2 || s2.present !== !!answers[i]?.present
+      }) : []
+      const settled = !!second && second.status === 'read' && doubtful.length > 0 && disagree.length === 0
+      const reasons = reviewReasons(g.review, {
+        confidence: settled ? 1 : read.status === 'read' && !g.partialCredit ? decidingConfidence(answers, confT) : minFeatureConf,
+        illegible: read.status === 'illegible',
+      }, confT)
+      if (second && !settled && disagree.length && g.review !== 'never') {
+        reasons.push(`second look disagrees on: ${disagree.map((i) => feats[i]).join('; ')}`)
+      }
       return finish(
         {
           status: read.status,
@@ -152,11 +183,9 @@ export function gradePage(
           features: feats.map((feature, i) => ({ feature, present: !!answers[i]?.present, confidence: answers[i]?.confidence ?? 0 })),
           confidence: minFeatureConf,
           pointsAuto,
+          ...(second ? { secondLook: { transcription: disagree.map((i) => feats[i]).join('; '), status: second.status, confidence: second.confidence, agrees: disagree.length === 0 } } : {}),
         },
-        reviewReasons(g.review, {
-          confidence: read.status === 'read' && !g.partialCredit ? decidingConfidence(answers, confT) : minFeatureConf,
-          illegible: read.status === 'illegible',
-        }, confT),
+        reasons,
       )
     }
 
@@ -198,8 +227,9 @@ export function gradePage(
       const points = (m: ReturnType<typeof matchText>) => (m.verdict === 'wrong' ? 0 : g.maxPoints)
       const sameScore = second?.status === 'read' && points(matchText(second.transcription, acceptFor(g), fuzzy)) === points(match)
       const settled = agree || sameScore
+      // Two readers agreeing (or scoring the same) settles it, whatever either rated itself.
       const reasons = reviewReasons(g.review, {
-        confidence: settled ? Math.max(read.confidence, second!.confidence) : read.confidence,
+        confidence: settled ? 1 : read.confidence,
         nearThreshold: settled ? false : match.nearThreshold,
         inexact: match.verdict === 'fuzzy' ? match.alias : undefined,
       }, confT)
@@ -227,7 +257,7 @@ export function gradePage(
       && scoreCofactors(second.cofactors, g.ref.spec, { ...opts, partialCredit: g.partialCredit }).fraction === cofactorResult.fraction
     const settled = agree || sameScore
     const reasons = reviewReasons(g.review, {
-      confidence: settled ? Math.max(read.confidence, second!.confidence) : read.confidence,
+      confidence: settled ? 1 : read.confidence,
       // Both readers unsure of a side: still worth a look. Settled by the score: not.
       unclearSide: agree ? cofactorResult.unclearSide : settled ? false : cofactorResult.unclearSide,
       // An extra costs nothing on a full-marks answer (unless extras are penalised). On a

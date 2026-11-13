@@ -481,7 +481,9 @@ function StructureCard({ m, item, onDecide }: { m: Member; item: Item; onDecide:
         {m.open && m.reviewReasons.length > 0 && (
           <p className="text-sm text-ink-2 flex gap-1.5">
             <CircleHelp size={15} className="shrink-0 mt-0.5 text-warn" />
-            {reasonKind(m.reviewReasons[0]!) === 'unsure'
+            {m.reviewReasons.find((x) => x.startsWith('second look disagrees on:'))
+              ? explainReason(m.reviewReasons.find((x) => x.startsWith('second look disagrees on:'))!)
+              : reasonKind(m.reviewReasons[0]!) === 'unsure'
               ? (m.detail.features ?? []).some((f) => (f.confidence ?? 1) < 0.8)
                 ? 'The model was not sure about the checks marked below. The rest it was sure of.'
                 : 'The model was not sure what this drawing shows overall.'

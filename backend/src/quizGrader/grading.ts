@@ -17,9 +17,10 @@ import {
   assessmentSchema, layoutSchema, pathwayKeySchema, slotsForVersion,
   type Assessment, type GradedSlot, type Layout, type PathwayKey,
 } from './content.js'
-import { gradePage, wantsSecondLook, type SlotResult } from './grade.js'
+import { doubtfulChecks, gradePage, wantsSecondLook, type SlotResult } from './grade.js'
 import {
-  readSecondLook, readStructureRegions, readTextRegions, DEFAULT_MODEL_SECOND_LOOK, DEFAULT_MODEL_STRUCTURE, DEFAULT_MODEL_TEXT,
+  readSecondLook, readStructureRegions, readStructureSecondLook, readTextRegions,
+  DEFAULT_MODEL_SECOND_LOOK, DEFAULT_MODEL_STRUCTURE, DEFAULT_MODEL_STRUCTURE_SECOND_LOOK, DEFAULT_MODEL_TEXT,
   type ReadCache, type Region, type StructureRead, type TextRead, type Usage,
 } from './reader.js'
 import { normalize, stripCoefficient } from './scoring.js'
@@ -31,6 +32,7 @@ export const gradingConfigured = () => Boolean(config.anthropicApiKey)
 const MODEL_TEXT = process.env.MODEL_TEXT || DEFAULT_MODEL_TEXT
 const MODEL_STRUCTURE = process.env.MODEL_STRUCTURE || DEFAULT_MODEL_STRUCTURE
 const MODEL_SECOND_LOOK = process.env.MODEL_SECOND_LOOK || DEFAULT_MODEL_SECOND_LOOK
+const MODEL_STRUCTURE_SECOND_LOOK = process.env.MODEL_STRUCTURE_SECOND_LOOK || DEFAULT_MODEL_STRUCTURE_SECOND_LOOK
 
 /** What the model said about one page, by slot id. */
 export interface PageReads {
@@ -38,6 +40,8 @@ export interface PageReads {
   structure: Record<string, StructureRead>
   /** Second, blind readings by a stronger model, for unsure and near-miss text answers. */
   second?: Record<string, TextRead>
+  /** Second, blind answers to drawings' doubtful checks, by an even stronger model. */
+  secondStructure?: Record<string, StructureRead>
 }
 
 interface Context {
@@ -98,6 +102,7 @@ export async function scorePage(pageId: string, ctx: Context): Promise<void> {
     new Map(Object.entries(reads.structure ?? {})),
     {},
     new Map(Object.entries(reads.second ?? {})),
+    new Map(Object.entries(reads.secondStructure ?? {})),
   ).filter((r) => r.maxPoints > 0)
 
   await prisma.$transaction([
@@ -173,7 +178,23 @@ const only = (regions: Region[], keep: (g: GradedSlot) => boolean) => regions
 async function secondLook(client: Anthropic, ctx: Context, regions: Region[], text: Record<string, TextRead>, skip: Set<string> = new Set()) {
   const due = only(regions, (g) => !skip.has(g.slot.id) && wantsSecondLook(g, text[g.slot.id]))
   if (!due.length) return null
+  // A second look only removes flags: if it fails, the page is graded without it.
   return readSecondLook(client, ctx.key, due, { model: MODEL_SECOND_LOOK, cache: dbCache })
+    .catch((e) => { logger.warn('quiz second look failed; graded without it', { error: (e as Error).message }); return null })
+}
+
+/** A second, blind look at drawings' doubtful checks. Null when none, or when it fails. */
+async function structureSecondLook(client: Anthropic, regions: Region[], structure: Record<string, StructureRead>, skip: Set<string> = new Set()) {
+  const doubtful = new Map<string, number[]>()
+  const due = only(regions, (g) => {
+    if (skip.has(g.slot.id)) return false
+    const checks = doubtfulChecks(g, structure[g.slot.id])
+    if (checks.length) doubtful.set(g.slot.id, checks)
+    return checks.length > 0
+  })
+  if (!due.length) return null
+  return readStructureSecondLook(client, due, doubtful, { model: MODEL_STRUCTURE_SECOND_LOOK, cache: dbCache })
+    .catch((e) => { logger.warn('quiz structure second look failed; graded without it', { error: (e as Error).message }); return null })
 }
 
 /** Read one page with the model, then score it. */
@@ -193,13 +214,18 @@ async function gradeOne(pageId: string): Promise<void> {
     structRegions.length ? readStructureRegions(client, structRegions, { model: MODEL_STRUCTURE, cache: dbCache }) : null,
   ])
   const textReads = Object.fromEntries(text?.reads ?? [])
-  const second = await secondLook(client, ctx, regions, textReads)
+  const structureReads = Object.fromEntries(struct?.reads ?? [])
+  const [second, secondStruct] = await Promise.all([
+    secondLook(client, ctx, regions, textReads),
+    structureSecondLook(client, pick(['structure']), structureReads),
+  ])
   const reads: PageReads = {
     text: textReads,
-    structure: Object.fromEntries(struct?.reads ?? []),
+    structure: structureReads,
     second: Object.fromEntries(second?.reads ?? []),
+    secondStructure: Object.fromEntries(secondStruct?.reads ?? []),
   }
-  const usage: Usage[] = [text?.usage, struct?.usage, second?.usage].filter((u): u is Usage => !!u)
+  const usage: Usage[] = [text?.usage, struct?.usage, second?.usage, secondStruct?.usage].filter((u): u is Usage => !!u)
   await prisma.quizPage.update({
     where: { id: pageId },
     data: { reads: reads as unknown as Prisma.InputJsonValue, usage: usage as unknown as Prisma.InputJsonValue },
@@ -226,16 +252,27 @@ export async function secondLooksFor(assessmentId: string, opts: { dryRun?: bool
     const reads = page.reads as unknown as PageReads
     const slots = slotsForVersion(ctx.assessment, ctx.layout, ctx.key, page.version)
     const done = new Set(Object.keys(reads.second ?? {}))
-    if (!slots.some((g) => !done.has(g.slot.id) && wantsSecondLook(g, reads.text?.[g.slot.id]))) continue
+    const doneStruct = new Set(Object.keys(reads.secondStructure ?? {}))
+    const textDue = slots.some((g) => !done.has(g.slot.id) && wantsSecondLook(g, reads.text?.[g.slot.id]))
+    const structDue = slots.some((g) => !doneStruct.has(g.slot.id) && doubtfulChecks(g, reads.structure?.[g.slot.id]).length > 0)
+    if (!textDue && !structDue) continue
     if (opts.dryRun) { looked++; continue }
-    const second = await secondLook(client, ctx, await regionsFor(page, slots), reads.text ?? {}, done)
-    if (!second) continue
+    const regions = await regionsFor(page, slots)
+    const [second, secondStruct] = await Promise.all([
+      textDue ? secondLook(client, ctx, regions, reads.text ?? {}, done) : null,
+      structDue ? structureSecondLook(client, only(regions, (g) => g.ref.kind === 'structure'), reads.structure ?? {}, doneStruct) : null,
+    ])
+    if (!second && !secondStruct) continue
     looked++
     await prisma.quizPage.update({
       where: { id: page.id },
       data: {
-        reads: { ...reads, second: { ...(reads.second ?? {}), ...Object.fromEntries(second.reads) } } as unknown as Prisma.InputJsonValue,
-        usage: [...((page.usage ?? []) as unknown as Usage[]), second.usage] as unknown as Prisma.InputJsonValue,
+        reads: {
+          ...reads,
+          second: { ...(reads.second ?? {}), ...Object.fromEntries(second?.reads ?? []) },
+          secondStructure: { ...(reads.secondStructure ?? {}), ...Object.fromEntries(secondStruct?.reads ?? []) },
+        } as unknown as Prisma.InputJsonValue,
+        usage: [...((page.usage ?? []) as unknown as Usage[]), ...[second?.usage, secondStruct?.usage].filter((u): u is Usage => !!u)] as unknown as Prisma.InputJsonValue,
       },
     })
     await scorePage(page.id, ctx)

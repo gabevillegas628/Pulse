@@ -394,8 +394,18 @@ cofactors (365) and structures (294) mostly. So:
 - **Results** shows model calls and cost per model, and how many answers had a second look
   and how many still disagree.
 
+After those changes the batch still had 573 "unsure" flags, so two more:
+
+- **Two readers agreeing settles an answer whatever they rated themselves** (it used to keep
+  the higher confidence and still flag it under 80%). Independent agreement is the evidence.
+- **Drawings get second looks too**, from Opus 5.5 (`MODEL_STRUCTURE_SECOND_LOOK`), since
+  Sonnet reads them first: only the doubtful checks that could change the score
+  (`doubtfulChecks`), blind. Agreement settles the drawing; disagreement goes to review
+  naming the checks ("A second, closer look … disagreed about: …").
+- A second look that fails (an error, a refusal) never fails the page: it is graded without.
+
 For papers already graded: **Second looks**, then the flags update; **Re-score with current
-key** applies the structure rule. Neither re-grades a paper or touches a decision.
+key** applies the rules. Neither re-grades a paper or touches a decision.
 
 ## Changes from the handoff
 
