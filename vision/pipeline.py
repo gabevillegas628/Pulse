@@ -37,6 +37,10 @@ MARKER_IDS = {"top_left": 0, "top_right": 1, "bottom_right": 2, "bottom_left": 3
 
 # Box cropping and blank detection, as calibrated in the Phase 0 spike at 200 dpi.
 MARGIN = 0.006
+# A box side within this of the form's edge reaches past it, to this far short of the paper's
+# edge (scanners shade the last few pixels).
+EDGE_TOUCH = 0.01
+PAPER_EDGE_TRIM_IN = 0.06
 BLANK_MIN_PIXELS = 60
 BLANK_MIN_SHARE = 0.0006
 INK_MAX = 200
@@ -368,25 +372,62 @@ def call_version(fits: dict[str, float]) -> str | None:
     return best if f1 >= VERSION_MIN_FIT and f1 - f2 >= VERSION_MIN_LEAD else None
 
 
-def box_rect(box: list[float], w: int, h: int) -> tuple[int, int, int, int]:
+def box_rect(box: list[float], w: int, h: int, pad: tuple[int, int] = (0, 0)) -> tuple[int, int, int, int]:
+    """A box's crop in pixels of a flat of form size w×h, or of one padded by pad = (px, py) on
+    every side (see paper_flat). A side drawn at the form's edge reaches out into the pad: the
+    form is printed at PRINT_SCALE, so the paper runs on past it, and students write there."""
     x, y, bw, bh = box
-    left = max(0, int(np.floor((x - MARGIN) * w)))
-    top = max(0, int(np.floor((y - MARGIN) * h)))
-    right = min(w, int(np.ceil((x + bw + MARGIN) * w)))
-    bottom = min(h, int(np.ceil((y + bh + MARGIN) * h)))
+    px, py = pad
+    left = int(np.floor((x - MARGIN) * w)) + px
+    top = int(np.floor((y - MARGIN) * h)) + py
+    right = int(np.ceil((x + bw + MARGIN) * w)) + px
+    bottom = int(np.ceil((y + bh + MARGIN) * h)) + py
+    left = 0 if px and x <= EDGE_TOUCH else max(px, left)
+    top = 0 if py and y <= EDGE_TOUCH else max(py, top)
+    right = w + 2 * px if px and x + bw >= 1 - EDGE_TOUCH else min(w + px, right)
+    bottom = h + 2 * py if py and y + bh >= 1 - EDGE_TOUCH else min(h + py, bottom)
     return left, top, right, bottom
 
 
-def crop_boxes(flat: np.ndarray, printed: np.ndarray, boxes: list[dict], ink_max: int) -> list[dict]:
-    """Each box's crop, its handwriting pixel count (ink away from anything printed), and whether it is blank."""
-    h, w = flat.shape
-    new_ink = (flat < ink_max) & ~printed
+def paper_flat(page: np.ndarray, p: Placement, form: Form, version: str) -> tuple[np.ndarray, np.ndarray, tuple[int, int]]:
+    """The input in form coordinates, padded out to near the paper's edge, for crops; with the
+    version's printed mask to match (the corner markers counted as printed) and the pad."""
+    w, h = form.size
+    # A page printed by Pulse (found by its markers) runs (1/PRINT_SCALE − 1)/2 of the form past
+    # each side of it; stop a little short. An older print is the form at full size, so the
+    # form's edge is the paper's, and past it is the desk.
+    beyond = 0.5 / PRINT_SCALE - 0.5 if p.method == "markers" else 0
+    px = max(0, int(beyond * w - PAPER_EDGE_TRIM_IN * DPI))
+    py = max(0, int(beyond * h - PAPER_EDGE_TRIM_IN * DPI))
+    T = np.array([[1, 0, px], [0, 1, py], [0, 0, 1]], np.float64)
+    flat = cv2.warpPerspective(page, T @ np.linalg.inv(p.H), (w + 2 * px, h + 2 * py), flags=cv2.INTER_LINEAR, borderValue=255)
+    printed = np.zeros(flat.shape, bool)
+    printed[py:py + h, px:px + w] = form.printed[version]
+    for c in marker_corners_in_form(w / DPI, h / DPI, w, h).values():
+        x0, y0 = np.floor(c.min(axis=0)).astype(int) - 6
+        x1, y1 = np.ceil(c.max(axis=0)).astype(int) + 6
+        printed[max(0, y0 + py):max(0, y1 + py), max(0, x0 + px):max(0, x1 + px)] = True
+    return flat, printed, (px, py)
+
+
+def reaches_edge(box: list[float]) -> bool:
+    x, y, bw, bh = box
+    return x <= EDGE_TOUCH or y <= EDGE_TOUCH or x + bw >= 1 - EDGE_TOUCH or y + bh >= 1 - EDGE_TOUCH
+
+
+def crop_boxes(flat: np.ndarray, printed: np.ndarray, boxes: list[dict], ink_max: int,
+               paper: tuple[np.ndarray, np.ndarray, tuple[int, int]] | None = None) -> list[dict]:
+    """Each box's crop, its handwriting pixel count (ink away from anything printed), and whether it
+    is blank. Given paper (from paper_flat), a box at the form's edge is cut from it instead,
+    reaching into the margin; every other box is cut exactly as before, so its reading stays cached."""
     out = []
     for b in boxes:
-        l, t, r, btm = box_rect(b["box"], w, h)
-        ink = int(new_ink[t:btm, l:r].sum())
+        img, mask, pad = paper if paper and reaches_edge(b["box"]) else (flat, printed, (0, 0))
+        h, w = img.shape
+        l, t, r, btm = box_rect(b["box"], w - 2 * pad[0], h - 2 * pad[1], pad)
+        ink = int(((img[t:btm, l:r] < ink_max) & ~mask[t:btm, l:r]).sum())
         need = max(BLANK_MIN_PIXELS, BLANK_MIN_SHARE * (r - l) * (btm - t))
-        out.append({"id": b["id"], "png": png_b64(flat[t:btm, l:r]), "ink": ink, "blank": ink < need})
+        out.append({"id": b["id"], "png": png_b64(img[t:btm, l:r]), "ink": ink, "blank": ink < need})
     return out
 
 
@@ -409,5 +450,7 @@ def process(page: np.ndarray, form: Form, boxes_by_version: dict[str, list[dict]
         "crops": [],
     }
     if version is not None:
-        result["crops"] = crop_boxes(flat, form.printed[version], boxes_by_version.get(version, []), ink_max)
+        boxes = boxes_by_version.get(version, [])
+        paper = paper_flat(page, placement, form, version) if any(reaches_edge(b["box"]) for b in boxes) else None
+        result["crops"] = crop_boxes(flat, form.printed[version], boxes, ink_max, paper)
     return result

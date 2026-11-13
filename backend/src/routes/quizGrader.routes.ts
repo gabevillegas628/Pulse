@@ -14,7 +14,7 @@ import { copyQuizInto, quizSources } from '../quizGrader/copy.js'
 import { p } from '../utils/params.js'
 import { patchYaml } from '../quizGrader/yamlPatch.js'
 import { printablePdf } from '../quizGrader/print.js'
-import { rescoreAfterEdit } from '../quizGrader/grading.js'
+import { changedChecks, rescoreAfterEdit } from '../quizGrader/grading.js'
 import { assessmentSchema, versionPage } from '../quizGrader/content.js'
 import {
   ContentError, KIND_LABEL, crossCheck, dependents, kindOf, newQuizFiles, parseSource, schemaIssues, slugOf, slugify, starterFiles, starterPdf, titleOf, validate,
@@ -176,7 +176,7 @@ router.put('/quiz-grader/content/:id', requireProfessor, async (req: Request, re
       : { ...(await prisma.quizContent.update({ where: { id: row.id }, data: { source: text, slug }, omit: { pdf: true } })), hasPdf: row.hasPdf }
     const after = all.map((r) => (r.id === saved.id ? saved : r))
     // Graded papers follow the edit: re-scored from what the model already read.
-    if (method !== 'unchanged') void rescoreAfterEdit(row.professorId, row.kind, slug)
+    if (method !== 'unchanged') void rescoreAfterEdit(row.professorId, row.kind, slug, row.kind === 'KEY' ? changedChecks(row.source, data) : undefined)
     res.json({ success: true, data: { ...summary(saved, after), source: saved.source, data: parseSource(saved.source), method } })
   } catch (err) {
     next(isUniqueViolation(err) ? new AppError('Another item already has that name.', 409) : asAppError(err))
@@ -281,7 +281,7 @@ router.put('/quiz-grader/quizzes/:id', requireProfessor, async (req: Request, re
     const body = z.object({ quiz: part.optional(), key: part.optional(), layout: part.optional() }).parse(req.body)
     const current = bundle(row, all)
 
-    const writes: { row: Row; text: string; kind: QuizContentKind }[] = []
+    const writes: { row: Row; text: string; kind: QuizContentKind; changed?: Set<string> }[] = []
     for (const name of Object.keys(PARTS) as Part[]) {
       const edit = body[name]
       if (!edit) continue
@@ -294,13 +294,13 @@ router.put('/quiz-grader/quizzes/:id', requireProfessor, async (req: Request, re
       validate(target.kind, edit.data)
       if (slugOf(target.kind, edit.data) !== target.slug) throw new AppError('File names are changed from the Files view, not here.', 400)
       const { text, method } = patchYaml(target.source, edit.data)
-      if (method !== 'unchanged') writes.push({ row: target, text, kind: target.kind })
+      if (method !== 'unchanged') writes.push({ row: target, text, kind: target.kind, changed: target.kind === 'KEY' ? changedChecks(target.source, edit.data) : undefined })
     }
 
     if (writes.length) {
       await prisma.$transaction(writes.map((w) => prisma.quizContent.update({ where: { id: w.row.id }, data: { source: w.text }, select: { id: true } })))
       // Graded papers follow the edit, re-scored from what the model already read.
-      void (async () => { for (const w of writes) await rescoreAfterEdit(row.professorId, w.kind, w.row.slug) })()
+      void (async () => { for (const w of writes) await rescoreAfterEdit(row.professorId, w.kind, w.row.slug, w.changed) })()
     }
     const after = await loadAll(row.professorId)
     const cls = row.classId ? await prisma.class.findUnique({ where: { id: row.classId }, select: { id: true, name: true } }) : null

@@ -157,6 +157,30 @@ class Pipeline(unittest.TestCase):
         self.assertIsNone(r["version"], r["fits"])
         self.assertEqual(r["crops"], [])
 
+    def test_box_at_the_form_edge_reaches_the_paper_margin(self):
+        # Printed at 90%, the paper runs on past the form: a box drawn to the form's edge takes
+        # in writing there; boxes clear of the edge are cut exactly as before.
+        page = printed_with_markers(filled("A", set()))
+        h, w = page.shape
+        x0 = (w - round(w * P.PRINT_SCALE)) // 2  # the printed form's left edge on the paper
+        y = h // 2
+        page[y - 15:y + 15, x0 - 60:x0 - 20] = 40  # writing in the left margin, beyond the form
+        edge = {"id": "edge", "box": [0.0, 0.45, 0.2, 0.1]}
+        inner = {"id": "inner", "box": [0.02, 0.45, 0.2, 0.1]}
+        r = P.process(page, self.form, {"A": [edge, inner]}, force_version="A")
+        self.assertEqual(r["method"], "markers")
+        crops = {c["id"]: c for c in r["crops"]}
+        img = lambda c: cv2.imdecode(np.frombuffer(__import__("base64").b64decode(c["png"]), np.uint8), cv2.IMREAD_GRAYSCALE)
+        e, i = img(crops["edge"]), img(crops["inner"])
+        self.assertGreater(e.shape[1], round(0.2 * w) + 60)  # wider: it runs out past the form
+        self.assertLess(e[:, :40].min(), 100)  # and the margin writing is in it
+        self.assertFalse(crops["edge"]["blank"])
+        self.assertLessEqual(abs(i.shape[1] - (np.ceil(0.226 * w) - np.floor(0.014 * w))), 1)
+        # The corner markers never count as writing.
+        corner = {"id": "corner", "box": [0.0, 0.0, 0.05, 0.03]}
+        r = P.process(printed_with_markers(P.render_pdf_page(GLY_PDF, 0)), self.form, {"A": [corner]}, force_version="A")
+        self.assertTrue(r["crops"][0]["blank"], r["crops"][0]["ink"])
+
     def test_forced_version(self):
         r = P.process(filled("B", set()), self.form, self.boxes, force_version="A")
         self.assertEqual(r["version"], "A")

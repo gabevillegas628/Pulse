@@ -18,6 +18,18 @@ http.createServer((req, res) => {
     count++
     const j = JSON.parse(body)
     const text = j.messages[0].content.filter((b) => b.type === 'text').map((b) => b.text).join('\n')
+    // Suggested checks for a key (suggest.ts): two checks per molecule asked for, one of them
+    // failing on any drawing (a check the key's own drawing fails is dropped). A revision,
+    // asked after testing, comes back the same.
+    if (JSON.stringify(j.output_config).includes('"checks"')) {
+      const asked = (/(?:returning one entry per id|for each of these ids): ([^\n]+?)\.?$/m.exec(text)?.[1] ?? '').split(',').map((x) => x.trim()).filter(Boolean)
+      fs.appendFileSync(LOG, (text.includes('were tested') ? 'revise ' : 'suggest ') + asked.join(' ') + '\n')
+      const intermediates = asked.map((id) => ({ id, checks: [`shows the groups of ${id}`, 'MOCKFAIL a feature no drawing has'] }))
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ id: 'msg_mock', type: 'message', role: 'assistant', model: j.model, stop_reason: 'end_turn', stop_sequence: null,
+        content: [{ type: 'text', text: JSON.stringify({ intermediates }) }], usage: { input_tokens: 9000, output_tokens: 900 } }))
+      return
+    }
     const ids = [...text.matchAll(/^- (\w+):/gm)].map((m) => m[1]).filter((id) => id !== 'description')
     fs.appendFileSync(LOG, ids.join(' ') + '\n')
     const isStruct = JSON.stringify(j.output_config).includes('features')
@@ -32,7 +44,10 @@ http.createServer((req, res) => {
       if (isStruct) {
         const unsure = process.env.MOCK_UNSURE_STRUCTURES === '1' && !text.includes('careful second look')
         if (text.includes('careful second look')) fs.appendFileSync(LOG, 'structure-second-look\n')
-        return { slot_id: id, status: 'read', description: 'a drawing', confidence: 0.9, features: [0, 1, 2, 3, 4].map((index) => ({ index, present: true, confidence: unsure && index === 1 ? 0.5 : 0.9 })) }
+        // A check that says MOCKFAIL is never seen.
+        const block = text.split(new RegExp(`^- ${id}: features to check:`, 'm'))[1]?.split(/^- /m)[0] ?? ''
+        const fails = new Set([...block.matchAll(/^\s+(\d+)\. MOCKFAIL/gm)].map((m) => Number(m[1])))
+        return { slot_id: id, status: 'read', description: 'a drawing', confidence: 0.9, features: [0, 1, 2, 3, 4].map((index) => ({ index, present: !fails.has(index), confidence: unsure && index === 1 ? 0.5 : 0.9 })) }
       }
       if (id.endsWith('_cofactors')) return { slot_id: id, status: 'read', transcription: '', confidence: 0.95, cofactors: (cof[step] ?? []).map(([text, side]) => ({ text, side })) }
       if (id.endsWith('_name')) return { slot_id: id, status: 'read', transcription: names[id.replace(/_name$/, '')] ?? '?', cofactors: [], confidence: 0.95 }

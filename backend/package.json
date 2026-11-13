@@ -30,6 +30,7 @@
     "test:smoke:quiz-scans": "tsx scripts/smoke-quiz-scans.ts",
     "test:smoke:quiz-grading": "tsx scripts/smoke-quiz-grading.ts",
     "test:smoke:quiz-review": "tsx scripts/smoke-quiz-review.ts",
+    "test:smoke:quiz-key-checks": "tsx scripts/smoke-quiz-key-checks.ts",
     "quiz-grader:spike": "tsx scripts/quiz-grader-spike.ts",
     "rehearse": "tsx scripts/rehearse.ts"
   },

@@ -32,6 +32,8 @@ export interface Region {
   id: string
   png: Buffer
   slots: GradedSlot[]
+  /** What to call the image in the prompt, instead of its region id and slots. */
+  label?: string
 }
 
 export interface Usage {
@@ -161,13 +163,13 @@ type Content = Anthropic.ContentBlockParam[]
 function regionBlocks(regions: Region[]): Content {
   const out: Content = []
   for (const r of regions) {
-    out.push({ type: 'text', text: `Region ${r.id} (slots: ${r.slots.map((s) => s.slot.id).join(', ')}):` })
+    out.push({ type: 'text', text: r.label ?? `Region ${r.id} (slots: ${r.slots.map((s) => s.slot.id).join(', ')}):` })
     out.push({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: r.png.toString('base64') } })
   }
   return out
 }
 
-async function cachedParse<S extends z.ZodType>(
+export async function cachedParse<S extends z.ZodType>(
   client: Anthropic,
   cache: ReadCache | undefined,
   model: string,

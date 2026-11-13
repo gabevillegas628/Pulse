@@ -135,6 +135,27 @@ async function main() {
     const resc = await api('POST', `/api/quiz-grader/content/${quiz.id}/rescore`, T)
     check('re-score on demand covers both graded pages', resc.body.data.pages === 2)
 
+    // Answers are matched to checks by position, so changing a drawing's checks has those
+    // drawings read again rather than re-scored from answers to the old checks.
+    const c3 = await modelCalls()
+    const k3 = (await api('GET', `/api/quiz-grader/content/${key.id}`, T)).body.data
+    const e3 = structuredClone(k3.data)
+    e3.intermediates.pep.features[0] = `${e3.intermediates.pep.features[0]} (reworded)`
+    await api('PUT', `/api/quiz-grader/content/${key.id}`, T, { data: e3, updatedAt: k3.updatedAt })
+    await until('page 1 read again', async () => (await modelCalls()) > c3 && (await results()).pages[0].gradeStatus === 'GRADED', 30)
+    await sleep(1500)
+    check('changing a drawing’s checks reads it again: one structure call, for the one page that draws it', (await modelCalls()) - c3 === 1, (await modelCalls()) - c3)
+    const pepNow = (await api('GET', `/api/quiz-grader/pages/${r.pages[0].id}`, T)).body.data.results.find((x: { slotId: string }) => x.slotId === 'int_pep')
+    check('and the page shows the new check', /\(reworded\)$/.test(pepNow?.detail?.features?.[0]?.feature ?? ''), pepNow?.detail)
+    check('the other page (version B does not draw pep) was not read again', (await results()).pages[1].gradeStatus === 'GRADED')
+    const k4 = (await api('GET', `/api/quiz-grader/content/${key.id}`, T)).body.data
+    await api('PUT', `/api/quiz-grader/content/${key.id}`, T, { data: k.data, updatedAt: k4.updatedAt })
+    await until('page 1 back on the original checks', async () => {
+      const d = (await api('GET', `/api/quiz-grader/pages/${r.pages[0].id}`, T)).body.data
+      return d.gradeStatus === 'GRADED' && !/reworded/.test(JSON.stringify(d.results))
+    }, 30)
+    check('going back to the original checks reuses the earlier reading (no model call)', (await modelCalls()) - c3 === 1, (await modelCalls()) - c3)
+
     // Re-grading reuses the cache.
     const c2 = await modelCalls()
     await api('POST', `/api/quiz-grader/pages/${r.pages[0].id}/regrade`, T)
