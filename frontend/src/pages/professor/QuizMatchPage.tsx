@@ -1,14 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, ArrowLeft, Check, Download, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Download } from 'lucide-react'
 import { api } from '@/api/client'
 import ProfessorLayout from '@/components/layout/ProfessorLayout'
 import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
 import AuthImage from '@/components/quizGrader/AuthImage'
+import StudentPicker, { type Student } from '@/components/quizGrader/StudentPicker'
 import { apiError } from '@/lib/errors'
-import { cn } from '@/lib/utils'
 import { saveBlob } from '@/lib/quizGrader'
 
 /**
@@ -17,7 +17,6 @@ import { saveBlob } from '@/lib/quizGrader'
  * Done by a person, on purpose: names and NetIDs are never sent to a model.
  */
 
-interface Student { netId: string; email: string }
 interface MatchPage { id: string; batchId: string; index: number; status: string; fileName: string; netId: string | null; nameBox: string | null; netidBox: string | null }
 interface MatchData {
   classId: string | null
@@ -182,36 +181,6 @@ function PaperRow({ pg, roster, quizHasClass, duplicate, offRoster, inputRef, on
   inputRef: (el: HTMLInputElement | null) => void
   onMatch: (netId: string | null) => void
 }) {
-  const [editing, setEditing] = useState(!pg.netId)
-  const [q, setQ] = useState('')
-  const [pick, setPick] = useState(0)
-  useEffect(() => { setEditing(!pg.netId) }, [pg.netId])
-
-  const term = q.trim().toLowerCase()
-  const hits = useMemo(() => {
-    if (!term) return []
-    const starts = roster.filter((s) => s.netId.toLowerCase().startsWith(term))
-    const within = roster.filter((s) => !starts.includes(s) && (s.netId.toLowerCase().includes(term) || s.email.toLowerCase().includes(term)))
-    return [...starts, ...within].slice(0, 6)
-  }, [term, roster])
-
-  function choose(netId: string) {
-    onMatch(netId)
-    setQ('')
-    setPick(0)
-  }
-
-  function onKey(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setPick((i) => Math.min(i + 1, hits.length - 1)) }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setPick((i) => Math.max(i - 1, 0)) }
-    else if (e.key === 'Enter') {
-      e.preventDefault()
-      if (hits[pick]) choose(hits[pick]!.netId)
-      // Not on the roster (or no class chosen): take what was typed, and say so in the row.
-      else if (term) choose(term)
-    } else if (e.key === 'Escape' && pg.netId) { setEditing(false); setQ('') }
-  }
-
   return (
     <div className="p-3 grid gap-3 md:grid-cols-[9rem_minmax(0,1fr)_minmax(0,0.8fr)_16rem] items-center">
       <div className="text-sm">
@@ -221,31 +190,8 @@ function PaperRow({ pg, roster, quizHasClass, duplicate, offRoster, inputRef, on
       <Crop pg={pg} box={pg.nameBox} what="name" />
       <Crop pg={pg} box={pg.netidBox} what="NetID" />
       <div className="relative">
-        {pg.netId && !editing ? (
-          <div className="flex items-center gap-2">
-            <Check size={15} className="text-good shrink-0" />
-            <span className="font-mono font-semibold text-ink">{pg.netId}</span>
-            <button className="text-xs text-signal hover:underline" onClick={() => setEditing(true)}>Change</button>
-            <button className="text-muted hover:text-warn" aria-label="Clear" title="Clear" onClick={() => onMatch(null)}><X size={13} /></button>
-          </div>
-        ) : (
-          <>
-            <input ref={inputRef} value={q} onChange={(e) => { setQ(e.target.value); setPick(0) }} onKeyDown={onKey}
-              placeholder={quizHasClass ? 'Type a NetID…' : 'Type the NetID, then Enter'}
-              className="w-full border border-hairline rounded-sm px-2.5 py-1.5 text-sm font-mono bg-surface focus:outline-none focus:ring-2 focus:ring-signal" />
-            {hits.length > 0 && (
-              <div className="absolute z-20 mt-1 w-full bg-surface border border-hairline rounded-sm shadow-lg">
-                {hits.map((s, i) => (
-                  <button key={s.netId} onMouseDown={(e) => { e.preventDefault(); choose(s.netId) }}
-                    className={cn('w-full text-left px-2.5 py-1.5 text-sm flex justify-between gap-2', i === pick ? 'bg-surface-2' : 'hover:bg-surface-2')}>
-                    <span className="font-mono text-ink">{s.netId}</span>
-                    <span className="text-xs text-muted truncate">{s.email}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </>
-        )}
+        <StudentPicker netId={pg.netId} roster={roster} inputRef={inputRef} onMatch={onMatch}
+          placeholder={quizHasClass ? 'Type a NetID…' : 'Type the NetID, then Enter'} />
         {(duplicate || offRoster) && (
           <p className="text-xs text-warn mt-1 flex gap-1">
             <AlertTriangle size={12} className="shrink-0 mt-0.5" />
