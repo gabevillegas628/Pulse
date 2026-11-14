@@ -18,7 +18,7 @@ import { REASON_TALLY, explainReason, reasonKind, type ReasonKind } from '@/lib/
  * Structures are judged one drawing at a time against the key's feature checks.
  */
 
-interface SlotSummary { slotId: string; label: string; kind: string; papers: number; open: number; groups: number; reasons?: string[] }
+interface SlotSummary { slotId: string; label: string; kind: string; papers: number; open: number; empty?: number; groups: number; reasons?: string[] }
 interface Member {
   pageId: string; batchId: string; index: number; version: string | null
   status: string; blankBy: string | null; transcription: string | null
@@ -43,7 +43,9 @@ export default function QuizReviewPage() {
   const { id } = useParams<{ id: string }>()
   const qc = useQueryClient()
   const [selected, setSelected] = useState<string | null>(null)
-  const [onlyOpen, setOnlyOpen] = useState(true)
+  // What the list of boxes shows: boxes with something flagged, boxes with answers scored as
+  // empty (to catch writing the ink check or the model missed), or every box.
+  const [mode, setMode] = useState<'review' | 'empty' | 'all'>('review')
   const [error, setError] = useState('')
 
   const { data: summary } = useQuery<{ slots: SlotSummary[]; open: number; boxes: number }>({
@@ -84,7 +86,14 @@ export default function QuizReviewPage() {
     } catch (e) { setError(apiError(e, 'Could not save that decision')) }
   }
 
-  const slots = (summary?.slots ?? []).filter((s) => !onlyOpen || s.open > 0 || s.slotId === selected)
+  const slots = (summary?.slots ?? []).filter((s) => mode === 'all' || s.slotId === selected || (mode === 'review' ? s.open > 0 : (s.empty ?? 0) > 0))
+  const emptyTotal = summary ? summary.slots.reduce((a, s) => a + (s.empty ?? 0), 0) : 0
+  function changeMode(m: typeof mode) {
+    setMode(m)
+    // Jump to the first box with something to show in that view.
+    const first = summary?.slots.find((s) => (m === 'empty' ? (s.empty ?? 0) > 0 : m === 'review' ? s.open > 0 : false))
+    if (first) setSelected(first.slotId)
+  }
   const flagged = summary ? summary.slots.reduce((a, s) => a + s.open, 0) : 0
   const tally = useMemo(() => {
     const t = new Map<ReasonKind, number>()
@@ -129,9 +138,12 @@ export default function QuizReviewPage() {
           )}
           <p className="text-sm text-muted">Answers are grouped by how they were read. One decision covers every paper in a group, including papers uploaded later.</p>
         </div>
-        <label className="text-sm text-ink-2 flex items-center gap-2">
-          <input type="checkbox" checked={onlyOpen} onChange={(e) => setOnlyOpen(e.target.checked)} /> Only boxes with something to review
-        </label>
+        <div className="flex rounded-sm border border-hairline-strong overflow-hidden text-sm" role="group" aria-label="Which boxes to show">
+          {([['review', `To review (${flagged})`], ['empty', `Empty answers (${emptyTotal})`], ['all', 'All boxes']] as const).map(([k, label]) => (
+            <button key={k} onClick={() => changeMode(k)} aria-pressed={mode === k}
+              className={cn('px-3 py-1.5', mode === k ? 'bg-ink text-surface font-semibold' : 'bg-surface text-ink-2 hover:bg-surface-2')}>{label}</button>
+          ))}
+        </div>
       </div>
       {error && <p className="text-sm text-warn mb-3">{error}</p>}
 
@@ -142,7 +154,8 @@ export default function QuizReviewPage() {
             <button key={s.slotId} onClick={() => setSelected(s.slotId)}
               className={cn('w-full text-left px-2.5 py-1.5 rounded-sm flex items-center gap-2 text-sm', s.slotId === selected ? 'bg-surface-2 font-semibold text-ink' : 'text-ink-2 hover:bg-surface-2')}>
               <span className="flex-1 truncate">{s.label}</span>
-              {s.open > 0 ? <span className="text-xs text-warn">{s.open}</span> : <Check size={13} className="text-good" />}
+              {mode === 'empty' ? <span className="text-xs text-muted">{s.empty ?? 0}</span>
+                : s.open > 0 ? <span className="text-xs text-warn">{s.open}</span> : <Check size={13} className="text-good" />}
             </button>
           ))}
         </Card>
@@ -155,13 +168,15 @@ export default function QuizReviewPage() {
                   <h2 className="text-lg font-semibold text-ink">{item.label}</h2>
                   {item.accept && <p className="text-xs text-muted">Accepted: {item.accept.join(' · ')}</p>}
                 </div>
-                {item.groups.some((g) => g.open > 0) && (
+                {mode !== 'empty' && item.groups.some((g) => g.open > 0) && (
                   <Button size="sm" onClick={() => void keepAll(item)} title="Agree with the automatic score on every flagged answer in this box">
                     <CheckCheck size={13} />Keep all as scored
                   </Button>
                 )}
               </div>
-              {item.kind === 'structure'
+              {mode === 'empty'
+                ? <EmptyList item={item} onPaper={decidePaper} />
+                : item.kind === 'structure'
                 ? <StructureList item={item} onDecide={decidePaper} />
                 : <GroupList item={item} onGroup={decideGroup} onPaper={decidePaper} />}
             </>
@@ -372,6 +387,39 @@ function GroupCard({ g, item, onGroup, onPaper, onDecided }: {
       </div>
       </>)}
     </Card>
+  )
+}
+
+/**
+ * The answers in one box that scored 0 as empty, for catching writing that was missed. Two
+ * kinds: the ink check found nothing there, so it was never read; or the model was shown the
+ * box and said nothing is written. Each is decided for its own paper, never as a group: one
+ * "Correct" must not credit every empty answer in the class.
+ */
+function EmptyList({ item, onPaper }: { item: Item; onPaper: (m: Member, points: number | null) => Promise<void> }) {
+  const members = item.groups.flatMap((g) => g.members).filter((m) => m.status === 'blank' && !m.open).sort((a, b) => a.index - b.index)
+  const byModel = members.filter((m) => m.blankBy === 'model')
+  const byInk = members.filter((m) => m.blankBy !== 'model')
+  const decided = members.filter((m) => m.source !== 'auto').length
+  if (!members.length) return <p className="text-sm text-muted">No answers in this box were scored as empty.</p>
+  const section = (title: string, hint: string, ms: Member[]) => ms.length > 0 && (
+    <section className="mb-5">
+      <h3 className="text-sm font-semibold text-ink">{title} <span className="font-normal text-muted">({ms.length})</span></h3>
+      <p className="text-xs text-muted mb-2">{hint}</p>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        {ms.map((m) => <PaperThumb key={m.pageId} m={m} slotId={item.slotId} max={item.maxPoints} onPaper={onPaper} />)}
+      </div>
+    </section>
+  )
+  return (
+    <div>
+      <p className="text-sm text-ink-2 mb-4">
+        {members.length} paper{members.length === 1 ? '' : 's'} looked empty here, so scored 0 automatically{decided ? ` (${decided} since decided by you)` : ''}.
+        If one has writing, click it to decide that paper.
+      </p>
+      {section('Read as empty', 'The model was shown this box and said nothing is written for this answer.', byModel)}
+      {section('Left empty', 'Too little ink in the box to be writing, so it was never sent to the model.', byInk)}
+    </div>
   )
 }
 
