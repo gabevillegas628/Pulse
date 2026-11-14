@@ -415,7 +415,7 @@ function EmptyList({ item, onPaper }: { item: Item; onPaper: (m: Member, points:
     <div>
       <p className="text-sm text-ink-2 mb-4">
         {members.length} paper{members.length === 1 ? '' : 's'} looked empty here, so scored 0 automatically{decided ? ` (${decided} since decided by you)` : ''}.
-        If one has writing, click it to decide that paper.
+        If one has writing, mark it with the buttons under it (click a crop to see it larger).
       </p>
       {section('Read as empty', 'The model was shown this box and said nothing is written for this answer.', byModel)}
       {section('Left empty', 'Too little ink in the box to be writing, so it was never sent to the model.', byInk)}
@@ -426,10 +426,18 @@ function EmptyList({ item, onPaper }: { item: Item; onPaper: (m: Member, points:
 /** One paper's crop; click to decide this paper alone. */
 function PaperThumb({ m, slotId, max, onPaper, flagged }: { m: Member; slotId: string; max: number; onPaper: (m: Member, points: number | null) => Promise<void>; flagged?: boolean }) {
   const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
   const src = `/quiz-grader/pages/${m.pageId}/crops/${slotId}`
+  const decide = async (points: number | null) => {
+    if (points !== null && m.source === 'paper' && m.points === points) return // already this paper's call
+    setBusy(true)
+    try { await onPaper(m, points) } finally { setBusy(false) }
+  }
+  // Which call this paper carries, if you made one for it alone.
+  const mine = m.source === 'paper' ? m.points : null
   return (
     <div className="relative">
-      <button onClick={() => setOpen(true)} className={cn('block w-full rounded-sm overflow-hidden bg-white cursor-zoom-in', m.source === 'paper' ? 'border border-signal' : flagged ? 'ring-2 ring-warn' : 'border border-hairline')}
+      <button onClick={() => setOpen(true)} className={cn('relative block w-full rounded-sm overflow-hidden bg-white cursor-zoom-in', m.source === 'paper' ? 'border border-signal' : flagged ? 'ring-2 ring-warn' : 'border border-hairline')}
         title={`Page ${m.index + 1}: ${m.points}/${max}${m.source === 'paper' ? ' (decided for this paper)' : ''}${m.open && m.reviewReasons[0] ? ` · flagged: ${explainReason(m.reviewReasons[0])}` : ''} · click to enlarge`}>
         <AuthImage src={src} alt={`Page ${m.index + 1}`} />
         <span className="absolute bottom-0 left-0 text-[10px] bg-surface/90 px-1 text-muted">p{m.index + 1}</span>
@@ -438,6 +446,27 @@ function PaperThumb({ m, slotId, max, onPaper, flagged }: { m: Member; slotId: s
         )}
         <span className="absolute bottom-0 right-0 text-[11px] font-semibold bg-surface/90 px-1">{m.points}</span>
       </button>
+      {/* Decide right here, without enlarging: this paper alone. */}
+      <div className="flex gap-1 mt-1">
+        <button disabled={busy} onClick={() => void decide(max)} title={`Correct (${max}) for this paper`}
+          className={cn('flex-1 flex items-center justify-center gap-1 rounded-sm border text-xs py-1 disabled:opacity-50',
+            mine === max ? 'bg-good text-white border-good' : 'border-good text-good hover:bg-good-soft')}>
+          <Check size={12} />{max}
+        </button>
+        {max !== 0 && (
+          <button disabled={busy} onClick={() => void decide(0)} title="Wrong (0) for this paper"
+            className={cn('flex-1 flex items-center justify-center gap-1 rounded-sm border text-xs py-1 disabled:opacity-50',
+              mine === 0 ? 'bg-signal text-white border-signal' : 'border-signal text-signal hover:bg-signal-soft')}>
+            <X size={12} />0
+          </button>
+        )}
+        {m.source === 'paper' && (
+          <button disabled={busy} onClick={() => void decide(null)} title="Undo your call for this paper"
+            className="flex items-center justify-center rounded-sm border border-hairline-strong text-ink-2 hover:bg-surface-2 px-1.5 py-1 disabled:opacity-50">
+            <RotateCcw size={12} />
+          </button>
+        )}
+      </div>
       {open && (
         <Lightbox src={src} alt={`Page ${m.index + 1}`} onClose={() => setOpen(false)}>
           <div className="space-y-2 text-sm">
@@ -469,11 +498,12 @@ function Lightbox({ src, alt, onClose, children }: { src: string; alt: string; o
   }, [onClose])
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
-      <Card className="w-full max-w-4xl p-3 space-y-3" onClick={(e) => e.stopPropagation()}>
+      {/* Fits the screen: the crop gives up height before the buttons below it are pushed off. */}
+      <Card className="w-full max-w-4xl max-h-[calc(100dvh-2rem)] overflow-y-auto p-3 space-y-3" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-end">
           <button onClick={onClose} className="text-muted hover:text-ink" aria-label="Close"><X size={18} /></button>
         </div>
-        <AuthImage src={src} alt={alt} eager className="rounded-sm border border-hairline overflow-hidden bg-white" />
+        <AuthImage src={src} alt={alt} eager className="rounded-sm border border-hairline overflow-hidden bg-white [&_img]:max-h-[60dvh] [&_img]:object-contain" />
         {children}
       </Card>
     </div>
