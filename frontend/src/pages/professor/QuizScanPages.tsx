@@ -9,6 +9,7 @@ import Card from '@/components/ui/Card'
 import Pill from '@/components/ui/Pill'
 import ConfirmDialog, { type DialogRequest } from '@/components/ui/ConfirmDialog'
 import AuthImage from '@/components/quizGrader/AuthImage'
+import StudentPicker, { type Student } from '@/components/quizGrader/StudentPicker'
 import { apiError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { STATUS_LABEL, describeRead, inFlight, type PageStatus, type QuizBatch, type QuizPage, type SlotResult } from '@/lib/quizGrader'
@@ -123,7 +124,7 @@ export function QuizBatchPage() {
   )
 }
 
-type PageDetail = QuizPage & { versions: string[]; boxes: { id: string; box: [number, number, number, number] }[]; results: SlotResult[]; cost: number }
+type PageDetail = QuizPage & { studentNetId?: string | null; versions: string[]; boxes: { id: string; box: [number, number, number, number] }[]; results: SlotResult[]; cost: number }
 
 export function QuizPageDebug() {
   const { pageId } = useParams<{ pageId: string }>()
@@ -215,6 +216,7 @@ export function QuizPageDebug() {
             </div>
 
             <div className="space-y-4 lg:sticky lg:top-4">
+              {batch && <PageStudent pageId={page.id} assessmentId={batch.assessmentId} netId={page.studentNetId ?? null} onChanged={refresh} />}
               <Card className="p-4 space-y-2 text-sm">
                 <div className="flex items-center justify-between"><span className="text-muted">Status</span><Pill variant={PILL[page.status]} dot={page.status === 'PROCESSING'}>{STATUS_LABEL[page.status]}</Pill></div>
                 {processed && (
@@ -441,5 +443,48 @@ function BoxDecision({ pageId, r, onDone }: { pageId: string; r: SlotResult; onD
       {r.source === 'paper' && <button onClick={() => void set(null)} className="px-1.5 py-0.5 rounded-sm border border-hairline hover:bg-surface-2">undo</button>}
       {error && <span className="text-warn">{error}</span>}
     </div>
+  )
+}
+
+/**
+ * Whose paper this is, set from the page itself: for papers whose name or NetID is not in its
+ * box, so the whole page has to be read to tell. Same picker and roster as the matching screen.
+ */
+function PageStudent({ pageId, assessmentId, netId, onChanged }: { pageId: string; assessmentId: string; netId: string | null; onChanged: () => void }) {
+  const qc = useQueryClient()
+  const [error, setError] = useState('')
+  const { data } = useQuery<{ classId: string | null; roster: Student[]; pages: { id: string; netId: string | null }[] }>({
+    queryKey: ['quiz-grader', 'match', assessmentId],
+    queryFn: () => api.get(`/quiz-grader/content/${assessmentId}/match`).then((r) => r.data.data),
+  })
+  async function match(n: string | null) {
+    setError('')
+    try {
+      await api.put(`/quiz-grader/pages/${pageId}/student`, { netId: n })
+      // The results list, the matching screen and the gradebook all show whose paper it is.
+      void qc.invalidateQueries({ queryKey: ['quiz-grader'] })
+      onChanged()
+    } catch (e) { setError(apiError(e, 'Could not save the student')) }
+  }
+  const roster = data?.roster ?? []
+  const lower = netId?.toLowerCase()
+  const duplicate = !!lower && (data?.pages ?? []).some((p) => p.id !== pageId && p.netId?.toLowerCase() === lower)
+  const offRoster = !!lower && !!data?.classId && !roster.some((s) => s.netId.toLowerCase() === lower)
+  return (
+    <Card className="p-4 text-sm">
+      <p className="text-muted mb-1.5">Student</p>
+      {!data ? null : (
+        <StudentPicker key={pageId} netId={netId} roster={roster} onMatch={(n) => void match(n)}
+          placeholder={data.classId ? 'Type a NetID…' : 'Type the NetID, then Enter'} />
+      )}
+      {(duplicate || offRoster) && (
+        <p className="text-xs text-warn mt-1.5 flex gap-1">
+          <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+          {duplicate ? 'Another paper of this quiz has this NetID.' : 'Not on the class roster.'}
+        </p>
+      )}
+      {error && <p className="text-xs text-warn mt-1.5">{error}</p>}
+      <Link to={`/professor/quiz-grader/${assessmentId}/match`} className="text-xs text-signal hover:underline inline-block mt-2">All papers and students</Link>
+    </Card>
   )
 }
