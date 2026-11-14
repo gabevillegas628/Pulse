@@ -720,8 +720,18 @@ export default function TextbookPage({ repo, path, classId, viewCounts }: Textbo
   const scrollOccurrence = parseInt(searchParams.get('scroll_n') ?? '0')
   const highlightQuery = searchParams.get('hl')
 
+  // Only touch the textbook's own params: the professor ClassPage keeps its
+  // active tab in ?tab=, and replacing the whole query string would drop it.
+  function setTextbookParams(next: Record<string, string>) {
+    setSearchParams((p) => {
+      for (const k of ['chapter', 'scroll_to', 'scroll_n', 'hl']) p.delete(k)
+      for (const [k, v] of Object.entries(next)) p.set(k, v)
+      return p
+    }, { replace: false })
+  }
+
   function navigateToResult(chapter: Chapter, sectionId: string, query: string, occurrence: number) {
-    setSearchParams({ chapter: chapter.name, scroll_to: sectionId, scroll_n: String(occurrence), hl: query }, { replace: false })
+    setTextbookParams({ chapter: chapter.name, scroll_to: sectionId, scroll_n: String(occurrence), hl: query })
   }
 
   function onScrolled() {
@@ -771,7 +781,7 @@ export default function TextbookPage({ repo, path, classId, viewCounts }: Textbo
   })
 
   function selectChapter(ch: Chapter) {
-    setSearchParams({ chapter: ch.name }, { replace: false })
+    setTextbookParams({ chapter: ch.name })
   }
 
   if (isLoading) {
