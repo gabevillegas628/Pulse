@@ -453,6 +453,18 @@ drawings were asked other checks is queued to be graded again: its drawings are 
 the new checks, and its written answers come from the cache. Pages read before this change
 are caught by the edit's changed intermediates, or by a different number of answers.
 
+## Empty answers in review
+
+A box that looks empty scores 0 without a flag. There are two ways that happens:
+- **Left empty:** the ink check found too little ink, so the box was never sent to the model.
+- **Read as empty:** the model said nothing was written. Intermediate names are never flagged
+  for this, because a name box nearly always holds ink from the drawing beside it.
+
+Either can miss real writing, and that 0 is never seen otherwise. So the review page has an
+**Empty answers** view, beside **To review** and **All boxes**. It lists every box with
+answers scored as empty, and shows the two kinds separately. Each paper is decided on its
+own; there is no "Correct for all", since that would credit every empty answer in the class.
+
 ## Changes from the handoff
 
 - **Seed YAML bug fixed.** Names containing a comma (`1,3-bisphosphoglycerate`,

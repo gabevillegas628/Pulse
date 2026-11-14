@@ -69,6 +69,9 @@ router.get('/quiz-grader/content/:id/review', requireProfessor, async (req: Requ
         kind: rs[0]!.kind,
         papers: rs.length,
         open: rs.filter((r) => r.open).length,
+        // Scored as empty and not flagged: worth a look when the ink check or the model
+        // misses writing (a 0 that nobody sees otherwise). Includes papers already decided.
+        empty: rs.filter((r) => r.status === 'blank' && !r.open).length,
         // Why each open box is open (its first reason), for the page's tally.
         reasons: rs.filter((r) => r.open).map((r) => (Array.isArray(r.reviewReasons) ? String(r.reviewReasons[0] ?? '') : '')),
         groups: rs[0]!.kind === 'structure' ? rs.length : new Set(rs.map((r) => r.groupKey)).size,
