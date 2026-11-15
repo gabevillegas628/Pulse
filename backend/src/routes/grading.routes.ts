@@ -350,6 +350,32 @@ router.post('/sessions/:sessionId/questions/:questionId/summarize', requireProfe
     const runId = await latestRunId(question.sessionId!)
     if (!runId) throw new AppError('Session has not been run yet', 400)
 
+    // Summaries cover only the latest opening, which is not what the button suggests.
+    // When that opening is empty but earlier ones are not, say so plainly: a bare
+    // "no responses" next to hundreds of visible answers reads like an API failure.
+    const [inRun, total] = await Promise.all([
+      prisma.response.count({ where: { questionId: question.id, runId } }),
+      prisma.response.count({ where: { questionId: question.id } }),
+    ])
+    if (inRun === 0) {
+      const run = await prisma.sessionRun.findUnique({
+        where: { id: runId },
+        select: { openedAt: true, section: { select: { name: true } } },
+      })
+      const which = [
+        'The most recent opening of this session',
+        run?.section ? `(${run.section.name}, ` : '(',
+        `opened ${run?.openedAt.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })})`,
+      ].join('')
+      throw new AppError(
+        total > 0
+          ? `${which} has no answers to this question. Summaries cover only the latest opening, ` +
+            `so the ${total} answer${total === 1 ? '' : 's'} from earlier openings are not included.`
+          : `${which} has no answers to this question yet.`,
+        400
+      )
+    }
+
     const themes = await bootstrapThemeSet(question.id, runId, question.text)
 
     // Bootstrap clusters from a capped sample, so on a large class most answers are not

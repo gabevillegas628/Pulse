@@ -9,7 +9,8 @@ interface Props {
   /** The persisted set for the question in view, or null if none exists for this run. */
   themes: ThemeSet | null
   isSummarizing: boolean
-  isError: boolean
+  /** Why the last summarize failed, in the server's words, or null if it did not. */
+  error: string | null
   /** Derive a set. Destructive when one already exists — the server replaces it. */
   onSummarize: () => void
   /**
@@ -38,14 +39,14 @@ interface Props {
  * collapsed panel hide incoming live themes indefinitely; if it is wanted later,
  * `localStorage` keyed by question id is the whole job.
  */
-export default function ThemesPanel({ themes, isSummarizing, isError, onSummarize, scope }: Props) {
+export default function ThemesPanel({ themes, isSummarizing, error, onSummarize, scope }: Props) {
   const [collapsed, setCollapsed] = useState(false)
   const [ask, setAsk] = useState<DialogRequest | null>(null)
 
   // Defined once. The two states below are mutually exclusive, so this never renders
   // twice — but it was written out twice, which is the kind of thing that drifts.
-  const errorLine = isError
-    ? <p className="text-xs text-red-500 mt-2">Failed to summarize — try again.</p>
+  const errorLine = error
+    ? <p className="text-xs text-red-500 mt-2">{error}</p>
     : null
 
   // Nothing derived for this run yet: the one case where summarizing creates rather

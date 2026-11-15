@@ -672,7 +672,9 @@ export default function SessionPage() {
               key={`themes-${activeQuestion.id}`}
               themes={themesForQuestion}
               isSummarizing={summarizeMutation.isPending}
-              isError={summarizeMutation.isError}
+              error={summarizeMutation.isError
+                ? apiError(summarizeMutation.error, 'Failed to summarize — try again.')
+                : null}
               onSummarize={() => summarizeMutation.mutate(activeQuestion.id)}
               scope={themeScope}
             />
