@@ -1,0 +1,23 @@
+# Starts Pulse at boot. A *user* unit for the pulse service account (no root):
+#   cp deploy/systemd/* ~/.config/systemd/user/ && systemctl --user daemon-reload
+#   systemctl --user enable --now pulse.service
+# Starting at boot without anyone logged in needs `loginctl enable-linger pulse` (OIT).
+#
+# Rootless Podman does not bring containers back after a reboot on its own, whatever their
+# restart policy says; this unit is what does.
+
+[Unit]
+Description=Pulse (podman compose)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=%h/Pulse/deploy
+ExecStart=/usr/bin/podman compose up -d --no-build
+ExecStop=/usr/bin/podman compose stop
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target
