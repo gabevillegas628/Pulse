@@ -12,21 +12,17 @@
  * when several slots share a box (an enzyme blank and its cofactor arrow, on the
  * glycolysis form), and the model returns one result per slot.
  */
-import Anthropic from '@anthropic-ai/sdk'
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { createHash } from 'crypto'
 import * as z from 'zod/v4'
 import type { GradedSlot, PathwayKey } from './content.js'
+import { generateStructured, modelFor, type Part } from '../ai/llm.js'
 
 /** Bump when a prompt changes, so cached reads from the old prompt are not reused. */
 export const PROMPT_VERSION = 'qg-read-v1'
 
-export const DEFAULT_MODEL_TEXT = 'claude-haiku-5-5'
-export const DEFAULT_MODEL_STRUCTURE = 'claude-sonnet-5-5'
-/** The stronger reader for a second look at near misses and unsure readings. */
-export const DEFAULT_MODEL_SECOND_LOOK = 'claude-sonnet-5-5'
-/** Structures are first read by Sonnet, so their second look goes to the stronger Opus. */
-export const DEFAULT_MODEL_STRUCTURE_SECOND_LOOK = 'claude-opus-5-5'
+// Models come from ROLES in ai/llm.ts: quiz.text, quiz.structure, quiz.secondLook (the
+// stronger reader for near misses and unsure readings) and quiz.structureSecondLook (a
+// stronger model again, since structures are first read by the mid-tier one).
 
 export interface Region {
   id: string
@@ -158,19 +154,16 @@ function cacheKey(model: string, prompt: string, regions: Region[]): string {
   return h.digest('hex')
 }
 
-type Content = Anthropic.ContentBlockParam[]
-
-function regionBlocks(regions: Region[]): Content {
-  const out: Content = []
+function regionParts(regions: Region[]): Part[] {
+  const out: Part[] = []
   for (const r of regions) {
     out.push({ type: 'text', text: r.label ?? `Region ${r.id} (slots: ${r.slots.map((s) => s.slot.id).join(', ')}):` })
-    out.push({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: r.png.toString('base64') } })
+    out.push({ type: 'image', png: r.png })
   }
   return out
 }
 
 export async function cachedParse<S extends z.ZodType>(
-  client: Anthropic,
   cache: ReadCache | undefined,
   model: string,
   effort: 'low' | 'medium' | 'high',
@@ -187,36 +180,36 @@ export async function cachedParse<S extends z.ZodType>(
   // Structured output guarantees the shape; retry once anyway, since a refusal or a
   // truncated response leaves parsed_output empty.
   for (let attempt = 1; ; attempt++) {
-    const res = await client.messages.parse({
+    const res = await generateStructured({
       model,
-      max_tokens: maxTokens,
-      output_config: { effort, format: zodOutputFormat(schema) },
-      messages: [{ role: 'user', content: [...regionBlocks(regions), { type: 'text', text: prompt }] }],
+      parts: [...regionParts(regions), { type: 'text', text: prompt }],
+      schema,
+      maxTokens,
+      effort,
     })
-    const parsed = res.parsed_output as T | null
+    const parsed = res.parsed as T | null
     if (parsed) {
-      const usage: Usage = { model, input_tokens: res.usage.input_tokens, output_tokens: res.usage.output_tokens, cached: false }
+      const usage: Usage = { ...res.usage, cached: false }
       await cache?.set(k, { parsed, usage })
       return { parsed, usage }
     }
-    if (attempt >= 2) throw new Error(`No parseable answer from ${model} (stop_reason ${res.stop_reason})`)
+    if (attempt >= 2) throw new Error(`No parseable answer from ${model} (stop reason ${res.stopReason})`)
   }
 }
 
 export async function readTextRegions(
-  client: Anthropic,
   key: PathwayKey,
   regions: Region[],
   opts: { model?: string; cache?: ReadCache } = {},
 ): Promise<{ reads: Map<string, TextRead>; usage: Usage }> {
-  const model = opts.model ?? DEFAULT_MODEL_TEXT
+  const model = opts.model ?? modelFor('quiz.text')
   const slots = regions.flatMap((r) => r.slots)
   const identity = slots.filter((s) => s.ref.kind === 'identity').map((s) => s.slot.id)
   if (identity.length) {
     throw new Error(`Refusing to send ${identity.join(', ')} to the model: names and NetIDs stay local`)
   }
   const prompt = `${TEXT_RULES}\n\nSlots:\n${slots.map((s) => `- ${describeTextSlot(key, s)}`).join('\n')}`
-  const { parsed, usage } = await cachedParse(client, opts.cache, model, 'low', prompt, regions, textReadSchema)
+  const { parsed, usage } = await cachedParse(opts.cache, model, 'low', prompt, regions, textReadSchema)
   return { reads: new Map(parsed.slots.map((s) => [s.slot_id, s])), usage }
 }
 
@@ -225,32 +218,31 @@ export async function readTextRegions(
  * were unsure or a near miss of an accepted answer. Same output as readTextRegions.
  */
 export async function readSecondLook(
-  client: Anthropic,
   key: PathwayKey,
   regions: Region[],
   opts: { model?: string; cache?: ReadCache } = {},
 ): Promise<{ reads: Map<string, TextRead>; usage: Usage }> {
-  const model = opts.model ?? DEFAULT_MODEL_SECOND_LOOK
+  const model = opts.model ?? modelFor('quiz.secondLook')
   const slots = regions.flatMap((r) => r.slots)
   const wrong = slots.filter((s) => s.ref.kind !== 'enzyme' && s.ref.kind !== 'name' && s.ref.kind !== 'cofactors').map((s) => s.slot.id)
   if (wrong.length) throw new Error(`A second look is for enzyme, name and cofactor slots only, not ${wrong.join(', ')}`)
   const prompt = `${SECOND_LOOK_RULES}\n\nSlots:\n${slots.map((s) => `- ${describeSecondLookSlot(key, s)}`).join('\n')}`
-  const { parsed, usage } = await cachedParse(client, opts.cache, model, 'medium', prompt, regions, textReadSchema)
+  const { parsed, usage } = await cachedParse(opts.cache, model, 'medium', prompt, regions, textReadSchema)
   return { reads: new Map(parsed.slots.map((s) => [s.slot_id, s])), usage }
 }
 
 /**
  * A second, blind look at the checks the first reading of a drawing was unsure of: only
  * those checks, numbered as in the key, and without the first reading's answers. Code
- * compares the two. Opus thinks before answering, so it gets a larger token allowance.
+ * compares the two. The stronger model thinks before answering, so it gets a larger token
+ * allowance.
  */
 export async function readStructureSecondLook(
-  client: Anthropic,
   regions: Region[],
   doubtful: Map<string, number[]>,
   opts: { model?: string; cache?: ReadCache } = {},
 ): Promise<{ reads: Map<string, StructureRead>; usage: Usage }> {
-  const model = opts.model ?? DEFAULT_MODEL_STRUCTURE_SECOND_LOOK
+  const model = opts.model ?? modelFor('quiz.structureSecondLook')
   const lines: string[] = []
   for (const r of regions) {
     for (const g of r.slots) {
@@ -261,16 +253,15 @@ export async function readStructureSecondLook(
     }
   }
   const prompt = `${STRUCTURE_RULES}\n- This is a careful second look: examine the drawing closely before answering each feature. Answer only the features listed, using their numbers.\n\nSlots:\n${lines.join('\n')}`
-  const { parsed, usage } = await cachedParse(client, opts.cache, model, 'medium', prompt, regions, structureReadSchema, 16000)
+  const { parsed, usage } = await cachedParse(opts.cache, model, 'medium', prompt, regions, structureReadSchema, 16000)
   return { reads: new Map(parsed.slots.map((s) => [s.slot_id, s])), usage }
 }
 
 export async function readStructureRegions(
-  client: Anthropic,
   regions: Region[],
   opts: { model?: string; cache?: ReadCache } = {},
 ): Promise<{ reads: Map<string, StructureRead>; usage: Usage }> {
-  const model = opts.model ?? DEFAULT_MODEL_STRUCTURE
+  const model = opts.model ?? modelFor('quiz.structure')
   const lines: string[] = []
   for (const r of regions) {
     for (const g of r.slots) {
@@ -280,6 +271,6 @@ export async function readStructureRegions(
     }
   }
   const prompt = `${STRUCTURE_RULES}\n\nSlots:\n${lines.join('\n')}`
-  const { parsed, usage } = await cachedParse(client, opts.cache, model, 'medium', prompt, regions, structureReadSchema)
+  const { parsed, usage } = await cachedParse(opts.cache, model, 'medium', prompt, regions, structureReadSchema)
   return { reads: new Map(parsed.slots.map((s) => [s.slot_id, s])), usage }
 }

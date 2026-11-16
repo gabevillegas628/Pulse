@@ -1,8 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
-import Anthropic from '@anthropic-ai/sdk'
 import { prisma } from '../db/index.js'
-import { config } from '../config/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { requireProfessor, ProfessorRequest } from '../middleware/auth.middleware.js'
 import { Viewer, ownedAssignmentQuestion, ownedSessionQuestion } from '../utils/ownership.js'
@@ -10,9 +8,9 @@ import { getIo } from '../socket.js'
 import { logger } from '../utils/logger.js'
 import { p } from '../utils/params.js'
 import { isSkippedAnswer } from '../utils/scoring.js'
+import { generateText, modelFor } from '../ai/llm.js'
 import { bootstrapThemeSet, readThemeSet, latestRunId, scheduleThemeWork } from '../services/themes.service.js'
 
-const anthropic = new Anthropic({ apiKey: config.anthropicApiKey })
 const BATCH_SIZE = 25
 
 const router = Router()
@@ -97,19 +95,14 @@ async function gradeBatch(
   const responseList = responses.map((r, i) => `[${i}] ${r.responseText}`).join('\n')
   const n = responses.length
 
-  const msg = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 4096,
+  const { text: reply } = await generateText({
+    model: modelFor('responses.grade'),
+    maxTokens: 4096,
     temperature: 0,
-    messages: [
-      {
-        role: 'user',
-        content: buildGradingPrompt(mode, questionText, correctAnswer, responseList, n),
-      },
-    ],
+    prompt: buildGradingPrompt(mode, questionText, correctAnswer, responseList, n),
   })
 
-  const raw = msg.content.find((b) => b.type === 'text')?.text ?? '[]'
+  const raw = reply || '[]'
   const cleanText = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
   let parsed: { index: number; score: string; reason: string }[]
   try { parsed = JSON.parse(cleanText) } catch { parsed = [] }
@@ -188,13 +181,10 @@ async function runAiGradingSync(
 async function runAiSummarize(question: { text: string; responses: Array<{ responseText: string }> }) {
   const responseTexts = question.responses.map((r, i) => `${i + 1}. ${r.responseText}`).join('\n')
 
-  const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 8192,
-    messages: [
-      {
-        role: 'user',
-        content: `You are analyzing student responses to a classroom question. Group the responses into 3-4 distinct themes or categories. For each category, give it a short label and a one-sentence description of what students in that group said. Be concise and objective.
+  const { text: reply } = await generateText({
+    model: modelFor('responses.summarize'),
+    maxTokens: 8192,
+    prompt: `You are analyzing student responses to a classroom question. Group the responses into 3-4 distinct themes or categories. For each category, give it a short label and a one-sentence description of what students in that group said. Be concise and objective.
 
 Question asked: "${question.text}"
 
@@ -208,11 +198,9 @@ Return your answer as a JSON array with this exact shape:
 ]
 
 Only return the JSON array, no other text.`,
-      },
-    ],
   })
 
-  const raw = message.content.find((b) => b.type === 'text')?.text ?? '[]'
+  const raw = reply || '[]'
   const text = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
   let categories: { label: string; description: string; count: number }[]
   try {

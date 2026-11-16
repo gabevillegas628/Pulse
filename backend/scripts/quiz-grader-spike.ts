@@ -42,7 +42,7 @@ import { execFileSync } from 'child_process'
 import fs from 'fs/promises'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import Anthropic from '@anthropic-ai/sdk'
+import { modelFor, provider } from '../src/ai/llm.js'
 import sharp from 'sharp'
 import {
   parseAssessment,
@@ -57,8 +57,6 @@ import { gradePage, type SlotResult } from '../src/quizGrader/grade.js'
 import {
   readStructureRegions,
   readTextRegions,
-  DEFAULT_MODEL_STRUCTURE,
-  DEFAULT_MODEL_TEXT,
   type ReadCache,
   type Region,
   type StructureRead,
@@ -120,8 +118,8 @@ function args() {
     grades: get('grades') ? path.resolve(get('grades')!) : undefined,
     limit: get('limit') ? Number(get('limit')) : Infinity,
     dryRun: a.includes('--dry-run'),
-    modelText: get('model-text') ?? process.env.MODEL_TEXT ?? DEFAULT_MODEL_TEXT,
-    modelStructure: get('model-structure') ?? process.env.MODEL_STRUCTURE ?? DEFAULT_MODEL_STRUCTURE,
+    modelText: get('model-text') ?? modelFor('quiz.text'),
+    modelStructure: get('model-structure') ?? modelFor('quiz.structure'),
   }
 }
 
@@ -485,7 +483,8 @@ async function main() {
   if (!pages.length) throw new Error(`No PDFs or images found in ${opt.input}`)
   console.log(`${pages.length} page(s), ${opt.version ? `all version ${opt.version}` : versions.length > 1 ? `versions ${versions.join('/')} detected per page` : `version ${versions[0]}`}${opt.dryRun ? ' — dry run, no API calls' : ''}`)
 
-  const client = opt.dryRun ? null : new Anthropic()
+  const live = !opt.dryRun
+  if (live) console.log(`provider ${provider()}: ${opt.modelText} (text), ${opt.modelStructure} (structures)`)
   const cache = fileCache(path.join(opt.out, 'cache'))
   const outcomes: PageOutcome[] = []
   const pageVersion = new Map<string, string>()
@@ -548,7 +547,7 @@ async function main() {
     }
     await overlay(img, slots, blank, path.join(pageDir, 'overlay.png'))
 
-    if (!client) {
+    if (!live) {
       console.log(`  ${page.id}: ${placed}; ${blank.size} of ${slots.length} slots look blank${blank.size ? ` (${[...blank].join(', ')})` : ''}`)
       continue
     }
@@ -566,8 +565,8 @@ async function main() {
 
     const usage: Usage[] = []
     const [text, struct] = await Promise.all([
-      textRegions.length ? readTextRegions(client, key, textRegions, { model: opt.modelText, cache }) : null,
-      structRegions.length ? readStructureRegions(client, structRegions, { model: opt.modelStructure, cache }) : null,
+      textRegions.length ? readTextRegions(key, textRegions, { model: opt.modelText, cache }) : null,
+      structRegions.length ? readStructureRegions(structRegions, { model: opt.modelStructure, cache }) : null,
     ])
     if (text) usage.push(text.usage)
     if (struct) usage.push(struct.usage)

@@ -1,8 +1,6 @@
-import Anthropic from '@anthropic-ai/sdk'
 import * as z4 from 'zod/v4'
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
+import { generateStructured, modelFor } from '../ai/llm.js'
 import { prisma } from '../db/index.js'
-import { config } from '../config/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { getIo } from '../socket.js'
 import { logger } from '../utils/logger.js'
@@ -20,12 +18,10 @@ import { logger } from '../utils/logger.js'
  *    the model, so a low-confidence answer is never forced into a wrong bin.
  */
 
-const anthropic = new Anthropic({ apiKey: config.anthropicApiKey })
-
 /** Bootstrap is the one call where a bad result poisons everything downstream. */
-const BOOTSTRAP_MODEL = 'claude-opus-5'
+const BOOTSTRAP_MODEL = modelFor('themes.bootstrap')
 /** Classification is high-volume, short-output and easy. Spend accordingly. */
-const CLASSIFY_MODEL = 'claude-haiku-4-5'
+const CLASSIFY_MODEL = modelFor('themes.classify')
 
 /** Below this, the model's choice is not trusted and the answer goes to Forming. */
 const MIN_CONFIDENCE = 0.6
@@ -204,14 +200,14 @@ async function callBootstrap(questionText: string, answers: AnswerRow[]) {
 
   // No `temperature` here: it is deprecated on Opus 5 and the API rejects the request
   // outright with a 400. The older grading calls on claude-sonnet-4-6 still accept it.
-  const res = await anthropic.messages.parse({
+  const res = await generateStructured({
     model: BOOTSTRAP_MODEL,
-    max_tokens: 8192,
-    output_config: { format: zodOutputFormat(bootstrapSchema) },
-    messages: [
+    maxTokens: 8192,
+    schema: bootstrapSchema,
+    parts: [
       {
-        role: 'user',
-        content: `You are analysing student responses to a classroom question. Group them into 3-4 distinct themes, then assign every response to one of those themes.
+        type: 'text',
+        text: `You are analysing student responses to a classroom question. Group them into 3-4 distinct themes, then assign every response to one of those themes.
 
 Question asked: "${questionText}"
 
@@ -231,7 +227,7 @@ Rules:
     ],
   })
 
-  const parsed = res.parsed_output
+  const parsed = res.parsed
   if (!parsed) throw new AppError('Could not read categories from the AI response', 502)
   return parsed
 }
@@ -365,15 +361,15 @@ async function callClassify(
   const catList = categories.map((c) => `- ${c.id}: ${c.label} — ${c.description}`).join('\n')
   const list = answers.map((a, i) => `[${i}] ${a.responseText}`).join('\n')
 
-  const res = await anthropic.messages.parse({
+  const res = await generateStructured({
     model: CLASSIFY_MODEL,
-    max_tokens: 1024,
+    maxTokens: 1024,
     temperature: 0,
-    output_config: { format: zodOutputFormat(classifySchema(categories.map((c) => c.id))) },
-    messages: [
+    schema: classifySchema(categories.map((c) => c.id)),
+    parts: [
       {
-        role: 'user',
-        content: `Assign each student answer to one of the existing categories for this question.
+        type: 'text',
+        text: `Assign each student answer to one of the existing categories for this question.
 
 Question: "${questionText}"
 
@@ -393,7 +389,7 @@ Rules:
     ],
   })
 
-  const parsed = res.parsed_output
+  const parsed = res.parsed
   if (!parsed) throw new Error('classify returned no parsable output')
   return parsed
 }

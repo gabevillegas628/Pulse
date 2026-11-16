@@ -12,6 +12,7 @@ import path from 'path'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../db/index.js'
 import { config } from '../config/index.js'
+import { aiConfigured } from '../ai/llm.js'
 import { uploadDir } from '../utils/uploads.js'
 import { logger } from '../utils/logger.js'
 import { assessmentSchema, layoutSchema, pathwayKeySchema, slotsForVersion, versionPage } from './content.js'
@@ -195,7 +196,7 @@ async function processPage(pageId: string): Promise<void> {
     where: { id: page.id },
     data: {
       // Queue it for the grader (grading.ts) once it is lined up and its version known.
-      gradeStatus: result.version && config.anthropicApiKey ? 'PENDING' : 'NONE',
+      gradeStatus: result.version && aiConfigured() ? 'PENDING' : 'NONE',
       gradeAttempts: 0,
       gradeError: null,
       reads: Prisma.DbNull,

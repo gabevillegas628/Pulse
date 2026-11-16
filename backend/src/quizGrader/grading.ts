@@ -8,10 +8,8 @@
  */
 import fs from 'fs/promises'
 import path from 'path'
-import Anthropic from '@anthropic-ai/sdk'
 import type { Prisma, QuizPage } from '@prisma/client'
 import { prisma } from '../db/index.js'
-import { config } from '../config/index.js'
 import { logger } from '../utils/logger.js'
 import {
   assessmentSchema, layoutSchema, pathwayKeySchema, slotsForVersion,
@@ -20,19 +18,19 @@ import {
 import { doubtfulChecks, gradePage, wantsSecondLook, type SlotResult } from './grade.js'
 import {
   readSecondLook, readStructureRegions, readStructureSecondLook, readTextRegions,
-  DEFAULT_MODEL_SECOND_LOOK, DEFAULT_MODEL_STRUCTURE, DEFAULT_MODEL_STRUCTURE_SECOND_LOOK, DEFAULT_MODEL_TEXT,
   type ReadCache, type Region, type StructureRead, type TextRead, type Usage,
 } from './reader.js'
 import { normalize, stripCoefficient } from './scoring.js'
+import { aiConfigured, isAuthError, modelFor } from '../ai/llm.js'
 import { pageDir } from './scans.js'
 import { parseSource } from './store.js'
 
-export const gradingConfigured = () => Boolean(config.anthropicApiKey)
+export const gradingConfigured = aiConfigured
 
-const MODEL_TEXT = process.env.MODEL_TEXT || DEFAULT_MODEL_TEXT
-export const MODEL_STRUCTURE = process.env.MODEL_STRUCTURE || DEFAULT_MODEL_STRUCTURE
-const MODEL_SECOND_LOOK = process.env.MODEL_SECOND_LOOK || DEFAULT_MODEL_SECOND_LOOK
-const MODEL_STRUCTURE_SECOND_LOOK = process.env.MODEL_STRUCTURE_SECOND_LOOK || DEFAULT_MODEL_STRUCTURE_SECOND_LOOK
+const MODEL_TEXT = modelFor('quiz.text')
+export const MODEL_STRUCTURE = modelFor('quiz.structure')
+const MODEL_SECOND_LOOK = modelFor('quiz.secondLook')
+const MODEL_STRUCTURE_SECOND_LOOK = modelFor('quiz.structureSecondLook')
 
 /** What the model said about one page, by slot id. */
 export interface PageReads {
@@ -180,16 +178,16 @@ const only = (regions: Region[], keep: (g: GradedSlot) => boolean) => regions
  * A second, blind look at the page's unsure and near-miss enzyme and name readings,
  * by the stronger model. Returns only the slots it looked at (none: no call made).
  */
-async function secondLook(client: Anthropic, ctx: Context, regions: Region[], text: Record<string, TextRead>, skip: Set<string> = new Set()) {
+async function secondLook(ctx: Context, regions: Region[], text: Record<string, TextRead>, skip: Set<string> = new Set()) {
   const due = only(regions, (g) => !skip.has(g.slot.id) && wantsSecondLook(g, text[g.slot.id]))
   if (!due.length) return null
   // A second look only removes flags: if it fails, the page is graded without it.
-  return readSecondLook(client, ctx.key, due, { model: MODEL_SECOND_LOOK, cache: dbCache })
+  return readSecondLook(ctx.key, due, { model: MODEL_SECOND_LOOK, cache: dbCache })
     .catch((e) => { logger.warn('quiz second look failed; graded without it', { error: (e as Error).message }); return null })
 }
 
 /** A second, blind look at drawings' doubtful checks. Null when none, or when it fails. */
-async function structureSecondLook(client: Anthropic, regions: Region[], structure: Record<string, StructureRead>, skip: Set<string> = new Set()) {
+async function structureSecondLook(regions: Region[], structure: Record<string, StructureRead>, skip: Set<string> = new Set()) {
   const doubtful = new Map<string, number[]>()
   const due = only(regions, (g) => {
     if (skip.has(g.slot.id)) return false
@@ -198,7 +196,7 @@ async function structureSecondLook(client: Anthropic, regions: Region[], structu
     return checks.length > 0
   })
   if (!due.length) return null
-  return readStructureSecondLook(client, due, doubtful, { model: MODEL_STRUCTURE_SECOND_LOOK, cache: dbCache })
+  return readStructureSecondLook(due, doubtful, { model: MODEL_STRUCTURE_SECOND_LOOK, cache: dbCache })
     .catch((e) => { logger.warn('quiz structure second look failed; graded without it', { error: (e as Error).message }); return null })
 }
 
@@ -210,19 +208,17 @@ async function gradeOne(pageId: string): Promise<void> {
   const slots = slotsForVersion(ctx.assessment, ctx.layout, ctx.key, page.version)
   const regions = await regionsFor(page, slots)
   const pick = (kinds: string[]) => only(regions, (s) => kinds.includes(s.ref.kind))
-
-  const client = new Anthropic({ apiKey: config.anthropicApiKey })
   const textRegions = pick(['enzyme', 'name', 'cofactors'])
   const structRegions = pick(['structure'])
   const [text, struct] = await Promise.all([
-    textRegions.length ? readTextRegions(client, ctx.key, textRegions, { model: MODEL_TEXT, cache: dbCache }) : null,
-    structRegions.length ? readStructureRegions(client, structRegions, { model: MODEL_STRUCTURE, cache: dbCache }) : null,
+    textRegions.length ? readTextRegions(ctx.key, textRegions, { model: MODEL_TEXT, cache: dbCache }) : null,
+    structRegions.length ? readStructureRegions(structRegions, { model: MODEL_STRUCTURE, cache: dbCache }) : null,
   ])
   const textReads = Object.fromEntries(text?.reads ?? [])
   const structureReads = Object.fromEntries(struct?.reads ?? [])
   const [second, secondStruct] = await Promise.all([
-    secondLook(client, ctx, regions, textReads),
-    structureSecondLook(client, pick(['structure']), structureReads),
+    secondLook(ctx, regions, textReads),
+    structureSecondLook(pick(['structure']), structureReads),
   ])
   const reads: PageReads = {
     text: textReads,
@@ -251,7 +247,6 @@ export async function secondLooksFor(assessmentId: string, opts: { dryRun?: bool
     where: { gradeStatus: 'GRADED', batch: { assessmentId } },
     select: { id: true, batchId: true, index: true, slots: true, version: true, reads: true, usage: true },
   })
-  const client = new Anthropic({ apiKey: config.anthropicApiKey })
   let looked = 0
   for (const page of pages) {
     if (!page.version || !page.reads) continue
@@ -265,8 +260,8 @@ export async function secondLooksFor(assessmentId: string, opts: { dryRun?: bool
     if (opts.dryRun) { looked++; continue }
     const regions = await regionsFor(page, slots)
     const [second, secondStruct] = await Promise.all([
-      textDue ? secondLook(client, ctx, regions, reads.text ?? {}, done) : null,
-      structDue ? structureSecondLook(client, only(regions, (g) => g.ref.kind === 'structure'), reads.structure ?? {}, doneStruct) : null,
+      textDue ? secondLook(ctx, regions, reads.text ?? {}, done) : null,
+      structDue ? structureSecondLook(only(regions, (g) => g.ref.kind === 'structure'), reads.structure ?? {}, doneStruct) : null,
     ])
     if (!second && !secondStruct) continue
     looked++
@@ -414,7 +409,7 @@ async function runOne(): Promise<boolean> {
   } catch (e) {
     const page = await prisma.quizPage.findUnique({ where: { id }, select: { gradeAttempts: true } })
     const message = e instanceof Error ? e.message : String(e)
-    const giveUp = !page || page.gradeAttempts >= MAX_ATTEMPTS || e instanceof Anthropic.AuthenticationError || e instanceof MissingScan
+    const giveUp = !page || page.gradeAttempts >= MAX_ATTEMPTS || isAuthError(e) || e instanceof MissingScan
     logger.warn('quiz page grading failed', { pageId: id, attempts: page?.gradeAttempts, giveUp, error: message })
     await prisma.quizPage.update({
       where: { id },

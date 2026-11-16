@@ -47,7 +47,9 @@ these:
 | Vision build | `pypi.org`, `files.pythonhosted.org` |
 | Code | `github.com` |
 | TLS certificate | `acme-v02.api.letsencrypt.org` (not needed if OIT supplies the certificate) |
-| Running app | `api.anthropic.com` (AI features), `api.brevo.com` (reset email), `api.github.com` (textbook) |
+| Running app | `api.brevo.com` (reset email), `api.github.com` (textbook) |
+| AI, Gemini | `aiplatform.googleapis.com` (or `<region>-aiplatform.googleapis.com` for a regional `GOOGLE_CLOUD_LOCATION`), `oauth2.googleapis.com` (service-account sign-in) |
+| AI, Claude | `api.anthropic.com` (only while `AI_PROVIDER=claude`) |
 
 Docker Hub limits anonymous pulls per IP address, and campus traffic can share one. If a pull
 fails with `429 Too Many Requests`, sign in with a free Docker Hub account:
@@ -80,6 +82,23 @@ systemctl --user start pulse-backup.timer
 
 The database starts empty and migrations run on first start. Register the professor account at
 `/register?role=professor` with `PROFESSOR_INVITE_CODE`.
+
+### Switching the AI to Gemini (Vertex AI)
+
+Once Rutgers confirms which Google Cloud project covers student data:
+
+1. In that project, enable the Vertex AI API and create a service account with the
+   **Vertex AI User** role. Create a JSON key for it.
+2. Copy the key to `~/Pulse/deploy/secrets/gcp-key.json` on the VM. The folder is git-ignored
+   and is not part of any image. The app runs as user `node` inside its container, so hand the
+   file to that user and keep it private:
+   `podman unshare chown 1000:1000 deploy/secrets/gcp-key.json && chmod 600 deploy/secrets/gcp-key.json`
+3. In `deploy/.env`: `AI_PROVIDER=gemini`, `GOOGLE_CLOUD_PROJECT=<project id>`.
+4. `podman compose up -d app`.
+
+Before grading real quizzes on it, measure it: run `backend/scripts/quiz-grader-spike.ts` with
+`AI_PROVIDER=gemini` on the same pages as the Phase 0 baseline (docs/quiz-grader/README.md) and
+compare the agreement table. Pages already graded keep their Claude readings until re-read.
 
 ## 3. Updating
 
