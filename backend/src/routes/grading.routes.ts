@@ -9,6 +9,7 @@ import { logger } from '../utils/logger.js'
 import { p } from '../utils/params.js'
 import { isSkippedAnswer } from '../utils/scoring.js'
 import { generateText, modelFor } from '../ai/llm.js'
+import { scrubberForQuestion, type Scrub } from '../ai/scrub.js'
 import { bootstrapThemeSet, readThemeSet, latestRunId, scheduleThemeWork } from '../services/themes.service.js'
 
 const BATCH_SIZE = 25
@@ -90,9 +91,10 @@ async function gradeBatch(
   questionText: string,
   correctAnswer: string | null,
   responses: ResponseRow[],
-  mode: 'understanding' | 'effort'
+  mode: 'understanding' | 'effort',
+  scrub: Scrub
 ): Promise<GradeResult[]> {
-  const responseList = responses.map((r, i) => `[${i}] ${r.responseText}`).join('\n')
+  const responseList = responses.map((r, i) => `[${i}] ${scrub(r.responseText)}`).join('\n')
   const n = responses.length
 
   const { text: reply } = await generateText({
@@ -136,11 +138,12 @@ async function runAiGradingAsync(
   const total = responses.length
   let processed = 0
   let failedCount = 0
+  const scrub = await scrubberForQuestion(questionId)
 
   for (let i = 0; i < total; i += BATCH_SIZE) {
     const batch = responses.slice(i, i + BATCH_SIZE)
     try {
-      const batchGrades = await gradeBatch(questionText, correctAnswer, batch, mode)
+      const batchGrades = await gradeBatch(questionText, correctAnswer, batch, mode, scrub)
       processed += batch.length
       getIo().to(socketRoom).emit('grade_progress', { questionId, graded: processed, total, batchGrades })
     } catch (err) {
@@ -156,6 +159,7 @@ async function runAiGradingAsync(
 
 // Sync batched grading — returns all results at once (used for assignments)
 async function runAiGradingSync(
+  questionId: string,
   questionText: string,
   correctAnswer: string | null,
   responses: ResponseRow[],
@@ -163,11 +167,12 @@ async function runAiGradingSync(
 ): Promise<{ grades: GradeResult[]; failedCount: number }> {
   const grades: GradeResult[] = []
   let failedCount = 0
+  const scrub = await scrubberForQuestion(questionId)
 
   for (let i = 0; i < responses.length; i += BATCH_SIZE) {
     const batch = responses.slice(i, i + BATCH_SIZE)
     try {
-      grades.push(...await gradeBatch(questionText, correctAnswer, batch, mode))
+      grades.push(...await gradeBatch(questionText, correctAnswer, batch, mode, scrub))
     } catch {
       failedCount += batch.length
     }
@@ -178,8 +183,9 @@ async function runAiGradingSync(
 
 // ─── AI summarize ─────────────────────────────────────────────────────────────
 
-async function runAiSummarize(question: { text: string; responses: Array<{ responseText: string }> }) {
-  const responseTexts = question.responses.map((r, i) => `${i + 1}. ${r.responseText}`).join('\n')
+async function runAiSummarize(question: { id: string; text: string; responses: Array<{ responseText: string }> }) {
+  const scrub = await scrubberForQuestion(question.id)
+  const responseTexts = question.responses.map((r, i) => `${i + 1}. ${scrub(r.responseText)}`).join('\n')
 
   const { text: reply } = await generateText({
     model: modelFor('responses.summarize'),
@@ -425,7 +431,7 @@ router.post('/assignments/:assignmentId/questions/:questionId/grade', requirePro
       ? 'effort' as const
       : 'understanding' as const
 
-    const { grades, failedCount } = await runAiGradingSync(question.text, question.correctAnswer, question.responses, mode)
+    const { grades, failedCount } = await runAiGradingSync(question.id, question.text, question.correctAnswer, question.responses, mode)
     res.json({ success: true, data: { grades, failedCount } })
   } catch (err) {
     next(err)

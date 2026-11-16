@@ -1,5 +1,6 @@
 import * as z4 from 'zod/v4'
 import { generateStructured, modelFor } from '../ai/llm.js'
+import { scrubberForQuestion, type Scrub } from '../ai/scrub.js'
 import { prisma } from '../db/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { getIo } from '../socket.js'
@@ -195,8 +196,8 @@ function evenSample<T>(rows: T[], max: number): T[] {
   return out
 }
 
-async function callBootstrap(questionText: string, answers: AnswerRow[]) {
-  const list = answers.map((a, i) => `[${i}] ${a.responseText}`).join('\n')
+async function callBootstrap(questionText: string, answers: AnswerRow[], scrub: Scrub) {
+  const list = answers.map((a, i) => `[${i}] ${scrub(a.responseText)}`).join('\n')
 
   // No `temperature` here: it is deprecated on Opus 5 and the API rejects the request
   // outright with a 400. The older grading calls on claude-sonnet-4-6 still accept it.
@@ -256,7 +257,7 @@ export async function bootstrapThemeSet(
   // derived only from them would miss where the rest of the class went.
   const answers = evenSample(all, BOOTSTRAP_SAMPLE_MAX)
 
-  const parsed = await callBootstrap(questionText, answers)
+  const parsed = await callBootstrap(questionText, answers, await scrubberForQuestion(questionId))
 
   // Anything the model omitted, sent out of range, or was unsure about goes to Forming.
   const byIndex = new Map(parsed.assignments.map((a) => [a.index, a]))
@@ -356,10 +357,11 @@ const classifySchema = (categoryIds: string[]) =>
 async function callClassify(
   questionText: string,
   categories: Array<{ id: string; label: string; description: string }>,
-  answers: AnswerRow[]
+  answers: AnswerRow[],
+  scrub: Scrub
 ) {
   const catList = categories.map((c) => `- ${c.id}: ${c.label} — ${c.description}`).join('\n')
-  const list = answers.map((a, i) => `[${i}] ${a.responseText}`).join('\n')
+  const list = answers.map((a, i) => `[${i}] ${scrub(a.responseText)}`).join('\n')
 
   const res = await generateStructured({
     model: CLASSIFY_MODEL,
@@ -430,16 +432,17 @@ async function classifyNextBatch(
   const other = categories.find((c) => c.isOther)
   if (!other || real.length === 0) throw new Error('theme set is missing its categories')
 
+  const scrub = await scrubberForQuestion(questionId)
   let parsed: Awaited<ReturnType<typeof callClassify>>
   try {
-    parsed = await callClassify(questionText, real, answers)
+    parsed = await callClassify(questionText, real, answers, scrub)
   } catch (first) {
     logger.warn('Classify batch failed, retrying once', {
       questionId,
       error: first instanceof Error ? first.message : String(first),
     })
     try {
-      parsed = await callClassify(questionText, real, answers)
+      parsed = await callClassify(questionText, real, answers, scrub)
     } catch (second) {
       logger.error('Classify batch failed twice, marking set FAILED', {
         questionId,

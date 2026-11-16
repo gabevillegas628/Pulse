@@ -63,7 +63,8 @@ Deployment setup: `deploy/README.md`. AI provider switch: `backend/src/ai/llm.ts
 
 ## Code follow-ups
 
-- [ ] Optional: strip roster names, NetIDs and emails from answer text before any AI call.
+- [x] Strip NetIDs, emails, email-derived full names, ID and phone numbers from answer text
+      before any AI call (`backend/src/ai/scrub.ts`).
 - [ ] Write the retention policy down, and add something that enforces it.
 - [ ] Root `docker-compose.yml` (dev) points at `epam/indigo-service`, which no longer exists;
       switch it to `epmlsop/indigo-service:1.47.0` like `deploy/compose.yaml`.
