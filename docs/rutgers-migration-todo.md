@@ -132,6 +132,15 @@ Either way: use real student data with an AI provider only after Rutgers approve
 - [ ] Delete the old `ccr-c2f95155-dbras2` branch on GitHub (same commits as
       `rutgers-migration`).
 
+## Server management (after it's running)
+
+- [ ] Run it for a few weeks first and note what you repeat by hand.
+- [ ] Then a small `pulse` command-line tool on the VM, used over SSH (not a web panel):
+      `status` (containers, health, disk, last backup and its age), `deploy`, `backup`,
+      `restore` (with a confirmation step), `logs <service>`.
+- [ ] Optional: a read-only "last backup" line on Pulse's admin page. Nothing that can
+      trigger deploys or restores from the web.
+
 ## Code follow-ups
 
 - [x] Strip NetIDs, emails, email-derived full names, ID and phone numbers from answer text
