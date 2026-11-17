@@ -4,6 +4,14 @@ Moving Pulse onto Rutgers infrastructure so student records stay under Rutgers p
 Deployment setup: `deploy/README.md`. AI provider switch: `backend/src/ai/llm.ts`.
 Security overview for review: `docs/security-overview.md`.
 
+**Plan:** finish this term on Railway. Set the Rutgers VM up **as new** (empty database, no
+student data carried over), test it at leisure, and start spring on it. Shut Railway down over
+winter break. Portkey and NetID sign-in come after the VM is running. No new features until
+then.
+
+**Order:** provisioning meeting → VM ready → install rehearsal and fresh install → winter break
+shutdown of Railway → spring class on the VM.
+
 ## Now (quick hardening of the current setup)
 
 - [ ] Two-factor login on Railway, GitHub, Anthropic and Cloudflare.
@@ -24,7 +32,7 @@ Security overview for review: `docs/security-overview.md`.
 - [ ] If asked what runs today: "an outside cloud host with my own Claude API key; I'm moving
       it onto an OIT VM and a sanctioned AI provider."
 
-## AI access: Rutgers Portkey (first choice)
+## AI access: Rutgers Portkey (first choice, after the VM is running)
 
 Portkey is Rutgers' AI gateway (KB0019477): Claude and other providers under Rutgers'
 enterprise agreements, no training on inputs. Access goes through departmental IT; usage is
@@ -89,7 +97,7 @@ Either way: use real student data with an AI provider only after Rutgers approve
 - [ ] Is there a security review or questionnaire for the VM/app? (Answers are in
       `docs/security-overview.md`.)
 
-## NetID sign-in (CAS)
+## NetID sign-in (CAS or Shibboleth, after the VM is running)
 
 - [ ] Ask OIT to register the app with CAS (or Shibboleth/SAML if they prefer): service URL
       `https://<pulse hostname>/api/auth/cas/callback`; attributes: NetID, plus email and
@@ -99,15 +107,25 @@ Either way: use real student data with an AI provider only after Rutgers approve
 
 ## Install (once the VM is ready)
 
+- [ ] Rehearse the install on RHEL with rootless Podman first (so far only tested with
+      Docker). Set aside time for it; not before.
 - [ ] Deploy key for the repo (read-only), then clone as `pulse`.
-- [ ] Follow `deploy/README.md` § 2; start with a fresh database.
+- [ ] Follow `deploy/README.md` § 2; fresh, empty database. No student data from Railway.
 - [ ] `podman login docker.io` if pulls hit the rate limit.
 - [ ] Practise a restore into a scratch database.
 - [ ] Move `pulse-backup.timer` if NetBackup runs before 2am Eastern.
+- [ ] Recreate course content (questions, assignments) by hand; import quiz keys and layouts
+      from their YAML exports. Optional: a content-only export script that refuses student data.
+- [ ] Re-install the PowerPoint add-in from the new address (its manifest uses the server URL),
+      and regenerate any QR codes pasted into slides as images.
+- [ ] Spring: create the class on the VM and give students the new address.
 
-## Retire the old setup
+## Retire the old setup (winter break)
 
-- [ ] Make sure the grades that are needed are in Canvas (or exported somewhere approved).
+- [ ] Final grades in Canvas (the official record).
+- [ ] Export quiz keys and layouts (YAML) and anything else needed to rebuild the course.
+- [ ] Take one last encrypted backup and store it on Rutgers-approved storage (Rutgers OneDrive
+      or Box). Keep it until a retention period is given, then delete it.
 - [ ] Then shut down Railway, the Cloudflare R2 backups and the GitHub Actions backup
       workflow, deliberately rather than in a hurry.
 - [ ] Remove Brevo once a Rutgers mail route (or NetID SSO) replaces it.
