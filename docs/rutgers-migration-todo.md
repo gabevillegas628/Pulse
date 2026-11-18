@@ -102,9 +102,14 @@ Either way: use real student data with an AI provider only after Rutgers approve
 - [ ] Is there a security review or questionnaire for the VM/app? (Answers are in
       `docs/security-overview.md`.)
 
-## NetID sign-in (CAS or Shibboleth, after the VM is running)
+## NetID sign-in: CAS (after the VM is running)
 
-- [ ] Ask OIT to register the app with CAS (or Shibboleth/SAML if they prefer): service URL
+Rutgers' SSO decision chart: a web application, hosted internally, that supports CAS → **CAS**,
+no special permission needed. (Hosted externally, CAS would need special permission; Shibboleth
+is mainly for apps that can't use CAS.)
+
+
+- [ ] Ask OIT to register the app with CAS: service URL
       `https://<pulse hostname>/api/auth/cas/callback`; attributes: NetID, plus email and
       name if they can be released.
 - [ ] Build the CAS routes behind a setting; add outbound 443 to `cas.rutgers.edu`.
