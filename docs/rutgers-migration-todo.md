@@ -83,8 +83,8 @@ Either way: use real student data with an AI provider only after Rutgers approve
   - outbound 22 to `github.com`, if the VM clones over SSH with a deploy key
 - [ ] Ask for a public IP and a DNS name (e.g. `pulse.dls.rutgers.edu`; DLS may own that zone),
       and an InCommon certificate as for DSAP.
-- [ ] Send the one-time setup list in `deploy/README.md` § 1 with the VM request ("set it up like
-      DSAP"): `podman`, `podman-compose`, `git`, `httpd` + `mod_ssl`; a regular (not
+- [ ] Send `deploy/OIT-REQUEST.md` with the VM request (self-contained: exact commands, the
+      Apache config inline, a check per step; no "copy DSAP"). It covers: `podman`, `podman-compose`, `git`, `httpd` + `mod_ssl`; a regular (not
       `--system`) `pulse` user with home `/srv/pulse`; linger; the Apache vhost
       `deploy/apache/pulse.conf` with an InCommon certificate (+ `httpd_can_network_connect`
       if SELinux is enforcing); firewall; `sudo -iu pulse`; NetBackup of `/srv/pulse`;

@@ -17,6 +17,9 @@ and updating never needs anything installed on the host.
 
 ## 1. One-time setup by OIT
 
+**What to send OIT is `deploy/OIT-REQUEST.md`**: the same steps written out in full, with the
+Apache config inline and a check for each step. This section is the background.
+
 Rehearsed on Rocky Linux 9.9 (a rebuild of RHEL 9) with Podman 5.8 and RHEL's own Apache, so
 the list is complete: after this, nothing else needs installing as root. Send it with the VM
 request (EI Managed means OIT does the root-level parts). Most of it is what OIT already did
