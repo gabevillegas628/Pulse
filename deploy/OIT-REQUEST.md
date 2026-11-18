@@ -61,6 +61,7 @@ through the Rutgers mail relay instead of an outside service.
     `files.pythonhosted.org`
   - source code: `github.com`, `api.github.com`
   - app services: `api.anthropic.com` (to be replaced by the Rutgers Portkey gateway)
+  - NetID sign-in (CAS, added later): `cas.rutgers.edu`, `test-cas.rutgers.edu`
 - **Outbound SMTP:** to the mail relay above, on its port
 - **Outbound SSH (22):** `github.com` (read-only deploy key)
 

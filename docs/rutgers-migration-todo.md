@@ -118,7 +118,8 @@ is mainly for apps that can't use CAS.)
       login `/login`, validation `/p3/serviceValidate` (CAS protocol 3, which can return
       attributes such as email and name if released), sign-out `/logout`. Then switch the
       setting to `cas.rutgers.edu`.
-- [ ] Outbound 443 to `cas.rutgers.edu` and `test-cas.rutgers.edu`.
+- [ ] Outbound 443 to `cas.rutgers.edu` and `test-cas.rutgers.edu` (already in
+      `deploy/OIT-REQUEST.md`).
 - [ ] Then remove Pulse passwords and the reset flow. Email stays (see "Email").
 
 ## Install (once the VM is ready)
