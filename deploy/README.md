@@ -1,12 +1,13 @@
 # Deploying Pulse on a Rutgers VM
 
-One RHEL VM (EI Managed, M1.Medium: 2 vCPU, 8 GB, `/` 50 GB + `/var` 100 GB) running five
-containers under rootless Podman:
+One RHEL 9 VM (EI Managed, M1.Medium: 2 vCPU, 8 GB, one `/` partition of about 150 GB) set up
+the way OIT set up the DSAP server: OIT's Apache on the host handles HTTPS with an InCommon
+certificate and passes requests to the app, and a service account runs everything else as
+four containers under rootless Podman:
 
 | Container | What | Reachable from |
 |---|---|---|
-| `caddy` | HTTPS, certificates, reverse proxy | the Internet, ports 80/443 |
-| `app` | Pulse (API, frontend, add-in) | Caddy only (127.0.0.1:3001) |
+| `app` | Pulse (API, frontend, add-in) | OIT's Apache only (127.0.0.1:3001) |
 | `db` | PostgreSQL 18 | the app only |
 | `vision` | quiz scan processing (`vision/`) | the app only |
 | `indigo` | chemical structure service | the app only |
@@ -16,41 +17,46 @@ and updating never needs anything installed on the host.
 
 ## 1. One-time setup by OIT
 
-Everything here was rehearsed on Rocky Linux 9.9 (a rebuild of RHEL 9) with Podman 5.8, so the
-list is complete: after this, nothing else needs installing as root. Send it with the VM
-request, or as soon as the VM exists (EI Managed means OIT does the root-level parts):
+Rehearsed on Rocky Linux 9.9 (a rebuild of RHEL 9) with Podman 5.8 and RHEL's own Apache, so
+the list is complete: after this, nothing else needs installing as root. Send it with the VM
+request (EI Managed means OIT does the root-level parts). Most of it is what OIT already did
+for the `dsap` account on the DSAP server:
 
-> For VM `<hostname>` (RHEL 9), could you please:
+> For the Pulse VM (RHEL 9), could you please set it up like the DSAP server:
 >
-> 1. **Packages:** install `podman` (from RHEL AppStream; it brings `container-selinux`,
->    `passt`, `crun`, `fuse-overlayfs`) and `git`. Also `podman-compose`, which RHEL does not
->    ship: it is in EPEL. If EPEL is not allowed, tell me and I will use Docker's compose tool
->    as a single file inside the service account instead (no root, nothing system-wide).
-> 2. **Service account:** create `pulse` as a regular (not `--system`) user with home
->    `/var/lib/pulse`, so it gets subuid/subgid ranges (needed for rootless containers) and
->    container storage lands on `/var`:
->    `useradd --create-home --home-dir /var/lib/pulse --shell /bin/bash pulse`
-> 3. **Start at boot:** `loginctl enable-linger pulse`.
-> 4. **Ports 80/443 without root:** persist `net.ipv4.ip_unprivileged_port_start=80` in
->    `/etc/sysctl.d/90-pulse-ports.conf`.
-> 5. **Firewall:** open 443 and 80 from anywhere and 22 from the Rutgers VPN/campus in
->    firewalld, plus the outbound hosts listed below.
+> 1. **Packages:** `podman`, `podman-compose` (as on DSAP), `git`, `httpd` and `mod_ssl`.
+> 2. **Service account `pulse`**, like `dsap`: a regular (not `--system`) user with home
+>    `/srv/pulse`, so it gets subuid/subgid ranges for rootless containers:
+>    `useradd --create-home --home-dir /srv/pulse --shell /bin/bash pulse`
+> 3. **Linger**, like `dsap`: `loginctl enable-linger pulse`.
+> 4. **Apache vhost** for the Pulse hostname with your InCommon certificate, proxying to the
+>    app on `127.0.0.1:3001`: the attached `pulse.conf` (`deploy/apache/pulse.conf`), modelled
+>    on DSAP's vhost, plus `setsebool -P httpd_can_network_connect 1` if SELinux is
+>    enforcing. It needs WebSockets (`mod_proxy_wstunnel`, loaded by default).
+> 5. **Firewall:** 443 and 80 from anywhere, 22 from the Rutgers VPN/campus, and the outbound
+>    hosts listed below.
 > 6. **Access:** let my NetID `sudo -iu pulse` (only that; I do not need root).
-> 7. **Backups:** include `/var/lib/pulse` in NetBackup. When does it run, and how long are
->    backups kept?
-> 8. **Network:** a public IP and a DNS name; and is a Let's Encrypt certificate OK?
-> 9. Keep SELinux enforcing; the setup is built for it.
+> 7. **Backups:** include `/srv/pulse` in NetBackup. When does it run, and how long are backups
+>    kept?
+> 8. **Network:** a public IP and a DNS name (e.g. `pulse.dls.rutgers.edu`), and the campus
+>    proxy in `trusted-proxy.lst` as for DSAP.
 
-Why each one, from the rehearsal:
+Why each one, from the rehearsal and the DSAP server:
 
-- **`podman-compose` is not in RHEL 9.** Without it (or the fallback) `podman compose` does
-  nothing. Both options were tested end to end, including start at boot and backups.
+- **`podman-compose` is not in RHEL 9's own repositories** (it comes from EPEL), but OIT
+  already installs it on managed VMs. If it were ever refused, Docker's compose tool works as
+  a single file inside the account with no root (section 2); both were tested end to end.
 - **A `--system` account gets no subuid ranges**, and rootless Podman then fails with a
-  `newuidmap` error. A regular account gets them automatically.
-- **The `sysctl`** is what lets Caddy bind 80/443 without root. The alternative, forwarding
-  80/443 to high ports in firewalld, hides student IP addresses from the app, which breaks its
-  per-client rate limiting.
-- **`git`** may be missing from a minimal RHEL install.
+  `newuidmap` error. A regular account, like `dsap`, gets them automatically.
+- **Linger** is what lets the account's containers run, and start at boot, with nobody logged
+  in. It was the sticking point on DSAP.
+- **Apache instead of a web server in a container:** it is how DSAP is served, OIT manages the
+  certificate, and nothing in Pulse then needs ports below 1024. Tested with RHEL's httpd
+  2.4.62: HTTP→HTTPS redirect, HTTPS, the web app, WebSockets (101), large scan uploads, and
+  real client addresses through the campus proxy (a forged `X-Forwarded-For` from anywhere
+  else is ignored).
+- **`/srv/pulse`** follows DSAP's convention. On a single `/` partition the location does not
+  matter for space.
 
 ### Hosts the VM must reach (outbound HTTPS, 443)
 
@@ -64,7 +70,6 @@ these:
 | Vision build | `pypi.org`, `files.pythonhosted.org` |
 | Code | `github.com` |
 | Compose fallback only (no EPEL) | `github.com`, `release-assets.githubusercontent.com` (one download) |
-| TLS certificate | `acme-v02.api.letsencrypt.org` (not needed if OIT supplies the certificate) |
 | Running app | `api.brevo.com` (reset email), `api.github.com` (textbook) |
 | AI, Gemini | `aiplatform.googleapis.com` (or `<region>-aiplatform.googleapis.com` for a regional `GOOGLE_CLOUD_LOCATION`), `oauth2.googleapis.com` (service-account sign-in) |
 | AI, Claude | `api.anthropic.com` (only while `AI_PROVIDER=claude`) |
@@ -77,7 +82,7 @@ fails with `429 Too Many Requests`, sign in with a free Docker Hub account:
 
 Rehearsed step by step. About an hour, most of it the first image build.
 
-**Get in:** `sudo -iu pulse` (lands in `/var/lib/pulse`).
+**Get in:** `sudo -iu pulse` (lands in `/srv/pulse`).
 
 **Only if OIT could not install `podman-compose`:** put Docker's compose tool where Podman finds
 it even from systemd (not `~/.local/bin`, which systemd's PATH does not include), and start the
@@ -99,7 +104,7 @@ systemctl --user enable --now podman.socket
 git clone --branch rutgers-migration git@github.com:gabevillegas628/Pulse.git ~/Pulse
 cd ~/Pulse/deploy
 cp env.example .env && chmod 600 .env
-# Fill in .env: PULSE_DOMAIN, ACME_EMAIL, PROFESSOR_INVITE_CODE, and the secrets
+# Fill in .env: PULSE_DOMAIN, PROFESSOR_INVITE_CODE, and the secrets
 # (POSTGRES_PASSWORD, JWT_SECRET, VISION_TOKEN: `openssl rand -hex 32` each).
 ```
 
@@ -109,8 +114,9 @@ cp env.example .env && chmod 600 .env
 podman login docker.io                  # optional; avoids Docker Hub's anonymous pull limit
 podman compose build                    # the app image takes the longest
 podman compose up -d
-podman compose ps                       # five services Up; db and app "(healthy)"
-curl -s https://$PULSE_DOMAIN/health    # {"status":"ok","db":"up",...}
+podman compose ps                       # four services Up; db and app "(healthy)"
+curl -s http://127.0.0.1:3001/health    # {"status":"ok","db":"up",...}
+curl -s https://$PULSE_DOMAIN/health    # the same, through OIT's Apache, once the vhost is in
 ```
 
 **Start at boot, and nightly backups:**
@@ -136,19 +142,20 @@ systemctl --user start pulse-backup.service && ls -l ~/backups/daily
 
 ### What the rehearsal covered, and what it could not
 
-Passed on Rocky Linux 9 / Podman 5.8 as a rootless `pulse` user: both images build (with `podman build`; `podman compose build`
-runs the same steps but could not finish behind the sandbox's proxy); all five
-containers start and pass health checks; Caddy binds 80/443 without root and redirects to
-HTTPS; HTTPS, the web app and live updates (websockets) work through it; the app reaches the
-vision and Indigo services; backup and a restore drill; start at boot after a simulated reboot;
-the nightly backup job under systemd. All of it with `podman-compose` and again with the
-Docker compose fallback.
+Passed on Rocky Linux 9 / Podman 5.8 as a rootless `pulse` user: both images build (with
+`podman build`; `podman compose build` runs the same steps but could not finish behind the
+sandbox's proxy); the containers start and pass health checks; the app reaches the vision and
+Indigo services; backup and a restore drill; start at boot after a simulated reboot; the
+nightly backup job under systemd. All of it with `podman-compose` and again with the Docker
+compose fallback. Separately, RHEL's httpd 2.4.62 with `deploy/apache/pulse.conf` in front of
+the app: see "Why each one" above. (The first rehearsal used a Caddy container for HTTPS;
+it was dropped to match DSAP.)
 
-Not covered, because the sandbox could not: **SELinux** (the sandbox has none; the one bind
-mount carries `:Z`, and volumes are labelled by Podman), a **real certificate** from Let's
-Encrypt (needs the public hostname), and **cgroups v2** (the sandbox has v1; RHEL 9 uses v2,
-which is Podman's normal case). If something breaks on day one, it is most likely SELinux:
-`sudo ausearch -m avc -ts recent` (OIT) shows what was denied.
+Not covered, because the sandbox could not: **SELinux** (the sandbox has none; DSAP's server
+runs it in Permissive mode; the one bind mount carries `:Z`, and Podman labels the volumes),
+OIT's **real certificate** and campus proxy, and **cgroups v2** (the sandbox has v1; RHEL 9
+uses v2, which is Podman's normal case). If something breaks on day one with SELinux
+enforcing, `sudo ausearch -m avc -ts recent` (OIT) shows what was denied.
 
 ### Switching the AI to Gemini (Vertex AI)
 
@@ -209,15 +216,12 @@ for course records, delete older monthly files to match; NetBackup's own retenti
 
 ## Notes
 
-- **SELinux** stays enforcing. The one host file mounted into a container (the Caddyfile)
-  carries `:Z`; the volumes are named volumes, which Podman labels itself. If you add a bind
-  mount, give it `:Z` too or the container gets "permission denied".
-- **Why Caddy is on the host network:** with rootless Podman, a container behind a published
-  port sees every client as the same internal address. On the host network Caddy sees the real
-  address and passes it to the app (`X-Forwarded-For`, trusted for one hop in `app.ts`).
-- **Logs:** `podman compose logs -f app` (or `caddy`, `vision`, …).
+- **SELinux:** works enforcing or permissive. The one bind mount (`deploy/secrets`) carries
+  `:Z`; the volumes are named volumes, which Podman labels itself. If you add a bind mount,
+  give it `:Z` too or the container gets "permission denied".
+- **Real client addresses:** the campus proxy and Apache pass them in `X-Forwarded-For`; the
+  app trusts exactly one hop (`app.ts`), which is Apache.
+- **Logs:** `podman compose logs -f app` (or `vision`, `db`, `indigo`); Apache's are in
+  `/var/log/httpd/` (OIT).
 - **Student data** lives only in the `db` and `uploads` volumes and in `~/backups`. None of it
   is in the images or the repository (`.dockerignore`, `.gitignore`).
-- Tested end to end with Docker on Linux (build, migrations, HTTPS through Caddy, websockets,
-  vision and Indigo from the app, backup, restore). Not yet run on RHEL with Podman; expect
-  the first install to surface small differences.

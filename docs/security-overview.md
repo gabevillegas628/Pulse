@@ -27,15 +27,17 @@ Pulse stores no student names, no RUIDs, no SSNs, no financial or health data.
 
 ## Where it runs
 
-One Rutgers OIT VM (RHEL, EI Managed, NetBackup). Five containers under rootless Podman:
+One Rutgers OIT VM (RHEL 9, EI Managed, NetBackup), set up like other OIT-hosted services:
+OIT's Apache handles HTTPS, and a service account runs the app as four containers under
+rootless Podman:
 
 ```
-Internet ──443──▶ Caddy (HTTPS) ──localhost──▶ Pulse app ──private network──▶ PostgreSQL
-                                                   ├──────────────────────────▶ Vision (scan processing)
-                                                   └──────────────────────────▶ Indigo (chemical structures)
+Internet ─▶ campus proxy ─443─▶ OIT Apache (HTTPS) ─localhost─▶ Pulse app ─private network─▶ PostgreSQL
+                                                                    ├─────────────────────▶ Vision (scan processing)
+                                                                    └─────────────────────▶ Indigo (chemical structures)
 ```
 
-- Only Caddy accepts connections from outside, on 443 (and 80, which redirects to 443).
+- Only OIT's Apache accepts connections from outside, on 443 (and 80, which redirects to 443).
 - The app listens on localhost only. The database, vision and Indigo services have no ports
   reachable from outside the VM.
 - Containers run without root on the host (rootless Podman), and the app runs as a
@@ -70,7 +72,7 @@ and proves the student owns the NetID (see Known gaps).
 
 ## In transit and at rest
 
-- **In transit:** HTTPS only (TLS from Caddy, certificates from Let's Encrypt or OIT).
+- **In transit:** HTTPS only (TLS from OIT's Apache with an InCommon certificate).
   HSTS is set. Inside the VM, traffic between containers stays on a private network.
 - **At rest:** the database and scans are on the VM's disk. Encryption at rest is whatever
   OIT's VI storage provides; Pulse adds none of its own. *Question for OIT.*
@@ -91,7 +93,6 @@ and proves the student owns the NetID (see Known gaps).
 | AI model: Google Gemini on Vertex AI (Rutgers project), or Anthropic Claude until then | Answer **text** with no names or IDs; crops of single answer boxes from quizzes | Group answers into themes, suggest scores, read handwriting |
 | Brevo (email) | A student's email address and a reset link | Password reset. Removed when CAS replaces passwords |
 | GitHub | Nothing about students | Course textbook pages; code |
-| Let's Encrypt | The server's hostname | TLS certificate |
 
 ### What the AI sees, and what it does not
 

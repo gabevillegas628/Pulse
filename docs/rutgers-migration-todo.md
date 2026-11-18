@@ -67,25 +67,28 @@ Either way: use real student data with an AI provider only after Rutgers approve
 
 - [ ] Submit the VI Intake Form: project scope and network description as drafted; Network
       type **Restricted**; existing host `NA`; load balancing No.
-- [ ] Server inventory: `pulse01`, **M1.Medium** (2 vCPU / 8 GB), **RHEL**, `/` 50 GB +
-      `/var` 100 GB; **EI Managed**; **NetBackup: Yes**.
+- [ ] Server inventory: `pulse01`, **M1.Medium** (2 vCPU / 8 GB), **RHEL 9** (not 8: DSAP's
+      RHEL 8 has podman-compose 1.0.6, untested here), one `/` partition of ~150 GB (as on
+      DSAP); **EI Managed**; **NetBackup: Yes**.
 - [ ] Network communication rows:
   - inbound from the Internet: 443, 80
   - inbound from the Rutgers VPN / campus: SSH 22
   - outbound 443 to: Docker Hub (`registry-1.docker.io`, `auth.docker.io`,
     `production.cloudflare.docker.com`), `registry.npmjs.org`, `binaries.prisma.sh`,
     `pypi.org`, `files.pythonhosted.org`, `github.com`, `api.github.com`,
-    `acme-v02.api.letsencrypt.org`, `api.brevo.com`
+    `api.brevo.com`
   - outbound 443 for AI: Rutgers' Portkey gateway (host to be confirmed); Gemini fallback
     `aiplatform.googleapis.com` and `oauth2.googleapis.com`; `api.anthropic.com` only until
     Portkey is in place
   - outbound 22 to `github.com`, if the VM clones over SSH with a deploy key
-- [ ] Ask for a public IP and a DNS name (e.g. `pulse.dls.rutgers.edu`; DLS may own that zone)
-      and whether a Let's Encrypt certificate is OK.
-- [ ] Send the one-time setup list in `deploy/README.md` § 1 with the VM request, so it is all
-      done at once: `podman` + `git` + `podman-compose` (EPEL; fallback needs no root), a
-      regular (not `--system`) `pulse` user with home `/var/lib/pulse`, linger, the low-ports
-      sysctl, firewall, `sudo -iu pulse`, NetBackup of `/var/lib/pulse`, public IP + DNS.
+- [ ] Ask for a public IP and a DNS name (e.g. `pulse.dls.rutgers.edu`; DLS may own that zone),
+      and an InCommon certificate as for DSAP.
+- [ ] Send the one-time setup list in `deploy/README.md` § 1 with the VM request ("set it up like
+      DSAP"): `podman`, `podman-compose`, `git`, `httpd` + `mod_ssl`; a regular (not
+      `--system`) `pulse` user with home `/srv/pulse`; linger; the Apache vhost
+      `deploy/apache/pulse.conf` with an InCommon certificate (+ `httpd_can_network_connect`
+      if SELinux is enforcing); firewall; `sudo -iu pulse`; NetBackup of `/srv/pulse`;
+      public IP + DNS; campus proxy in `trusted-proxy.lst`.
 
 ## Questions for OIT / Registrar
 
@@ -108,8 +111,9 @@ Either way: use real student data with an AI provider only after Rutgers approve
 
 ## Install (once the VM is ready)
 
-- [x] Rehearse the install on RHEL with rootless Podman (Rocky Linux 9.9, Podman 5.8). Findings
-      are in `deploy/README.md` § 1 (what OIT installs) and § 2 (steps after delivery).
+- [x] Rehearse the install on RHEL with rootless Podman (Rocky Linux 9.9, Podman 5.8), and the
+      Apache vhost with RHEL's httpd. Findings are in `deploy/README.md` § 1 (what OIT sets up)
+      and § 2 (steps after delivery).
 - [ ] Deploy key for the repo (read-only), then clone as `pulse`.
 - [ ] Follow `deploy/README.md` § 2; fresh, empty database. No student data from Railway.
 - [ ] `podman login docker.io` if pulls hit the rate limit.
@@ -149,5 +153,7 @@ Either way: use real student data with an AI provider only after Rutgers approve
 - [x] Security overview for review (`docs/security-overview.md`).
 - [ ] Write the retention policy down, and add something that enforces it.
 - [ ] Move sign-in tokens from `localStorage` to httpOnly cookies.
+- [ ] A scan over the app's 300 MB limit gets a generic 500 error; return 413 "file too large"
+      instead (multer's LIMIT_FILE_SIZE).
 - [ ] Root `docker-compose.yml` (dev) points at `epam/indigo-service`, which no longer exists;
       switch it to `epmlsop/indigo-service:1.47.0` like `deploy/compose.yaml`.

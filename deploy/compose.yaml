@@ -1,34 +1,20 @@
-# Pulse on one VM: rootless Podman (or Docker, for testing), five containers.
+# Pulse on one VM: rootless Podman (or Docker, for testing), four containers.
 #
 #   cd deploy && podman compose up -d --build
 #
 # Settings and secrets come from deploy/.env (copy env.example; never commit it). See
 # deploy/README.md for the VM setup this assumes.
 #
-# Only Caddy is reachable from outside. The app listens on 127.0.0.1; the database, vision
-# and Indigo have no published ports at all and are reachable only on the private network.
+# Nothing here is reachable from outside. OIT's Apache on the host terminates HTTPS and
+# forwards to the app on 127.0.0.1:3001 (deploy/apache/pulse.conf). The database, vision and
+# Indigo have no published ports at all and are reachable only on the private network.
 #
-# Named volumes live under the service account's home, which is on /var (README, step 1),
-# so the database and the scans sit on the large partition that NetBackup covers.
+# Named volumes live under the service account's home (/srv/pulse, README section 1), so
+# the database and the scans sit with everything else NetBackup covers.
 
 name: pulse
 
 services:
-  caddy:
-    image: docker.io/library/caddy:2.10
-    # Host network so the app sees real client addresses (README: "Why Caddy is on the host
-    # network"). Needs net.ipv4.ip_unprivileged_port_start=80 for a rootless user.
-    network_mode: host
-    environment:
-      PULSE_DOMAIN: ${PULSE_DOMAIN:?set PULSE_DOMAIN in deploy/.env}
-      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in deploy/.env}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro,Z
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on: [app]
-    restart: unless-stopped
-
   app:
     build:
       context: ..
@@ -101,5 +87,3 @@ services:
 volumes:
   db:
   uploads:
-  caddy_data:
-  caddy_config:
