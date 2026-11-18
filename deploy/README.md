@@ -73,7 +73,7 @@ these:
 | Vision build | `pypi.org`, `files.pythonhosted.org` |
 | Code | `github.com` |
 | Compose fallback only (no EPEL) | `github.com`, `release-assets.githubusercontent.com` (one download) |
-| Running app | `api.brevo.com` (reset email), `api.github.com` (textbook) |
+| Running app | `api.github.com` (textbook); the Rutgers mail relay (SMTP) for email, replacing `api.brevo.com` |
 | AI, Gemini | `aiplatform.googleapis.com` (or `<region>-aiplatform.googleapis.com` for a regional `GOOGLE_CLOUD_LOCATION`), `oauth2.googleapis.com` (service-account sign-in) |
 | AI, Claude | `api.anthropic.com` (only while `AI_PROVIDER=claude`) |
 

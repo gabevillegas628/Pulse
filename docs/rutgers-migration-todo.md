@@ -76,7 +76,7 @@ Either way: use real student data with an AI provider only after Rutgers approve
   - outbound 443 to: Docker Hub (`registry-1.docker.io`, `auth.docker.io`,
     `production.cloudflare.docker.com`), `registry.npmjs.org`, `binaries.prisma.sh`,
     `pypi.org`, `files.pythonhosted.org`, `github.com`, `api.github.com`,
-    `api.brevo.com`
+    the Rutgers mail relay (SMTP)
   - outbound 443 for AI: Rutgers' Portkey gateway (host to be confirmed); Gemini fallback
     `aiplatform.googleapis.com` and `oauth2.googleapis.com`; `api.anthropic.com` only until
     Portkey is in place
@@ -95,7 +95,8 @@ Either way: use real student data with an AI provider only after Rutgers approve
 - [ ] Is Docker or Podman allowed on an EI Managed VM, and will I have sudo?
 - [ ] Is VM storage encrypted at rest?
 - [ ] Does Rutgers' AI-use policy go beyond FERPA for anonymised answer text?
-- [ ] Is there a Rutgers SMTP relay to replace Brevo for password-reset email?
+- [ ] Rutgers SMTP relay details (host, port, auth), a sender address with SPF/DKIM so mail
+      isn't marked as spam, and any sending limits. Asked in `deploy/OIT-REQUEST.md`.
 - [ ] When does NetBackup run, and how long are backups kept?
 - [ ] What retention period applies to course records (responses, scores, scans)?
 - [ ] Is there a security review or questionnaire for the VM/app? (Answers are in
@@ -107,7 +108,7 @@ Either way: use real student data with an AI provider only after Rutgers approve
       `https://<pulse hostname>/api/auth/cas/callback`; attributes: NetID, plus email and
       name if they can be released.
 - [ ] Build the CAS routes behind a setting; add outbound 443 to `cas.rutgers.edu`.
-- [ ] Then remove Pulse passwords and the reset flow (and with them, Brevo).
+- [ ] Then remove Pulse passwords and the reset flow. Email stays (see "Email").
 
 ## Install (once the VM is ready)
 
@@ -133,7 +134,7 @@ Either way: use real student data with an AI provider only after Rutgers approve
       or Box). Keep it until a retention period is given, then delete it.
 - [ ] Then shut down Railway, the Cloudflare R2 backups and the GitHub Actions backup
       workflow, deliberately rather than in a hurry.
-- [ ] Remove Brevo once a Rutgers mail route (or NetID SSO) replaces it.
+- [ ] Remove Brevo once the app sends through the Rutgers relay (see "Email").
 - [ ] Delete the old `ccr-c2f95155-dbras2` branch on GitHub (same commits as
       `rutgers-migration`).
 
@@ -145,6 +146,19 @@ Either way: use real student data with an AI provider only after Rutgers approve
       `restore` (with a confirmation step), `logs <service>`.
 - [ ] Optional: a read-only "last backup" line on Pulse's admin page. Nothing that can
       trigger deploys or restores from the web.
+
+## Email (Rutgers relay instead of Brevo)
+
+Email outlives passwords: CAS removes the reset flow, but announcements (a later feature) and
+other notices still need to send.
+
+- [ ] Get the relay details from OIT (requested in `deploy/OIT-REQUEST.md`).
+- [ ] Add an SMTP sender behind the existing `sendEmail()` seam
+      (`backend/src/services/email.service.ts`), chosen by setting, with Brevo kept until the
+      relay is confirmed working. Send a test message to a Rutgers and an outside address.
+- [ ] Remove Brevo (`BREVO_API_KEY`, the outbound host) once the relay works.
+- [ ] Later, with announcements: send a class in batches within the relay's limits, and give
+      students a way to opt out of non-essential mail.
 
 ## Study guides (backlog, after it's running)
 
