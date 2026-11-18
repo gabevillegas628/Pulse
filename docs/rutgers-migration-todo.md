@@ -146,6 +146,20 @@ Either way: use real student data with an AI provider only after Rutgers approve
 - [ ] Optional: a read-only "last backup" line on Pulse's admin page. Nothing that can
       trigger deploys or restores from the web.
 
+## Study guides (backlog, after it's running)
+
+Today the Study Guides tab (`backend/src/routes/textbook.routes.ts`) fetches Markdown files
+from a GitHub repository set per class (`textbookRepo`, `textbookPath`, `textbookBranch`) and
+renders them. Neither the format nor GitHub is required.
+
+- [ ] Host the study guides on the server itself (e.g. a folder in the uploads volume, managed
+      from the class page) instead of a GitHub repository. Removes the GitHub dependency
+      (`api.github.com`, `GITHUB_TOKEN`) and keeps course material on Rutgers infrastructure.
+- [ ] Accept formats other than Markdown (e.g. HTML, PDF, Word), so guides can be written in
+      whatever tool is convenient. Keep the current sanitising for anything rendered as HTML.
+- [ ] Keep what the GitHub version does today: chapter list, in-guide search, images, and
+      the per-student view tracking (`TextbookView`).
+
 ## Code follow-ups
 
 - [x] Strip NetIDs, emails, email-derived full names, ID and phone numbers from answer text
