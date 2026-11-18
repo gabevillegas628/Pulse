@@ -82,9 +82,10 @@ Either way: use real student data with an AI provider only after Rutgers approve
   - outbound 22 to `github.com`, if the VM clones over SSH with a deploy key
 - [ ] Ask for a public IP and a DNS name (e.g. `pulse.dls.rutgers.edu`; DLS may own that zone)
       and whether a Let's Encrypt certificate is OK.
-- [ ] After the VM exists, send the one-time setup email in `deploy/README.md` § 1 (Podman and
-      compose, the `pulse` account with home `/var/lib/pulse`, linger, the low-ports sysctl,
-      sudo access).
+- [ ] Send the one-time setup list in `deploy/README.md` § 1 with the VM request, so it is all
+      done at once: `podman` + `git` + `podman-compose` (EPEL; fallback needs no root), a
+      regular (not `--system`) `pulse` user with home `/var/lib/pulse`, linger, the low-ports
+      sysctl, firewall, `sudo -iu pulse`, NetBackup of `/var/lib/pulse`, public IP + DNS.
 
 ## Questions for OIT / Registrar
 
@@ -107,8 +108,8 @@ Either way: use real student data with an AI provider only after Rutgers approve
 
 ## Install (once the VM is ready)
 
-- [ ] Rehearse the install on RHEL with rootless Podman first (so far only tested with
-      Docker). Set aside time for it; not before.
+- [x] Rehearse the install on RHEL with rootless Podman (Rocky Linux 9.9, Podman 5.8). Findings
+      are in `deploy/README.md` § 1 (what OIT installs) and § 2 (steps after delivery).
 - [ ] Deploy key for the repo (read-only), then clone as `pulse`.
 - [ ] Follow `deploy/README.md` § 2; fresh, empty database. No student data from Railway.
 - [ ] `podman login docker.io` if pulls hit the rate limit.

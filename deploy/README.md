@@ -16,24 +16,41 @@ and updating never needs anything installed on the host.
 
 ## 1. One-time setup by OIT
 
-Send this to OIT once the VM exists (EI Managed means they do the root-level parts):
+Everything here was rehearsed on Rocky Linux 9.9 (a rebuild of RHEL 9) with Podman 5.8, so the
+list is complete: after this, nothing else needs installing as root. Send it with the VM
+request, or as soon as the VM exists (EI Managed means OIT does the root-level parts):
 
-> For VM `<hostname>`, could you please:
+> For VM `<hostname>` (RHEL 9), could you please:
 >
-> 1. Install `podman` and a compose provider (`podman-compose` from EPEL, or allow me to
->    use the docker-compose binary as the provider).
-> 2. Create a service account `pulse` with its home directory at `/var/lib/pulse` (so
->    container storage lands on the `/var` partition), with subuid/subgid ranges for
->    rootless containers.
-> 3. Run `loginctl enable-linger pulse` so its user services start at boot.
-> 4. Set `net.ipv4.ip_unprivileged_port_start=80` (persisted in `/etc/sysctl.d/`) so the
->    rootless web server can bind ports 80 and 443, and open 80/443 in firewalld.
-> 5. Let me `sudo -iu pulse` (or log in as it) to manage the application.
-> 6. Tell me when NetBackup runs, and how long backups are kept.
+> 1. **Packages:** install `podman` (from RHEL AppStream; it brings `container-selinux`,
+>    `passt`, `crun`, `fuse-overlayfs`) and `git`. Also `podman-compose`, which RHEL does not
+>    ship: it is in EPEL. If EPEL is not allowed, tell me and I will use Docker's compose tool
+>    as a single file inside the service account instead (no root, nothing system-wide).
+> 2. **Service account:** create `pulse` as a regular (not `--system`) user with home
+>    `/var/lib/pulse`, so it gets subuid/subgid ranges (needed for rootless containers) and
+>    container storage lands on `/var`:
+>    `useradd --create-home --home-dir /var/lib/pulse --shell /bin/bash pulse`
+> 3. **Start at boot:** `loginctl enable-linger pulse`.
+> 4. **Ports 80/443 without root:** persist `net.ipv4.ip_unprivileged_port_start=80` in
+>    `/etc/sysctl.d/90-pulse-ports.conf`.
+> 5. **Firewall:** open 443 and 80 from anywhere and 22 from the Rutgers VPN/campus in
+>    firewalld, plus the outbound hosts listed below.
+> 6. **Access:** let my NetID `sudo -iu pulse` (only that; I do not need root).
+> 7. **Backups:** include `/var/lib/pulse` in NetBackup. When does it run, and how long are
+>    backups kept?
+> 8. **Network:** a public IP and a DNS name; and is a Let's Encrypt certificate OK?
+> 9. Keep SELinux enforcing; the setup is built for it.
 
-The `sysctl` in step 4 is a common rootless-container setting. The alternative, forwarding
-80/443 to high ports in firewalld, hides student IP addresses from the app, which breaks its
-per-client rate limiting.
+Why each one, from the rehearsal:
+
+- **`podman-compose` is not in RHEL 9.** Without it (or the fallback) `podman compose` does
+  nothing. Both options were tested end to end, including start at boot and backups.
+- **A `--system` account gets no subuid ranges**, and rootless Podman then fails with a
+  `newuidmap` error. A regular account gets them automatically.
+- **The `sysctl`** is what lets Caddy bind 80/443 without root. The alternative, forwarding
+  80/443 to high ports in firewalld, hides student IP addresses from the app, which breaks its
+  per-client rate limiting.
+- **`git`** may be missing from a minimal RHEL install.
 
 ### Hosts the VM must reach (outbound HTTPS, 443)
 
@@ -46,6 +63,7 @@ these:
 | App build | `registry.npmjs.org`, `binaries.prisma.sh` (Prisma's database engine) |
 | Vision build | `pypi.org`, `files.pythonhosted.org` |
 | Code | `github.com` |
+| Compose fallback only (no EPEL) | `github.com`, `release-assets.githubusercontent.com` (one download) |
 | TLS certificate | `acme-v02.api.letsencrypt.org` (not needed if OIT supplies the certificate) |
 | Running app | `api.brevo.com` (reset email), `api.github.com` (textbook) |
 | AI, Gemini | `aiplatform.googleapis.com` (or `<region>-aiplatform.googleapis.com` for a regional `GOOGLE_CLOUD_LOCATION`), `oauth2.googleapis.com` (service-account sign-in) |
@@ -55,33 +73,82 @@ Docker Hub limits anonymous pulls per IP address, and campus traffic can share o
 fails with `429 Too Many Requests`, sign in with a free Docker Hub account:
 `podman login docker.io`.
 
-## 2. First install (as `pulse`)
+## 2. After delivery: first install (as `pulse`)
 
-If the repository is private, give the VM read access with a deploy key: `ssh-keygen -t
-ed25519` as `pulse`, add the public key under the repo's Settings → Deploy keys (read-only), and
-clone over SSH (`git@github.com:gabevillegas628/Pulse.git`; outbound port 22 to `github.com`
-then needs to be in the firewall list too).
+Rehearsed step by step. About an hour, most of it the first image build.
+
+**Get in:** `sudo -iu pulse` (lands in `/var/lib/pulse`).
+
+**Only if OIT could not install `podman-compose`:** put Docker's compose tool where Podman finds
+it even from systemd (not `~/.local/bin`, which systemd's PATH does not include), and start the
+Podman socket it talks to:
 
 ```bash
-git clone https://github.com/gabevillegas628/Pulse.git ~/Pulse
+mkdir -p ~/.docker/cli-plugins
+curl -fsSL -o ~/.docker/cli-plugins/docker-compose \
+  https://github.com/docker/compose/releases/download/v2.39.2/docker-compose-linux-x86_64
+chmod +x ~/.docker/cli-plugins/docker-compose
+systemctl --user enable --now podman.socket
+```
+
+**Code:** if the repository is private, give the VM read access with a deploy key:
+`ssh-keygen -t ed25519`, add `~/.ssh/id_ed25519.pub` under the repo's Settings → Deploy keys
+(read-only), and clone over SSH (outbound port 22 to `github.com`).
+
+```bash
+git clone --branch rutgers-migration git@github.com:gabevillegas628/Pulse.git ~/Pulse
 cd ~/Pulse/deploy
 cp env.example .env && chmod 600 .env
-# Fill in .env: PULSE_DOMAIN, ACME_EMAIL, and the secrets (openssl rand -hex 32 each).
+# Fill in .env: PULSE_DOMAIN, ACME_EMAIL, PROFESSOR_INVITE_CODE, and the secrets
+# (POSTGRES_PASSWORD, JWT_SECRET, VISION_TOKEN: `openssl rand -hex 32` each).
+```
 
-podman compose build
+**Build and start:**
+
+```bash
+podman login docker.io                  # optional; avoids Docker Hub's anonymous pull limit
+podman compose build                    # the app image takes the longest
 podman compose up -d
-podman compose ps                       # all five Up; app shows (healthy)
+podman compose ps                       # five services Up; db and app "(healthy)"
 curl -s https://$PULSE_DOMAIN/health    # {"status":"ok","db":"up",...}
+```
 
+**Start at boot, and nightly backups:**
+
+```bash
 mkdir -p ~/.config/systemd/user
 cp systemd/* ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable pulse.service pulse-backup.timer
 systemctl --user start pulse-backup.timer
+systemctl --user list-timers            # pulse-backup: next run 07:00 UTC (2am Eastern)
 ```
 
-The database starts empty and migrations run on first start. Register the professor account at
-`/register?role=professor` with `PROFESSOR_INVITE_CODE`.
+**Check backups and restore before trusting them:**
+
+```bash
+systemctl --user start pulse-backup.service && ls -l ~/backups/daily
+# Then the restore drill in section 4, into a scratch database.
+```
+
+**Use it:** register the professor account at `/register?role=professor` with
+`PROFESSOR_INVITE_CODE`. The database starts empty; migrations run on first start.
+
+### What the rehearsal covered, and what it could not
+
+Passed on Rocky Linux 9 / Podman 5.8 as a rootless `pulse` user: both images build (with `podman build`; `podman compose build`
+runs the same steps but could not finish behind the sandbox's proxy); all five
+containers start and pass health checks; Caddy binds 80/443 without root and redirects to
+HTTPS; HTTPS, the web app and live updates (websockets) work through it; the app reaches the
+vision and Indigo services; backup and a restore drill; start at boot after a simulated reboot;
+the nightly backup job under systemd. All of it with `podman-compose` and again with the
+Docker compose fallback.
+
+Not covered, because the sandbox could not: **SELinux** (the sandbox has none; the one bind
+mount carries `:Z`, and volumes are labelled by Podman), a **real certificate** from Let's
+Encrypt (needs the public hostname), and **cgroups v2** (the sandbox has v1; RHEL 9 uses v2,
+which is Podman's normal case). If something breaks on day one, it is most likely SELinux:
+`sudo ausearch -m avc -ts recent` (OIT) shows what was denied.
 
 ### Switching the AI to Gemini (Vertex AI)
 
