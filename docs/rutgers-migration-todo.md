@@ -112,7 +112,13 @@ is mainly for apps that can't use CAS.)
 - [ ] Ask OIT to register the app with CAS: service URL
       `https://<pulse hostname>/api/auth/cas/callback`; attributes: NetID, plus email and
       name if they can be released.
-- [ ] Build the CAS routes behind a setting; add outbound 443 to `cas.rutgers.edu`.
+- [ ] Register the service with **both** test and production CAS (KB0017659, "CAS Local
+      Implementation"). Rutgers runs CAS 6.5 with Kerberos + Duo, so Duo comes for free.
+- [ ] Build the CAS routes behind a setting, against `test-cas.rutgers.edu` first:
+      login `/login`, validation `/p3/serviceValidate` (CAS protocol 3, which can return
+      attributes such as email and name if released), sign-out `/logout`. Then switch the
+      setting to `cas.rutgers.edu`.
+- [ ] Outbound 443 to `cas.rutgers.edu` and `test-cas.rutgers.edu`.
 - [ ] Then remove Pulse passwords and the reset flow. Email stays (see "Email").
 
 ## Install (once the VM is ready)
