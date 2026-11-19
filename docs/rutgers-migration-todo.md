@@ -122,6 +122,24 @@ is mainly for apps that can't use CAS.)
       `deploy/OIT-REQUEST.md`).
 - [ ] Then remove Pulse passwords and the reset flow. Email stays (see "Email").
 
+## Real roster (backlog, after CAS)
+
+CAS proves who someone is, not that they are in the course: any Rutgers NetID could sign in
+and, with a join code passed around, end up on a class roster. Join codes are the only gate
+today. Pulse needs to check people against the real class list.
+
+- [ ] Decide the source. CAS releases only the NetID without extra approval, so course
+      enrolment from CAS is unlikely. More practical:
+  - **Roster CSV upload** per class (e.g. the Canvas or registrar export: NetID, and section
+    if present). Simplest, and the quiz grader already wants one (`docs/quiz-grader/
+    OPEN_QUESTIONS.md` #4), so one import can serve both.
+  - Later, Canvas (its API or LTI), so the roster stays current on its own.
+- [ ] Decide what happens to a NetID that is not on the roster: refused outright, or held for
+      the instructor to approve (add/drop week, auditors, TAs).
+- [ ] Re-uploading the roster updates it: new students allowed in, dropped students flagged
+      for the instructor rather than silently deleted (their answers are course records).
+- [ ] Sections from the roster can replace students choosing their own section.
+
 ## Install (once the VM is ready)
 
 - [x] Rehearse the install on RHEL with rootless Podman (Rocky Linux 9.9, Podman 5.8), and the
