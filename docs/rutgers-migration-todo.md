@@ -122,23 +122,16 @@ is mainly for apps that can't use CAS.)
       `deploy/OIT-REQUEST.md`).
 - [ ] Then remove Pulse passwords and the reset flow. Email stays (see "Email").
 
-## Real roster (backlog, after CAS)
+## Real roster (optional, low priority, after CAS)
 
-CAS proves who someone is, not that they are in the course: any Rutgers NetID could sign in
-and, with a join code passed around, end up on a class roster. Join codes are the only gate
-today. Pulse needs to check people against the real class list.
+Probably fine as is. CAS proves who someone is, and joining a class already needs a code the
+instructor hands out (the QR or access code in class, or a class/section join code), so a
+NetID alone gets nobody in. What remains is a leaked code (a QR posted in a group chat): an
+outsider could join, answer, and count in participation. Removable on the Roster tab today.
 
-- [ ] Decide the source. CAS releases only the NetID without extra approval, so course
-      enrolment from CAS is unlikely. More practical:
-  - **Roster CSV upload** per class (e.g. the Canvas or registrar export: NetID, and section
-    if present). Simplest, and the quiz grader already wants one (`docs/quiz-grader/
-    OPEN_QUESTIONS.md` #4), so one import can serve both.
-  - Later, Canvas (its API or LTI), so the roster stays current on its own.
-- [ ] Decide what happens to a NetID that is not on the roster: refused outright, or held for
-      the instructor to approve (add/drop week, auditors, TAs).
-- [ ] Re-uploading the roster updates it: new students allowed in, dropped students flagged
-      for the instructor rather than silently deleted (their answers are course records).
-- [ ] Sections from the roster can replace students choosing their own section.
+- [ ] If that ever matters: upload the class roster as a CSV (Canvas/registrar export) and
+      **flag** anyone who is not on it, rather than block them (add/drop week, auditors, TAs).
+      The quiz grader wants the same CSV (`docs/quiz-grader/OPEN_QUESTIONS.md` #4).
 
 ## Install (once the VM is ready)
 
