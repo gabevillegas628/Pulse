@@ -197,6 +197,19 @@ renders them. Neither the format nor GitHub is required.
 - [ ] Keep what the GitHub version does today: chapter list, in-guide search, images, and
       the per-student view tracking (`TextbookView`).
 
+## Feature ideas (after the migration)
+
+Not started; noted so they aren't lost. Nothing here until the VM is running.
+
+- [ ] **Exam management:** scanning, grading and review for exams, building on the quiz grader
+      (scans, layouts, answer keys, review by item). Likely needs: longer multi-page papers,
+      free-response questions with rubrics, exam versions, and grade export.
+- [ ] **Student requests** (e.g. exam rescheduling): students submit a request in Pulse, the
+      instructor approves or declines, and every decision is recorded. Could fold in what
+      exists already: deadline extensions (`DeadlineExtension`) and quiz excusals
+      (`QuizExcusal`). Avoid collecting medical or other sensitive documentation in Pulse;
+      point students to the dean's office for that.
+
 ## Code follow-ups
 
 - [x] Strip NetIDs, emails, email-derived full names, ID and phone numbers from answer text
