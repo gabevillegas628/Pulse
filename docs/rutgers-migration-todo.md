@@ -9,8 +9,8 @@ student data carried over), test it at leisure, and start spring on it. Shut Rai
 winter break. Portkey and NetID sign-in come after the VM is running. No new features until
 then.
 
-**Order:** provisioning meeting → VM ready → install rehearsal and fresh install → winter break
-shutdown of Railway → spring class on the VM.
+**Order of this list:** now → the VM → install → winter break → after it's running (AI, CAS,
+email) → feature ideas → code follow-ups.
 
 ## Now (quick hardening of the current setup)
 
@@ -31,37 +31,6 @@ shutdown of Railway → spring class on the VM.
 - [ ] Who handles registering an app for NetID (CAS) sign-in?
 - [ ] If asked what runs today: "an outside cloud host with my own Claude API key; I'm moving
       it onto an OIT VM and a sanctioned AI provider."
-
-## AI access: Rutgers Portkey (first choice, after the VM is running)
-
-Portkey is Rutgers' AI gateway (KB0019477): Claude and other providers under Rutgers'
-enterprise agreements, no training on inputs. Access goes through departmental IT; usage is
-billed to the department monthly.
-
-- [ ] Ask DLS IT to submit the Portkey Workspace Request form. Purpose: course app for
-      Biochemistry 395; models: Claude (Haiku, Sonnet, Opus).
-- [ ] Find out who in the department approves the billing.
-- [ ] Monthly spending limit: start at **$50** (estimate $20–60/month for ~300 students).
-      Optionally pull exact figures from Pulse's usage records first.
-- [ ] Once there is a key: add Portkey support in `backend/src/ai/llm.ts` (point the
-      Anthropic client at Rutgers' Portkey gateway, send the Portkey key), then test
-      structured outputs, images and effort through it.
-- [ ] Add the Portkey gateway host to the VM's outbound firewall rules; drop
-      `api.anthropic.com`.
-- [ ] Update `docs/security-overview.md` to say AI calls go through Rutgers' Portkey.
-
-## Gemini on Vertex AI (fallback, only if Portkey does not work out)
-
-- [ ] Put the Vertex key in `deploy/secrets/gcp-key.json` (`podman unshare chown 1000:1000`,
-      `chmod 600`); set `AI_PROVIDER=gemini` and `GOOGLE_CLOUD_PROJECT`.
-- [ ] Confirm the default model IDs in `ROLES` against the live Vertex model list.
-- [ ] Measure accuracy before grading real quizzes: `quiz-grader-spike.ts` with
-      `AI_PROVIDER=gemini` on the Phase 0 pages; compare with the Claude baseline (enzymes 96.5%,
-      cofactors 92.7%). Retune prompts if hand-drawn structures fall behind.
-- [ ] Spot-check live themes and response grading on Gemini (`scripts/rehearse.ts`).
-- [ ] Add Gemini prices to `backend/src/quizGrader/pricing.ts`.
-
-Either way: use real student data with an AI provider only after Rutgers approves that route.
 
 ## OIT: VM request (VI Intake Form)
 
@@ -102,37 +71,6 @@ Either way: use real student data with an AI provider only after Rutgers approve
 - [ ] Is there a security review or questionnaire for the VM/app? (Answers are in
       `docs/security-overview.md`.)
 
-## NetID sign-in: CAS (after the VM is running)
-
-Rutgers' SSO decision chart: a web application, hosted internally, that supports CAS → **CAS**,
-no special permission needed. (Hosted externally, CAS would need special permission; Shibboleth
-is mainly for apps that can't use CAS.)
-
-
-- [ ] Ask OIT to register the app with CAS: service URL
-      `https://<pulse hostname>/api/auth/cas/callback`; attributes: NetID, plus email and
-      name if they can be released.
-- [ ] Register the service with **both** test and production CAS (KB0017659, "CAS Local
-      Implementation"). Rutgers runs CAS 6.5 with Kerberos + Duo, so Duo comes for free.
-- [ ] Build the CAS routes behind a setting, against `test-cas.rutgers.edu` first:
-      login `/login`, validation `/p3/serviceValidate` (CAS protocol 3, which can return
-      attributes such as email and name if released), sign-out `/logout`. Then switch the
-      setting to `cas.rutgers.edu`.
-- [ ] Outbound 443 to `cas.rutgers.edu` and `test-cas.rutgers.edu` (already in
-      `deploy/OIT-REQUEST.md`).
-- [ ] Then remove Pulse passwords and the reset flow. Email stays (see "Email").
-
-## Real roster (optional, low priority, after CAS)
-
-Probably fine as is. CAS proves who someone is, and joining a class already needs a code the
-instructor hands out (the QR or access code in class, or a class/section join code), so a
-NetID alone gets nobody in. What remains is a leaked code (a QR posted in a group chat): an
-outsider could join, answer, and count in participation. Removable on the Roster tab today.
-
-- [ ] If that ever matters: upload the class roster as a CSV (Canvas/registrar export) and
-      **flag** anyone who is not on it, rather than block them (add/drop week, auditors, TAs).
-      The quiz grader wants the same CSV (`docs/quiz-grader/OPEN_QUESTIONS.md` #4).
-
 ## Install (once the VM is ready)
 
 - [x] Rehearse the install on RHEL with rootless Podman (Rocky Linux 9.9, Podman 5.8), and the
@@ -161,14 +99,55 @@ outsider could join, answer, and count in participation. Removable on the Roster
 - [ ] Delete the old `ccr-c2f95155-dbras2` branch on GitHub (same commits as
       `rutgers-migration`).
 
-## Server management (after it's running)
+## AI access: Rutgers Portkey (first choice, after the VM is running)
 
-- [ ] Run it for a few weeks first and note what you repeat by hand.
-- [ ] Then a small `pulse` command-line tool on the VM, used over SSH (not a web panel):
-      `status` (containers, health, disk, last backup and its age), `deploy`, `backup`,
-      `restore` (with a confirmation step), `logs <service>`.
-- [ ] Optional: a read-only "last backup" line on Pulse's admin page. Nothing that can
-      trigger deploys or restores from the web.
+Portkey is Rutgers' AI gateway (KB0019477): Claude and other providers under Rutgers'
+enterprise agreements, no training on inputs. Access goes through departmental IT; usage is
+billed to the department monthly.
+
+- [ ] Ask DLS IT to submit the Portkey Workspace Request form. Purpose: course app for
+      Biochemistry 395; models: Claude (Haiku, Sonnet, Opus).
+- [ ] Find out who in the department approves the billing.
+- [ ] Monthly spending limit: start at **$50** (estimate $20–60/month for ~300 students).
+      Optionally pull exact figures from Pulse's usage records first.
+- [ ] Once there is a key: add Portkey support in `backend/src/ai/llm.ts` (point the
+      Anthropic client at Rutgers' Portkey gateway, send the Portkey key), then test
+      structured outputs, images and effort through it.
+- [ ] Add the Portkey gateway host to the VM's outbound firewall rules; drop
+      `api.anthropic.com`.
+- [ ] Update `docs/security-overview.md` to say AI calls go through Rutgers' Portkey.
+
+## Gemini on Vertex AI (fallback, only if Portkey does not work out)
+
+- [ ] Put the Vertex key in `deploy/secrets/gcp-key.json` (`podman unshare chown 1000:1000`,
+      `chmod 600`); set `AI_PROVIDER=gemini` and `GOOGLE_CLOUD_PROJECT`.
+- [ ] Confirm the default model IDs in `ROLES` against the live Vertex model list.
+- [ ] Measure accuracy before grading real quizzes: `quiz-grader-spike.ts` with
+      `AI_PROVIDER=gemini` on the Phase 0 pages; compare with the Claude baseline (enzymes 96.5%,
+      cofactors 92.7%). Retune prompts if hand-drawn structures fall behind.
+- [ ] Spot-check live themes and response grading on Gemini (`scripts/rehearse.ts`).
+- [ ] Add Gemini prices to `backend/src/quizGrader/pricing.ts`.
+
+Either way: use real student data with an AI provider only after Rutgers approves that route.
+
+## NetID sign-in: CAS (after the VM is running)
+
+Rutgers' SSO decision chart: a web application, hosted internally, that supports CAS → **CAS**,
+no special permission needed. (Hosted externally, CAS would need special permission; Shibboleth
+is mainly for apps that can't use CAS.)
+
+- [ ] Ask OIT to register the app with CAS: service URL
+      `https://<pulse hostname>/api/auth/cas/callback`; attributes: NetID, plus email and
+      name if they can be released.
+- [ ] Register the service with **both** test and production CAS (KB0017659, "CAS Local
+      Implementation"). Rutgers runs CAS 6.5 with Kerberos + Duo, so Duo comes for free.
+- [ ] Build the CAS routes behind a setting, against `test-cas.rutgers.edu` first:
+      login `/login`, validation `/p3/serviceValidate` (CAS protocol 3, which can return
+      attributes such as email and name if released), sign-out `/logout`. Then switch the
+      setting to `cas.rutgers.edu`.
+- [ ] Outbound 443 to `cas.rutgers.edu` and `test-cas.rutgers.edu` (already in
+      `deploy/OIT-REQUEST.md`).
+- [ ] Then remove Pulse passwords and the reset flow. Email stays (see "Email").
 
 ## Email (Rutgers relay instead of Brevo)
 
@@ -180,10 +159,35 @@ other notices still need to send.
       (`backend/src/services/email.service.ts`), chosen by setting, with Brevo kept until the
       relay is confirmed working. Send a test message to a Rutgers and an outside address.
 - [ ] Remove Brevo (`BREVO_API_KEY`, the outbound host) once the relay works.
-- [ ] Later, with announcements: send a class in batches within the relay's limits, and give
-      students a way to opt out of non-essential mail.
+- [ ] Announcements depend on this (see "Feature ideas").
 
-## Study guides (backlog, after it's running)
+## Feature ideas (after the migration)
+
+Not started; noted so they aren't lost. Nothing here until the VM is running. Rough order of
+usefulness, not commitment.
+
+### Announcements
+
+- [ ] Instructor writes a message; it goes to a class or a section by email (and could also
+      show in Pulse). Depends on the Rutgers mail relay (see "Email").
+- [ ] Send in batches within the relay's limits, and give students a way to opt out of
+      non-essential mail.
+
+### Exam management
+
+- [ ] Scanning, grading and review for exams, building on the quiz grader (scans, layouts,
+      answer keys, review by item). Likely needs: longer multi-page papers, free-response
+      questions with rubrics, exam versions, and grade export.
+
+### Student requests
+
+- [ ] Students submit a request in Pulse (e.g. exam rescheduling), the instructor approves or
+      declines, and every decision is recorded. Could fold in what exists already: deadline
+      extensions (`DeadlineExtension`) and quiz excusals (`QuizExcusal`).
+- [ ] Avoid collecting medical or other sensitive documentation in Pulse; point students to
+      the dean's office for that.
+
+### Study guides: any format, hosted on the server
 
 Today the Study Guides tab (`backend/src/routes/textbook.routes.ts`) fetches Markdown files
 from a GitHub repository set per class (`textbookRepo`, `textbookPath`, `textbookBranch`) and
@@ -197,18 +201,25 @@ renders them. Neither the format nor GitHub is required.
 - [ ] Keep what the GitHub version does today: chapter list, in-guide search, images, and
       the per-student view tracking (`TextbookView`).
 
-## Feature ideas (after the migration)
+### Server management tool
 
-Not started; noted so they aren't lost. Nothing here until the VM is running.
+- [ ] Run it for a few weeks first and note what you repeat by hand.
+- [ ] Then a small `pulse` command-line tool on the VM, used over SSH (not a web panel):
+      `status` (containers, health, disk, last backup and its age), `deploy`, `backup`,
+      `restore` (with a confirmation step), `logs <service>`.
+- [ ] Optional: a read-only "last backup" line on Pulse's admin page. Nothing that can
+      trigger deploys or restores from the web.
 
-- [ ] **Exam management:** scanning, grading and review for exams, building on the quiz grader
-      (scans, layouts, answer keys, review by item). Likely needs: longer multi-page papers,
-      free-response questions with rubrics, exam versions, and grade export.
-- [ ] **Student requests** (e.g. exam rescheduling): students submit a request in Pulse, the
-      instructor approves or declines, and every decision is recorded. Could fold in what
-      exists already: deadline extensions (`DeadlineExtension`) and quiz excusals
-      (`QuizExcusal`). Avoid collecting medical or other sensitive documentation in Pulse;
-      point students to the dean's office for that.
+### Real roster (optional, low priority, after CAS)
+
+Probably fine as is. CAS proves who someone is, and joining a class already needs a code the
+instructor hands out (the QR or access code in class, or a class/section join code), so a
+NetID alone gets nobody in. What remains is a leaked code (a QR posted in a group chat): an
+outsider could join, answer, and count in participation. Removable on the Roster tab today.
+
+- [ ] If that ever matters: upload the class roster as a CSV (Canvas/registrar export) and
+      **flag** anyone who is not on it, rather than block them (add/drop week, auditors, TAs).
+      The quiz grader wants the same CSV (`docs/quiz-grader/OPEN_QUESTIONS.md` #4).
 
 ## Code follow-ups
 
