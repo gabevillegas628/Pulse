@@ -189,21 +189,43 @@ NAD+/NADH and FAD/FADH2, and on intermediate names such as Citrate, Oxaloacetate
    structure"; the model may skip the whole box.
 4. Haiku is simply weaker at this than Sonnet.
 
-**Plan:**
+**Decided: these get implemented.** A blank reading of a box with writing is not acceptable.
+After the migration, implement in this order, then test on this semester's quizzes.
 
-- [ ] Measure first: a script on the server that counts, per slot type, first readings that
-      were blank where the second look read something. Nothing leaves the server.
-- [ ] Re-run `quiz-grader-spike.ts` on the same pages with one change at a time: one box per
-      request; Sonnet for text; prompt without "printed labels" (e.g. "the printed form
-      contains no handwriting; anything handwritten counts"). Compare against hand grades.
-      Use this semester's scans only on the Rutgers VM through an approved AI route
-      (Portkey), or use mock-filled pages.
-- [ ] Scoring fixes, whatever the cause: give blank-but-inked **names** a second look too;
-      when the first reading is blank and the second look reads an answer, **score from the
-      second reading** and flag it "first reader missed this" for confirmation, instead of a
-      0 that waits for a click. Never a silent 0 on a box with ink.
-- [ ] Add these pages' failure cases to the quiz grader's tests (`smoke-quiz-grader.ts`), so
-      the scoring rule cannot regress.
+*1. Scoring safety net* (no model calls; protects every quiz, including ones already printed):
+
+- [ ] **Never a silent 0 on a box with ink.** Every slot read as blank where the ink check found
+      writing gets a second look, **intermediate names included** (today they get none).
+- [ ] When the first reading is blank and the second look reads an answer, **score from the
+      second reading** and flag it "first reader missed this" for confirmation, instead of
+      scoring 0 and waiting for a click.
+- [ ] When both readers say blank but there is ink, flag it (unless the ink is known to be a
+      neighbouring slot's, e.g. the enzyme name in a shared cofactor box).
+- [ ] Tests in `smoke-quiz-grader.ts` for each case, so it cannot regress.
+
+*2. Better first readings* (choose by measurement, see testing):
+
+- [ ] One box per request instead of every text box on a page in one request.
+- [ ] Prompt: drop "ignore printed labels" (say instead that the printed form contains no
+      handwriting, so anything handwritten counts); for names, stop telling it to skip the
+      drawing in a way that skips the whole box.
+- [ ] The stronger model, or more effort, for the first text reading if the cheaper one keeps
+      missing. Cost is small (`PRODUCT_READINESS.md`, "What a class costs").
+
+*3. Form change for spring* (data, not code: a new layout version, since printed pages are
+permanent):
+
+- [ ] A separate, drawn **name box** beside each structure, so a name box with ink means a name
+      was written and can be flagged like the enzyme boxes.
+- [ ] Optional: labelled "in" and "out" spots for cofactors instead of the two ends of a curved
+      arrow, to remove side guessing.
+
+*Testing* (after the migration and steps 1–2, on the Rutgers VM through an approved AI route):
+
+- [ ] Count, per slot type, first readings that were blank where the box had ink, before and
+      after (a script on the server; nothing leaves it).
+- [ ] Re-grade this semester's quizzes with `quiz-grader-spike.ts`, one change at a time,
+      against the hand grades. Target: no blank readings of boxes with writing.
 
 ## Feature ideas (after the migration)
 
