@@ -190,7 +190,9 @@ NAD+/NADH and FAD/FADH2, and on intermediate names such as Citrate, Oxaloacetate
 4. Haiku is simply weaker at this than Sonnet.
 
 **Decided: these get implemented.** A blank reading of a box with writing is not acceptable.
-After the migration, implement in this order, then test on this semester's quizzes.
+After the migration, implement in this order, then test on this semester's quizzes. The main
+fix is the stronger reader (step 2); the safety net (step 1) stays regardless, since no model
+is perfect.
 
 *1. Scoring safety net* (no model calls; protects every quiz, including ones already printed):
 
@@ -203,14 +205,19 @@ After the migration, implement in this order, then test on this semester's quizz
       neighbouring slot's, e.g. the enzyme name in a shared cofactor box).
 - [ ] Tests in `smoke-quiz-grader.ts` for each case, so it cannot regress.
 
-*2. Better first readings* (choose by measurement, see testing):
+*2. Stronger readers for handwriting* (decided: Haiku is not used for reading handwriting):
 
-- [ ] One box per request instead of every text box on a page in one request.
-- [ ] Prompt: drop "ignore printed labels" (say instead that the printed form contains no
-      handwriting, so anything handwritten counts); for names, stop telling it to skip the
-      drawing in a way that skips the whole box.
-- [ ] The stronger model, or more effort, for the first text reading if the cheaper one keeps
-      missing. Cost is small (`PRODUCT_READINESS.md`, "What a class costs").
+- [ ] First text reading: **Sonnet** instead of Haiku (`quiz.text` in `backend/src/ai/llm.ts`
+      `ROLES`, and `MODEL_TEXT`). On the same boxes Sonnet read what Haiku called blank. A
+      miss is a wrong grade, so a few cents a page is worth it.
+- [ ] Text second look: **Opus** instead of Sonnet (`quiz.secondLook`), so the double-check
+      stays a different, stronger reader, as drawings already do (Sonnet, then Opus).
+- [ ] Haiku stays only where it fits: live themes (sorting short typed answers in class).
+- [ ] Optional tuning, if blanks still appear after the switch: one box per request instead of
+      a whole page in one request; a prompt that drops "ignore printed labels" (say the
+      printed form contains no handwriting, so anything handwritten counts) and, for names,
+      doesn't make the model skip the whole box.
+- [ ] Update `quizGrader/pricing.ts` and the cost note in `PRODUCT_READINESS.md`.
 
 *3. Form change for spring* (data, not code: a new layout version, since printed pages are
 permanent):
@@ -224,8 +231,9 @@ permanent):
 
 - [ ] Count, per slot type, first readings that were blank where the box had ink, before and
       after (a script on the server; nothing leaves it).
-- [ ] Re-grade this semester's quizzes with `quiz-grader-spike.ts`, one change at a time,
-      against the hand grades. Target: no blank readings of boxes with writing.
+- [ ] Re-grade this semester's quizzes with `quiz-grader-spike.ts` against the hand grades:
+      first with Sonnet/Opus, then with any optional tuning one change at a time. Target: no
+      blank readings of boxes with writing.
 
 ## Feature ideas (after the migration)
 
