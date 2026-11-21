@@ -46,6 +46,14 @@ jobs:
       - name: Quiz grader unit tests
         run: npm run test:quiz-grader --workspace=backend
 
+      # The Claude/Gemini switch (src/ai/llm.ts), with fetch faked: no keys, no network.
+      - name: AI provider unit tests
+        run: npm run test:ai-provider --workspace=backend
+
+      # Identifying details removed from answer text before any model call (src/ai/scrub.ts).
+      - name: Answer scrub unit tests
+        run: npm run test:scrub --workspace=backend
+
       # Not yet wired: smoke-themes.ts and e2e-qr.ts. Both want a Postgres service
       # and a booted backend, and smoke-themes additionally spends real Anthropic
       # tokens, so it needs a decision about a CI key before it belongs here.

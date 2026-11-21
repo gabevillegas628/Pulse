@@ -1,0 +1,8 @@
+[Unit]
+Description=Pulse nightly database dump (for NetBackup)
+After=pulse.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Pulse/deploy
+ExecStart=/usr/bin/bash %h/Pulse/deploy/backup.sh

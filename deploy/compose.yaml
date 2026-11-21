@@ -1,0 +1,89 @@
+# Pulse on one VM: rootless Podman (or Docker, for testing), four containers.
+#
+#   cd deploy && podman compose up -d --build
+#
+# Settings and secrets come from deploy/.env (copy env.example; never commit it). See
+# deploy/README.md for the VM setup this assumes.
+#
+# Nothing here is reachable from outside. OIT's Apache on the host terminates HTTPS and
+# forwards to the app on 127.0.0.1:3001 (deploy/apache/pulse.conf). The database, vision and
+# Indigo have no published ports at all and are reachable only on the private network.
+#
+# Named volumes live under the service account's home (/srv/pulse, README section 1), so
+# the database and the scans sit with everything else NetBackup covers.
+
+name: pulse
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Containerfile
+    image: localhost/pulse-app:latest
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      UPLOAD_DIR: /data/uploads
+      DATABASE_URL: postgresql://pulse:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}@db:5432/pulse
+      BASE_URL: https://${PULSE_DOMAIN}
+      FRONTEND_URL: https://${PULSE_DOMAIN}
+      VISION_URL: http://vision:8000
+      INDIGO_SERVICE_URL: http://indigo
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - uploads:/data/uploads
+      # deploy/secrets (git-ignored): the Vertex AI key file, when AI_PROVIDER=gemini.
+      - ./secrets:/run/secrets:ro,Z
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    restart: unless-stopped
+
+  db:
+    image: docker.io/library/postgres:18
+    environment:
+      POSTGRES_USER: pulse
+      POSTGRES_DB: pulse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      # Postgres 18 images keep data under /var/lib/postgresql/18/..., so the volume
+      # mounts the parent, not .../data as older images did.
+      - db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pulse -d pulse"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    shm_size: 256m
+    restart: unless-stopped
+
+  vision:
+    build:
+      context: ../vision
+    image: localhost/pulse-vision:latest
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8000"
+      VISION_TOKEN: ${VISION_TOKEN:?set VISION_TOKEN in deploy/.env}
+    restart: unless-stopped
+
+  indigo:
+    # EPAM's structure service. Pinned: a chemistry engine changing under the grader
+    # should be a decision, not a side effect of a restart.
+    image: docker.io/epmlsop/indigo-service:1.47.0
+    # The image starts supervisord through `sh -c`, and sh does not pass on the stop signal,
+    # so every stop or deploy waited 10 s and then killed it. Run supervisord directly.
+    command: ["supervisord", "-n"]
+    restart: unless-stopped
+
+volumes:
+  db:
+  uploads:

@@ -20,6 +20,7 @@ import {
 } from '../quizGrader/scans.js'
 import { gradingConfigured, rescoreAssessment, secondLooksRunning, startSecondLooks } from '../quizGrader/grading.js'
 import { costOf } from '../quizGrader/pricing.js'
+import { aiSetupHint } from '../ai/llm.js'
 import { scanStorageWarnings } from '../quizGrader/servers.js'
 import { compare, type ResultRow } from '../quizGrader/compare.js'
 import { effectiveResults, pageTotals } from '../quizGrader/review.js'
@@ -237,7 +238,7 @@ router.post('/quiz-grader/pages/:pageId/regrade', requireProfessor, async (req: 
   try {
     const page = await ownedPage(req)
     if (page.status !== 'DONE') throw new AppError('The page has to be lined up first', 409)
-    if (!gradingConfigured()) throw new AppError('Grading is not set up on this server (ANTHROPIC_API_KEY).', 503)
+    if (!gradingConfigured()) throw new AppError(`Grading is not set up on this server (${aiSetupHint()}).`, 503)
     await prisma.quizPage.update({ where: { id: page.id }, data: { gradeStatus: 'PENDING', gradeAttempts: 0, gradeError: null } })
     res.json({ success: true })
   } catch (err) {
@@ -251,7 +252,7 @@ router.post('/quiz-grader/content/:id/second-looks', requireProfessor, async (re
   try {
     const a = await prisma.quizContent.findFirst({ where: { id: p(req.params.id), ...ownedQuizContent(viewer(req)), kind: 'ASSESSMENT' }, select: { id: true } })
     if (!a) throw new AppError('Not found', 404)
-    if (!gradingConfigured()) throw new AppError('Grading is not set up on this server (ANTHROPIC_API_KEY).', 503)
+    if (!gradingConfigured()) throw new AppError(`Grading is not set up on this server (${aiSetupHint()}).`, 503)
     res.json({ success: true, data: await startSecondLooks(a.id) })
   } catch (err) {
     next(err)
@@ -315,7 +316,7 @@ router.post('/quiz-grader/content/:id/grade-ungraded', requireProfessor, async (
   try {
     const assessment = await prisma.quizContent.findFirst({ where: { id: p(req.params.id), ...ownedQuizContent(viewer(req)), kind: 'ASSESSMENT' }, select: { id: true } })
     if (!assessment) throw new AppError('Not found', 404)
-    if (!gradingConfigured()) throw new AppError('Grading is not set up on this server (ANTHROPIC_API_KEY).', 503)
+    if (!gradingConfigured()) throw new AppError(`Grading is not set up on this server (${aiSetupHint()}).`, 503)
     const r = await prisma.quizPage.updateMany({
       where: { batch: { assessmentId: assessment.id }, status: 'DONE', gradeStatus: { in: ['NONE', 'FAILED'] } },
       data: { gradeStatus: 'PENDING', gradeAttempts: 0, gradeError: null },

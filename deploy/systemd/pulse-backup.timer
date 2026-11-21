@@ -1,0 +1,12 @@
+# 2am Eastern, so the dump is on disk before NetBackup's overnight run. Ask OIT when that
+# run is and move this if it is earlier. Persistent: a run missed while the VM was down
+# happens at the next boot.
+[Unit]
+Description=Nightly Pulse database dump
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 America/New_York
+Persistent=true
+
+[Install]
+WantedBy=timers.target
