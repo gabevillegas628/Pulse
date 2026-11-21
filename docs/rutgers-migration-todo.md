@@ -10,7 +10,7 @@ winter break. Portkey and NetID sign-in come after the VM is running. No new fea
 then.
 
 **Order of this list:** now → the VM → install → winter break → after it's running (AI, CAS,
-email) → feature ideas → code follow-ups.
+email) → quiz grader fix (before spring quizzes) → feature ideas → code follow-ups.
 
 ## Now (quick hardening of the current setup)
 
@@ -160,6 +160,50 @@ other notices still need to send.
       relay is confirmed working. Send a test message to a Rutgers and an outside address.
 - [ ] Remove Brevo (`BREVO_API_KEY`, the outbound host) once the relay works.
 - [ ] Announcements depend on this (see "Feature ideas").
+
+## Quiz grader: answers read as blank (fix before next semester's quizzes)
+
+Written answers are coming back "read as empty" and scoring 0, often (seen on cofactors such as
+NAD+/NADH and FAD/FADH2, and on intermediate names such as Citrate, Oxaloacetate, Isocitrate).
+
+**What is known** (from the code, `backend/src/quizGrader/grade.ts` and `reader.ts`):
+
+- "Read as empty" means the **text model** (Haiku 5.5, `effort: low`) answered "blank". The
+  vision service's ink check had found writing, or the box would not have been sent
+  ("empty (not sent)" is the ink check's label). So the miss is in the model reading, not
+  the cropping.
+- **A blank first reading always scores 0.** The second look (Sonnet) often reads it
+  correctly (s6: "S-CoA → in, CoASH → out"; s7: "FAD → in, FADH2 → out") but only adds a
+  review note; the score stays 0 until someone clicks.
+- **Intermediate names get neither a second look nor a flag when read blank** (by design:
+  their boxes hold the drawing, so they nearly always have ink). So a missed name is a
+  **silent 0**.
+
+**Likely causes, to test:**
+
+1. All of a page's text boxes go to the model in **one request**, with a fast model at low
+   effort; it skips some.
+2. The prompt says to **ignore "printed labels"**: neat block handwriting, common on these
+   papers, may be taken for printing.
+3. Name boxes overlap the drawings, and the prompt says the name is "not the drawn
+   structure"; the model may skip the whole box.
+4. Haiku is simply weaker at this than Sonnet.
+
+**Plan:**
+
+- [ ] Measure first: a script on the server that counts, per slot type, first readings that
+      were blank where the second look read something. Nothing leaves the server.
+- [ ] Re-run `quiz-grader-spike.ts` on the same pages with one change at a time: one box per
+      request; Sonnet for text; prompt without "printed labels" (e.g. "the printed form
+      contains no handwriting; anything handwritten counts"). Compare against hand grades.
+      Use this semester's scans only on the Rutgers VM through an approved AI route
+      (Portkey), or use mock-filled pages.
+- [ ] Scoring fixes, whatever the cause: give blank-but-inked **names** a second look too;
+      when the first reading is blank and the second look reads an answer, **score from the
+      second reading** and flag it "first reader missed this" for confirmation, instead of a
+      0 that waits for a click. Never a silent 0 on a box with ink.
+- [ ] Add these pages' failure cases to the quiz grader's tests (`smoke-quiz-grader.ts`), so
+      the scoring rule cannot regress.
 
 ## Feature ideas (after the migration)
 
