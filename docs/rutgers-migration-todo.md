@@ -251,7 +251,12 @@ of the QR works too.
       never block: students in the room on cellular data look off-campus too.
 - [ ] **Rotating codes:** the code and QR on the slide change every 20–30 s; Pulse accepts the
       current one and the one before. A screenshot is stale within seconds; nothing changes
-      for students in the room. The PowerPoint add-in already refreshes the slide.
+      for students in the room. The question card on the slide is a static picture today
+      (`addin/src/office.ts`), so the rotating QR has to live in a **content add-in** (a live web
+      view in the slide), like the existing /present results view: extend /present or add a
+      "join" view. Keep the static card, without a code, as the question text and a fallback
+      when the add-in isn't loaded or the laptop is offline. Not by redrawing the picture from
+      the task pane: it isn't running during a slideshow, and it would keep editing the deck.
 - [ ] **Hide the number** on the question card in PowerPoint and in copied text; QR only, with
       the typed code available on request (a fallback for a phone that can't scan).
 - [ ] Shorter answer windows with the existing close countdown, so a relay has little time.
