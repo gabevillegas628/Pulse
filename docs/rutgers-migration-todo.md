@@ -243,32 +243,33 @@ usefulness, not commitment.
 ### In-class answers only (codes shared in the group chat)
 
 Responses run at 85–90% of the class, well above how many students attend, which suggests codes
-are shared in group chats and answered from home. Hiding the number alone won't stop it: a photo
-of the QR works too.
+are shared in group chats and answered from home.
+
+**How it works today** (checked in the code): every question in a session is answerable as
+soon as the run opens, until it is closed or its countdown ends. A question's code only finds
+the question; answering (`POST /responses`) checks the question id and an open run, nothing
+else. So a shared code, QR photo, or `/q/<question id>` link all work for the whole run.
+Rotating the per-question code alone would not help.
 
 - [ ] **Measure first:** mark each answer as from the Rutgers network or not (the real client
       address already reaches the app through Apache), and show the share per question. Flag,
       never block: students in the room on cellular data look off-campus too.
-- [ ] **Rotating codes:** the code and QR on the slide change every 20–30 s; Pulse accepts the
-      current one and the one before. A screenshot is stale within seconds; nothing changes
-      for students in the room. The question card on the slide is a static picture today
-      (`addin/src/office.ts`), so the rotating QR has to live in a **content add-in** (a live web
-      view in the slide), like the existing /present results view: extend /present or add a
-      "join" view. Keep the static card, without a code, as the question text and a fallback
-      when the add-in isn't loaded or the laptop is offline. Not by redrawing the picture from
-      the task pane: it isn't running during a slideshow, and it would keep editing the deck.
-      **Simplest: put it in /present itself.** /present already follows whatever is live
-      (`/addin/live`) and switches to the active question, so it can show the rotating QR for
-      the question open right now and hide it when the question closes. The server computes
-      each code from a secret + question + run + 30-second window (nothing stored; the secret
-      never leaves the server) and /present fetches the current one with its existing poll.
-      Alternative: one rotating check-in code per lecture instead of per question (less on
-      screen, doubles as attendance, but looser).
-- [ ] **Hide the number** on the question card in PowerPoint and in copied text; QR only, with
-      the typed code available on request (a fallback for a phone that can't scan).
-- [ ] Shorter answer windows with the existing close countdown, so a relay has little time.
+- [ ] **Check-in pass per lecture** (the fix): /present shows one rotating check-in code (QR +
+      short code) for the run, changing every 20–30 s. Scanning it records a pass for that
+      student and run on the server; **submitting an answer requires the pass**, so a shared
+      code or link alone no longer works. Codes are computed from a server secret + run +
+      time window (nothing stored; the secret never leaves the server), and /present fetches
+      the current one with its existing poll. Works with every question open at once and with
+      the static question cards, and doubles as attendance.
+      Optional: the pass expires (e.g. after 20 min) so students re-scan during a lecture.
+- [ ] **Hide the number** on the question card in PowerPoint and in copied text (QR only, the
+      typed code on request), so the easiest thing to share goes away.
+- [ ] Shorter answer windows with the existing close countdown.
 - [ ] Not location checks: they need phone location permission, are easy to fake, are poor
       indoors, and raise privacy questions.
+- [ ] Limits, for the record: a student in the room can still relay the check-in code within
+      seconds, or answer on a friend's phone. Only proctoring stops that; the pass makes the
+      group-chat habit impractical.
 
 ### Announcements
 
