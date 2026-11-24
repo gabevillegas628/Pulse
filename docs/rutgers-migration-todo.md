@@ -257,6 +257,13 @@ of the QR works too.
       "join" view. Keep the static card, without a code, as the question text and a fallback
       when the add-in isn't loaded or the laptop is offline. Not by redrawing the picture from
       the task pane: it isn't running during a slideshow, and it would keep editing the deck.
+      **Simplest: put it in /present itself.** /present already follows whatever is live
+      (`/addin/live`) and switches to the active question, so it can show the rotating QR for
+      the question open right now and hide it when the question closes. The server computes
+      each code from a secret + question + run + 30-second window (nothing stored; the secret
+      never leaves the server) and /present fetches the current one with its existing poll.
+      Alternative: one rotating check-in code per lecture instead of per question (less on
+      screen, doubles as attendance, but looser).
 - [ ] **Hide the number** on the question card in PowerPoint and in copied text; QR only, with
       the typed code available on request (a fallback for a phone that can't scan).
 - [ ] Shorter answer windows with the existing close countdown, so a relay has little time.
