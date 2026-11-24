@@ -286,8 +286,9 @@ and grades out"). On our own VM, RAM and disk are no longer the limit.
       NetID is far easier than reading one from scratch, and a low-confidence match is just
       left for the instructor.
 - [ ] Measure on this semester's papers (on the VM): share matched correctly, time per page.
-- [ ] Mind the VM size: it is CPU only, and M1.Medium has 2 vCPU / 8 GB. If the model needs
-      more, M1.Large (4 vCPU / 16 GB) or a background queue that reads overnight.
+- [ ] Decided: stay on M1.Medium (CPU only, 2 vCPU / 8 GB) and run NetID reading as a
+      **background job** after a batch is processed (overnight if need be). Matching is not
+      urgent, so speed doesn't matter; grading must not wait for it.
 - [ ] Alternative that needs no model: printed per-student QR sheets
       (`docs/quiz-grader/OPEN_QUESTIONS.md` #9).
 
