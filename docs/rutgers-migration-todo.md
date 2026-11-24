@@ -271,6 +271,26 @@ Rotating the per-question code alone would not help.
       seconds, or answer on a friend's phone. Only proctoring stops that; the pass makes the
       group-chat habit impractical.
 
+### Handwriting recognition on the vision service (reading NetIDs)
+
+Tried in `f3b8423` (TrOCR on the vision service reading each page's NetID box, so papers match
+to students without a NetID ever reaching an AI provider) and reverted in `3f8e12d`: too slow
+on Railway's CPU, the readings weren't usable, and a stronger model needed more RAM and disk
+than Railway allowed. Papers are matched by hand since (`docs/quiz-grader/README.md`, "Students
+and grades out"). On our own VM, RAM and disk are no longer the limit.
+
+- [ ] Restore it from `f3b8423` (off unless `HANDWRITING_MODEL` is set; loads in the
+      background; a failed or slow reading leaves the page as it is today).
+- [ ] Try a stronger handwriting model than base TrOCR, and constrain the reading to the NetID
+      shape (letters then digits) and to **the class roster**: picking the closest roster
+      NetID is far easier than reading one from scratch, and a low-confidence match is just
+      left for the instructor.
+- [ ] Measure on this semester's papers (on the VM): share matched correctly, time per page.
+- [ ] Mind the VM size: it is CPU only, and M1.Medium has 2 vCPU / 8 GB. If the model needs
+      more, M1.Large (4 vCPU / 16 GB) or a background queue that reads overnight.
+- [ ] Alternative that needs no model: printed per-student QR sheets
+      (`docs/quiz-grader/OPEN_QUESTIONS.md` #9).
+
 ### Announcements
 
 - [ ] Instructor writes a message; it goes to a class or a section by email (and could also
