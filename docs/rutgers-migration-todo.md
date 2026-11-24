@@ -240,6 +240,24 @@ permanent):
 Not started; noted so they aren't lost. Nothing here until the VM is running. Rough order of
 usefulness, not commitment.
 
+### In-class answers only (codes shared in the group chat)
+
+Responses run at 85–90% of the class, well above how many students attend, which suggests codes
+are shared in group chats and answered from home. Hiding the number alone won't stop it: a photo
+of the QR works too.
+
+- [ ] **Measure first:** mark each answer as from the Rutgers network or not (the real client
+      address already reaches the app through Apache), and show the share per question. Flag,
+      never block: students in the room on cellular data look off-campus too.
+- [ ] **Rotating codes:** the code and QR on the slide change every 20–30 s; Pulse accepts the
+      current one and the one before. A screenshot is stale within seconds; nothing changes
+      for students in the room. The PowerPoint add-in already refreshes the slide.
+- [ ] **Hide the number** on the question card in PowerPoint and in copied text; QR only, with
+      the typed code available on request (a fallback for a phone that can't scan).
+- [ ] Shorter answer windows with the existing close countdown, so a relay has little time.
+- [ ] Not location checks: they need phone location permission, are easy to fake, are poor
+      indoors, and raise privacy questions.
+
 ### Announcements
 
 - [ ] Instructor writes a message; it goes to a class or a section by email (and could also
