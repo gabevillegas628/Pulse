@@ -1,0 +1,20 @@
+# Build context for deploy/Containerfile (Podman reads this file too).
+# Student work and secrets must never reach an image layer.
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+!**/.env.example
+**/uploads
+backups/
+restore/
+quiz-spike-out/
+**/*.key
+**/*.log
+.git
+.claude
+.vscode
+backend/loadtest-results/
+vision/
+deploy/
+**/__pycache__

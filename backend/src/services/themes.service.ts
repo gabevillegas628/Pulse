@@ -1,8 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk'
 import * as z4 from 'zod/v4'
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
+import { generateStructured, modelFor } from '../ai/llm.js'
+import { scrubberForQuestion, type Scrub } from '../ai/scrub.js'
 import { prisma } from '../db/index.js'
-import { config } from '../config/index.js'
 import { AppError } from '../middleware/error.middleware.js'
 import { getIo } from '../socket.js'
 import { logger } from '../utils/logger.js'
@@ -20,12 +19,10 @@ import { logger } from '../utils/logger.js'
  *    the model, so a low-confidence answer is never forced into a wrong bin.
  */
 
-const anthropic = new Anthropic({ apiKey: config.anthropicApiKey })
-
 /** Bootstrap is the one call where a bad result poisons everything downstream. */
-const BOOTSTRAP_MODEL = 'claude-opus-5'
+const BOOTSTRAP_MODEL = modelFor('themes.bootstrap')
 /** Classification is high-volume, short-output and easy. Spend accordingly. */
-const CLASSIFY_MODEL = 'claude-haiku-4-5'
+const CLASSIFY_MODEL = modelFor('themes.classify')
 
 /** Below this, the model's choice is not trusted and the answer goes to Forming. */
 const MIN_CONFIDENCE = 0.6
@@ -199,19 +196,19 @@ function evenSample<T>(rows: T[], max: number): T[] {
   return out
 }
 
-async function callBootstrap(questionText: string, answers: AnswerRow[]) {
-  const list = answers.map((a, i) => `[${i}] ${a.responseText}`).join('\n')
+async function callBootstrap(questionText: string, answers: AnswerRow[], scrub: Scrub) {
+  const list = answers.map((a, i) => `[${i}] ${scrub(a.responseText)}`).join('\n')
 
   // No `temperature` here: it is deprecated on Opus 5 and the API rejects the request
   // outright with a 400. The older grading calls on claude-sonnet-4-6 still accept it.
-  const res = await anthropic.messages.parse({
+  const res = await generateStructured({
     model: BOOTSTRAP_MODEL,
-    max_tokens: 8192,
-    output_config: { format: zodOutputFormat(bootstrapSchema) },
-    messages: [
+    maxTokens: 8192,
+    schema: bootstrapSchema,
+    parts: [
       {
-        role: 'user',
-        content: `You are analysing student responses to a classroom question. Group them into 3-4 distinct themes, then assign every response to one of those themes.
+        type: 'text',
+        text: `You are analysing student responses to a classroom question. Group them into 3-4 distinct themes, then assign every response to one of those themes.
 
 Question asked: "${questionText}"
 
@@ -231,7 +228,7 @@ Rules:
     ],
   })
 
-  const parsed = res.parsed_output
+  const parsed = res.parsed
   if (!parsed) throw new AppError('Could not read categories from the AI response', 502)
   return parsed
 }
@@ -260,7 +257,7 @@ export async function bootstrapThemeSet(
   // derived only from them would miss where the rest of the class went.
   const answers = evenSample(all, BOOTSTRAP_SAMPLE_MAX)
 
-  const parsed = await callBootstrap(questionText, answers)
+  const parsed = await callBootstrap(questionText, answers, await scrubberForQuestion(questionId))
 
   // Anything the model omitted, sent out of range, or was unsure about goes to Forming.
   const byIndex = new Map(parsed.assignments.map((a) => [a.index, a]))
@@ -360,20 +357,21 @@ const classifySchema = (categoryIds: string[]) =>
 async function callClassify(
   questionText: string,
   categories: Array<{ id: string; label: string; description: string }>,
-  answers: AnswerRow[]
+  answers: AnswerRow[],
+  scrub: Scrub
 ) {
   const catList = categories.map((c) => `- ${c.id}: ${c.label} — ${c.description}`).join('\n')
-  const list = answers.map((a, i) => `[${i}] ${a.responseText}`).join('\n')
+  const list = answers.map((a, i) => `[${i}] ${scrub(a.responseText)}`).join('\n')
 
-  const res = await anthropic.messages.parse({
+  const res = await generateStructured({
     model: CLASSIFY_MODEL,
-    max_tokens: 1024,
+    maxTokens: 1024,
     temperature: 0,
-    output_config: { format: zodOutputFormat(classifySchema(categories.map((c) => c.id))) },
-    messages: [
+    schema: classifySchema(categories.map((c) => c.id)),
+    parts: [
       {
-        role: 'user',
-        content: `Assign each student answer to one of the existing categories for this question.
+        type: 'text',
+        text: `Assign each student answer to one of the existing categories for this question.
 
 Question: "${questionText}"
 
@@ -393,7 +391,7 @@ Rules:
     ],
   })
 
-  const parsed = res.parsed_output
+  const parsed = res.parsed
   if (!parsed) throw new Error('classify returned no parsable output')
   return parsed
 }
@@ -434,16 +432,17 @@ async function classifyNextBatch(
   const other = categories.find((c) => c.isOther)
   if (!other || real.length === 0) throw new Error('theme set is missing its categories')
 
+  const scrub = await scrubberForQuestion(questionId)
   let parsed: Awaited<ReturnType<typeof callClassify>>
   try {
-    parsed = await callClassify(questionText, real, answers)
+    parsed = await callClassify(questionText, real, answers, scrub)
   } catch (first) {
     logger.warn('Classify batch failed, retrying once', {
       questionId,
       error: first instanceof Error ? first.message : String(first),
     })
     try {
-      parsed = await callClassify(questionText, real, answers)
+      parsed = await callClassify(questionText, real, answers, scrub)
     } catch (second) {
       logger.error('Classify batch failed twice, marking set FAILED', {
         questionId,

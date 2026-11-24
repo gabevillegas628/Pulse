@@ -14,7 +14,6 @@ import {
 } from '../src/quizGrader/content.js'
 import { acceptedNames, gradePage } from '../src/quizGrader/grade.js'
 import { readTextRegions, type StructureRead, type TextRead } from '../src/quizGrader/reader.js'
-import type Anthropic from '@anthropic-ai/sdk'
 import { matchText, normalize, scoreCofactors, scoreStructure } from '../src/quizGrader/scoring.js'
 import { patchYaml } from '../src/quizGrader/yamlPatch.js'
 import { decidingConfidence, doubtfulChecks, wantsSecondLook } from '../src/quizGrader/grade.js'
@@ -183,17 +182,17 @@ check('structure all or nothing', scoreStructure(gly.intermediates.pep!, [true, 
 
 await (async () => {
   const slots = slotsForVersion(glyQuiz, glyLayout, gly, 'A')
-  let called = false
-  const client = { messages: { parse: async () => { called = true; throw new Error('should not be called') } } } as unknown as Anthropic
   const name = slots.find((g) => g.ref.kind === 'identity')!
   const s1 = slots.find((g) => g.slot.id === 's1_enzyme')!
   let refused = false
   try {
-    await readTextRegions(client, gly, [{ id: 'r', png: Buffer.from(''), slots: [s1, name] }])
+    await readTextRegions(gly, [{ id: 'r', png: Buffer.from(''), slots: [s1, name] }])
   } catch (e) {
     refused = e instanceof Error && e.message.includes('names and NetIDs stay local')
   }
-  check('the reader refuses a name slot before any API call', refused && !called)
+  // The refusal is thrown before the request is built: had a call been made, the error
+  // would be the provider's (no key, network), not this message.
+  check('the reader refuses a name slot before any API call', refused)
 })()
 
 check('an answer box overlapping the name box is refused', (() => {

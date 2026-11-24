@@ -14,19 +14,17 @@
  * the two can be compared. Nothing is saved: the professor accepts suggestions in the Key tab,
  * and they are saved like any other edit. This writes the key; it never grades a paper.
  */
-import Anthropic from '@anthropic-ai/sdk'
 import * as z from 'zod/v4'
 import { prisma } from '../db/index.js'
-import { config } from '../config/index.js'
 import { logger } from '../utils/logger.js'
 import type { GradedSlot, PathwayKey } from './content.js'
 import { contextFor, dbCache, MODEL_STRUCTURE } from './grading.js'
 import type { KeyDrawingsData } from './keyDrawings.js'
 import { costOf } from './pricing.js'
+import { aiConfigured, aiSetupHint, modelFor } from '../ai/llm.js'
 import { cachedParse, readStructureRegions, type Region, type StructureRead, type Usage } from './reader.js'
 
-export const DEFAULT_MODEL_SUGGEST = 'claude-opus-5-5'
-const MODEL_SUGGEST = process.env.MODEL_SUGGEST || DEFAULT_MODEL_SUGGEST
+const MODEL_SUGGEST = modelFor('quiz.suggest')
 
 /** How one list of checks fared on the key drawings. */
 export interface CheckTest {
@@ -97,14 +95,14 @@ function drawingRegions(key: PathwayKey, data: KeyDrawingsData, ids: string[]): 
   }))
 }
 
-async function suggest(client: Anthropic, key: PathwayKey, data: KeyDrawingsData, targets: string[]) {
+async function suggest(key: PathwayKey, data: KeyDrawingsData, targets: string[]) {
   const drawn = new Set(Object.keys(data.items))
   const prompt = `${SUGGEST_RULES}\n\nThe molecules in this pathway:\n${pathwayList(key, drawn)}\n\nWrite checks for each of these, returning one entry per id: ${targets.join(', ')}.`
-  return cachedParse(client, dbCache, MODEL_SUGGEST, 'high', prompt, drawingRegions(key, data, Object.keys(key.intermediates)), suggestionSchema, 16000)
+  return cachedParse(dbCache, MODEL_SUGGEST, 'high', prompt, drawingRegions(key, data, Object.keys(key.intermediates)), suggestionSchema, 16000)
 }
 
 async function revise(
-  client: Anthropic, key: PathwayKey, data: KeyDrawingsData,
+  key: PathwayKey, data: KeyDrawingsData,
   problems: { id: string; checks: string[]; test: CheckTest }[],
 ) {
   const drawn = new Set(Object.keys(data.items))
@@ -115,7 +113,7 @@ async function revise(
     return out.join('\n')
   })
   const prompt = `${SUGGEST_RULES}\n\nThe molecules in this pathway:\n${pathwayList(key, drawn)}\n\nYou wrote checks earlier, and they were tested: a reader answered each check on every key drawing above. These had problems:\n\n${lines.join('\n\n')}\n\nReturn a complete, revised list of checks for each of these ids: ${problems.map((p) => p.id).join(', ')}.`
-  return cachedParse(client, dbCache, MODEL_SUGGEST, 'high', prompt, drawingRegions(key, data, Object.keys(key.intermediates)), suggestionSchema, 16000)
+  return cachedParse(dbCache, MODEL_SUGGEST, 'high', prompt, drawingRegions(key, data, Object.keys(key.intermediates)), suggestionSchema, 16000)
 }
 
 // ── Testing ────────────────────────────────────────────────────────────────────
@@ -135,7 +133,7 @@ type Answers = Map<string, Map<string, StructureRead>> // drawing id → list id
  * Every key drawing answers every list of checks: one reader call per drawing. Lists are
  * labelled neutrally (l1, l2…) so the reader is not told which molecule each describes.
  */
-async function testLists(client: Anthropic, data: KeyDrawingsData, lists: Map<string, string[]>, usage: Usage[]): Promise<Answers> {
+async function testLists(data: KeyDrawingsData, lists: Map<string, string[]>, usage: Usage[]): Promise<Answers> {
   const labels = [...lists.keys()]
   const slots = labels.map((id, i) => asSlot(`l${i + 1}`, lists.get(id)!))
   const back = new Map(labels.map((id, i) => [`l${i + 1}`, id]))
@@ -143,7 +141,7 @@ async function testLists(client: Anthropic, data: KeyDrawingsData, lists: Map<st
   const drawings = Object.entries(data.items)
   for (let i = 0; i < drawings.length; i += 4) {
     await Promise.all(drawings.slice(i, i + 4).map(async ([id, d]) => {
-      const { reads, usage: u } = await readStructureRegions(client, [{ id: 'd', png: Buffer.from(d.png, 'base64'), slots }], { model: MODEL_STRUCTURE, cache: dbCache })
+      const { reads, usage: u } = await readStructureRegions([{ id: 'd', png: Buffer.from(d.png, 'base64'), slots }], { model: MODEL_STRUCTURE, cache: dbCache })
       usage.push(u)
       answers.set(id, new Map([...reads].map(([label, r]) => [back.get(label) ?? label, r])))
     }))
@@ -184,20 +182,18 @@ async function run(assessmentId: string, job: SuggestJob): Promise<void> {
   const key = ctx.key
   const targets = [...new Set(Object.values(ctx.assessment.versions).flatMap((v) => v.structures))].filter((id) => key.intermediates[id])
   if (!targets.length) throw new Error('No version grades a drawn structure (Versions tab), so there are no checks to write.')
-
-  const client = new Anthropic({ apiKey: config.anthropicApiKey })
   const usage: Usage[] = []
 
   job.step = 'Writing checks from your key drawings'
-  const first = await suggest(client, key, data, targets)
+  const first = await suggest(key, data, targets)
   usage.push(first.usage)
   const suggested = new Map(targets.map((id) => [id, first.parsed.intermediates.find((x) => x.id === id)?.checks.filter((c) => c.trim()) ?? []]))
 
   job.step = 'Testing the suggested and current checks on every key drawing'
   const current = new Map(targets.filter((id) => key.intermediates[id]!.features.length).map((id) => [id, key.intermediates[id]!.features]))
   const [answers, currentAnswers] = await Promise.all([
-    testLists(client, data, suggested, usage),
-    current.size ? testLists(client, data, current, usage) : Promise.resolve(new Map() as Answers),
+    testLists(data, suggested, usage),
+    current.size ? testLists(data, current, usage) : Promise.resolve(new Map() as Answers),
   ])
   const tests = new Map(targets.map((id) => [id, evaluate(key, data, answers, id, id, suggested.get(id)!)]))
 
@@ -205,11 +201,11 @@ async function run(assessmentId: string, job: SuggestJob): Promise<void> {
   const revised = new Set<string>()
   if (problems.length) {
     job.step = `Revising checks for ${problems.length} intermediate${problems.length > 1 ? 's' : ''} that did not pass, and testing again`
-    const second = await revise(client, key, data, problems.map((id) => ({ id, checks: suggested.get(id)!, test: tests.get(id)! })))
+    const second = await revise(key, data, problems.map((id) => ({ id, checks: suggested.get(id)!, test: tests.get(id)! })))
     usage.push(second.usage)
     const next = new Map(problems.map((id) => [id, second.parsed.intermediates.find((x) => x.id === id)?.checks.filter((c) => c.trim()) ?? []]).filter(([, c]) => c.length) as [string, string[]][])
     if (next.size) {
-      const again = await testLists(client, data, next, usage)
+      const again = await testLists(data, next, usage)
       for (const [id, checks] of next) {
         const t = evaluate(key, data, again, id, id, checks)
         // Keep the revision only if it did better.
@@ -258,7 +254,7 @@ async function run(assessmentId: string, job: SuggestJob): Promise<void> {
 export async function startSuggestion(assessmentId: string): Promise<SuggestJob> {
   const running = jobs.get(assessmentId)
   if (running?.status === 'running') return running
-  if (!config.anthropicApiKey) throw new Error('Grading is not set up (ANTHROPIC_API_KEY), so there is no model to write checks.')
+  if (!aiConfigured()) throw new Error(`Grading is not set up (${aiSetupHint()}), so there is no model to write checks.`)
   const ctx = await contextFor(assessmentId)
   const a = await prisma.quizContent.findUniqueOrThrow({ where: { id: assessmentId }, select: { professorId: true } })
   const keyRow = await prisma.quizContent.findUnique({
